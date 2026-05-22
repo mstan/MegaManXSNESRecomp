@@ -203,15 +203,9 @@
     <ClCompile Include="mmx_00.c" />
     <ClCompile Include="gen_stubs.c" />
     <ClCompile Include="gen\mmx_00_v2.c" />
-    <ClCompile Include="gen\smw_04_v2.c" />
-    <ClCompile Include="gen\smw_07_v2.c" />
-    <ClCompile Include="gen\smw_01_v2.c" />
-    <ClCompile Include="gen\smw_02_v2.c" />
-    <ClCompile Include="gen\smw_03_v2.c" />
-    <ClCompile Include="gen\smw_05_v2.c" />
-    <ClCompile Include="gen\smw_0c_v2.c" />
-    <ClCompile Include="gen\smw_0d_v2.c" />
-    <ClCompile Include="gen\unresolved_stubs_v2.c" />
+    <ClCompile Include="gen\mmx_01_v2.c" />
+    <ClCompile Include="gen\mmx_02_v2.c" />
+    <ClCompile Include="gen\mmx_04_v2.c" />
     <ClCompile Include="..\snesrecomp\runner\src\debug_server.c" />
     <!-- Oracle-only sources. ExcludedFromBuild in every non-Oracle configuration
          so Release|x64 / Debug|x64 binaries contain zero oracle code. -->

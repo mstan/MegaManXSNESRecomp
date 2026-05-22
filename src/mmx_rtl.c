@@ -12,7 +12,11 @@ void MmxDrawPpuFrame(void) {
 
   Dma *dma = g_dma;
 
-  dma_startDma(dma, mirror_hdmaenable, true);
+  /* Scaffold: kick HDMA with the SNES WRAM mirror byte of HDMAEN.
+   * MMX writes its desired channel mask to $7E:0033 during the NMI
+   * handler before STA $420C; tap the same value here. Tighten this
+   * once the real WRAM mirror address is identified from the asm. */
+  dma_startDma(dma, *(uint8*)(g_ram + 0x0033), true);
 
   SimpleHdma_Init(&hdma_chans[0], &dma->channel[5]);
   SimpleHdma_Init(&hdma_chans[1], &dma->channel[6]);
@@ -98,7 +102,11 @@ void MmxRunOneFrameOfGame(void) {
    * boot-time REP #$38 in I_RESET is expected and intentional; we only
    * want to know where x flips during ProcessGameMode dispatch. */
   cpu_trace_arm_px_tripwire();
-  SmwRunOneFrameOfGame_Internal();
+  /* MMX's main loop isn't yet declared in cfg as a separate function;
+   * for now I_NMI does the per-frame work via the vblank handshake.
+   * Once we identify the asm main-loop PC (and a `func` cfg entry
+   * lets the recompiler emit it as a returnable function), call it
+   * here. Until then, NMI-only is enough for an attract-screen boot. */
   cpu_trace_px_breadcrumb(&g_cpu, 0x2003, "after_Internal");
   g_first_frame_done = true;
 }
