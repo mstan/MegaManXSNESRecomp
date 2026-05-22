@@ -22,12 +22,53 @@ Slot fields, 16 bytes per slot at $0030-$006F (4 slots at $30/$40/$50/$60):
 
 Yield site: `$00:80F8` (`SEP #$30 ; LDX $A0 ; STZ $30,X ; BRA $80B9`).
 
-Plan: write a C-host scheduler in `mmx_rtl.c` that walks the four
-slots once per host frame, dispatching cfg-declared task entry PCs
-directly. Every distinct task body (initial 4 + spawned) needs its
-own `func` cfg entry. The 6 JMP-indirect-dispatch warnings v2_regen
-emits will resolve once the cfg lists every handler PC seen at the
-`$0032,X` site across all callers.
+### Concrete next-session plan
+
+Sub-tasks, in dependency order:
+
+1. **Framework: generic `hle_func` cfg directive.** The existing
+   `hle_spc_upload` directive is hard-coded to emit one specific C
+   helper call. The task-scheduler HLE needs the same shape but
+   targeting different C functions per cfg entry (yield wrappers,
+   the dispatcher itself, etc.). Add a `hle_func <pc> <c_func_name>`
+   directive that emits a stub forwarding to the named C helper.
+   This is the unblocker — without it, hand-written HLE bodies in
+   `gen_stubs.c` collide with recompiler-emitted bodies at link time.
+
+2. **Initial task entry-PC enumeration.** From the disassembly:
+   - Task 0 (slot $30) is installed at boot with handler PC `$00:852C`
+     via `LDA #$852C / JSR $00:813B` at `$00:807F-$8082`.
+   - Task slot entry-S values come from the table `DATA16_868067`
+     (= `$00:8067` via LoROM mirror): `$013F, $017F, $01BF, $01FF,
+     $023F, $027F, $02BF` (slots 0-6).
+   - Task 0's body at `$00:852C` JSRs through many helpers and yields
+     via wrappers at `$00:8100`, `$00:810C`, `$00:8A45`, `$00:8995`,
+     `$00:8121`. Tasks 1-6 are spawned dynamically.
+
+3. **Yield wrappers as `hle_func` entries.** `$8100` / `$810C` are
+   the canonical yields. They `BRA $80B9` (scheduler next-slot) and
+   never return to the caller. C HLE for these = `longjmp` to a
+   per-task `jmp_buf` saved by the C scheduler before invoking the
+   task body. The other "yield-ish" entries at `$8121` and similar
+   conditionally yield based on `BIT $0B9D`.
+
+4. **C-host scheduler in `mmx_rtl.c`.** One iteration per host
+   frame. For state=1 slots, set `cpu->S` to slot's entry-S (from
+   `g_ram[$36+X]`), look up the handler PC from `g_ram[$32+X]`,
+   `setjmp(per_slot_jmp_buf)`, call the cfg-declared `func` for that
+   PC. For state=2 slots, decrement countdown; on zero, the same
+   resume path via the saved-S at `g_ram[$34+X]` — this needs a
+   coroutine that can re-enter mid-function, which only works if the
+   yield site preserved enough state to restart from the post-yield
+   PC (asm intent) OR we accept restart-from-entry semantics (lossy
+   but might progress task-0 via the `$7E:FFFF` progress flag the
+   task body already uses as a state machine).
+
+5. **Variant discovery.** Each `func` declared above needs the
+   correct (M, X) entry variant. Scheduler invokes task at `$852C`
+   with M=1 X=1 (verified from `$80DA` flow: previous `SEP #$30` at
+   `$80E9` is for state-2 path; `$80DA` enters with whatever M/X the
+   dispatch loop had, which is M=1 X=1 from `$809F SEP #$30`).
 
 ## SHA-256 of `mmx.sfc` was computed locally only
 
