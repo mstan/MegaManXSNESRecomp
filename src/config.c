@@ -1,0 +1,440 @@
+#include "config.h"
+#include "types.h"
+#include <stdio.h>
+#include <string.h>
+#include <SDL.h>
+#include "util.h"
+
+enum {
+  kKeyMod_ScanCode = 0x200,
+  kKeyMod_Alt = 0x400,
+  kKeyMod_Shift = 0x800,
+  kKeyMod_Ctrl = 0x1000,
+};
+
+Config g_config;
+
+#define REMAP_SDL_KEYCODE(key) ((key) & SDLK_SCANCODE_MASK ? kKeyMod_ScanCode : 0) | (key) & (kKeyMod_ScanCode - 1)
+#define _(x) REMAP_SDL_KEYCODE(x)
+#define S(x) REMAP_SDL_KEYCODE(x) | kKeyMod_Shift
+#define A(x) REMAP_SDL_KEYCODE(x) | kKeyMod_Alt
+#define C(x) REMAP_SDL_KEYCODE(x) | kKeyMod_Ctrl
+#define N 0
+static const uint16 kDefaultKbdControls[kKeys_Total] = {
+  0,
+  // Controls
+  _(SDLK_UP), _(SDLK_DOWN), _(SDLK_LEFT), _(SDLK_RIGHT), _(SDLK_RSHIFT), _(SDLK_RETURN), _(SDLK_x), _(SDLK_z), _(SDLK_s), _(SDLK_a), _(SDLK_c), _(SDLK_v),
+  // ControlsP2
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+  // LoadState
+  _(SDLK_F1), _(SDLK_F2), _(SDLK_F3), _(SDLK_F4), _(SDLK_F5), _(SDLK_F6), _(SDLK_F7), _(SDLK_F8), _(SDLK_F9), _(SDLK_F10), N, N, N, N, N, N, N, N, N, N,
+  // SaveState
+  S(SDLK_F1), S(SDLK_F2), S(SDLK_F3), S(SDLK_F4), S(SDLK_F5), S(SDLK_F6), S(SDLK_F7), S(SDLK_F8), S(SDLK_F9), S(SDLK_F10), N, N, N, N, N, N, N, N, N, N,
+  // Fullscreen, Reset, Pause, PauseDimmed, Turbo, WindowBigger, WindowSmaller, DisplayPerf, ToggleRenderer
+  A(SDLK_RETURN), C(SDLK_r), S(SDLK_p), _(SDLK_p), _(SDLK_TAB), N, N, _(SDLK_f), _(SDLK_r),
+  // VolumeUp VolumeDown
+  0, 0,
+};
+#undef _
+#undef A
+#undef C
+#undef S
+#undef N
+
+typedef struct KeyNameId {
+  const char *name;
+  uint16 id, size;
+} KeyNameId;
+
+#define M(n) {#n, kKeys_##n, kKeys_##n##_Last - kKeys_##n + 1}
+#define S(n) {#n, kKeys_##n, 1}
+static const KeyNameId kKeyNameId[] = {
+  {"Null", kKeys_Null, 65535},
+  M(Controls), M(ControlsP2),
+  M(Load), M(Save),
+  S(Fullscreen), S(Reset),
+  S(Pause), S(PauseDimmed), S(Turbo), S(WindowBigger), S(WindowSmaller), S(VolumeUp), S(VolumeDown), S(DisplayPerf), S(ToggleRenderer),
+};
+#undef S
+#undef M
+typedef struct KeyMapHashEnt {
+  uint16 key, cmd, next;
+} KeyMapHashEnt;
+
+static uint16 keymap_hash_first[255];
+static KeyMapHashEnt *keymap_hash;
+static int keymap_hash_size;
+static bool has_keynameid[countof(kKeyNameId)];
+
+static bool KeyMapHash_Add(uint16 key, uint16 cmd) {
+  if (!key)
+    return false;
+
+  if (cmd == kKeys_Controls)
+    g_config.has_keyboard_controls |= 1;
+  else if (cmd == kKeys_ControlsP2)
+    g_config.has_keyboard_controls |= 2;
+
+  if ((keymap_hash_size & 0xff) == 0) {
+    if (keymap_hash_size > 10000)
+      Die("Too many keys");
+    keymap_hash = (KeyMapHashEnt*)realloc(keymap_hash, sizeof(KeyMapHashEnt) * (keymap_hash_size + 256));
+  }
+  int i = keymap_hash_size++;
+  KeyMapHashEnt *ent = &keymap_hash[i];
+  ent->key = key;
+  ent->cmd = cmd;
+  ent->next = 0;
+  int j = (uint32)key % 255;
+
+  uint16 *cur = &keymap_hash_first[j];
+  while (*cur) {
+    KeyMapHashEnt *ent = &keymap_hash[*cur - 1];
+    if (ent->key == key)
+      return false;
+    cur = &ent->next;
+  }
+  *cur = i + 1;
+  return true;
+}
+
+static int KeyMapHash_Find(uint16 key) {
+  int i = keymap_hash_first[key % 255];
+  while (i) {
+    KeyMapHashEnt *ent = &keymap_hash[i - 1];
+    if (ent->key == key)
+      return ent->cmd;
+    i = ent->next;
+  }
+  return 0;
+}
+
+int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod) {
+  if (code & ~(SDLK_SCANCODE_MASK | 0x1ff))
+    return 0;
+  int key = 0;
+  if (code != SDLK_LALT && code != SDLK_RALT)
+    key |= mod & KMOD_ALT ? kKeyMod_Alt : 0;
+  if (code != SDLK_LCTRL && code != SDLK_RCTRL)
+    key |= mod & KMOD_CTRL ? kKeyMod_Ctrl : 0;
+  if (code != SDLK_LSHIFT && code != SDLK_RSHIFT)
+    key |= mod & KMOD_SHIFT ? kKeyMod_Shift : 0;
+  key |= REMAP_SDL_KEYCODE(code);
+  return KeyMapHash_Find(key);
+}
+
+static void ParseKeyArray(char *value, int cmd, int size) {
+  char *s;
+  int i = 0;
+  for (; i < size && (s = NextDelim(&value, ',')) != NULL; i++, cmd += (cmd != 0)) {
+    if (*s == 0)
+      continue;
+    int key_with_mod = 0;
+    for (;;) {
+      if (StringStartsWithNoCase(s, "Shift+")) {
+        key_with_mod |= kKeyMod_Shift, s += 6;
+      } else if (StringStartsWithNoCase(s, "Ctrl+")) {
+        key_with_mod |= kKeyMod_Ctrl, s += 5;
+      } else if (StringStartsWithNoCase(s, "Alt+")) {
+        key_with_mod |= kKeyMod_Alt, s += 4;
+      } else {
+        break;
+      }
+    }
+    SDL_Keycode key = SDL_GetKeyFromName(s);
+    if (key == SDLK_UNKNOWN) {
+      fprintf(stderr, "Unknown key: '%s'\n", s);
+      continue;
+    }
+    if (!KeyMapHash_Add(key_with_mod | REMAP_SDL_KEYCODE(key), cmd))
+      fprintf(stderr, "Duplicate key: '%s'\n", s);
+  }
+}
+
+typedef struct GamepadMapEnt {
+  uint32 modifiers;
+  uint16 cmd, next;
+} GamepadMapEnt;
+
+static uint16 joymap_first[kGamepadBtn_Count * 2];  // 2 gamepads
+static GamepadMapEnt *joymap_ents;
+static int joymap_size;
+static uint8 has_assigned_joypad_controls;
+
+static int CountBits32(uint32 n) {
+  int count = 0;
+  for (; n != 0; count++)
+    n &= (n - 1);
+  return count;
+}
+
+static void GamepadMap_Add(int button, uint32 modifiers, uint16 cmd) {
+  if ((joymap_size & 0xff) == 0) {
+    if (joymap_size > 1000)
+      Die("Too many joypad keys"); 
+    joymap_ents = (GamepadMapEnt*)realloc(joymap_ents, sizeof(GamepadMapEnt) * (joymap_size + 64));
+    if (!joymap_ents) Die("realloc failure");
+  }
+  uint16 *p = &joymap_first[button];
+  // Insert it as early as possible but before after any entry with more modifiers.
+  int cb = CountBits32(modifiers);
+  while (*p && cb < CountBits32(joymap_ents[*p - 1].modifiers))
+    p = &joymap_ents[*p - 1].next;
+  int i = joymap_size++;
+  GamepadMapEnt *ent = &joymap_ents[i];
+  ent->modifiers = modifiers;
+  ent->cmd = cmd;
+  ent->next = *p;
+  *p = i + 1;
+}
+
+int FindCmdForGamepadButton(int button, uint32 modifiers) {
+  GamepadMapEnt *ent;
+  for(int e = joymap_first[button]; e != 0; e = ent->next) {
+    ent = &joymap_ents[e - 1];
+    if ((modifiers & ent->modifiers) == ent->modifiers)
+      return ent->cmd;
+  }
+  return 0;
+}
+
+static int ParseGamepadButtonName(const char **value) {
+  const char *s = *value;
+  // Longest substring first
+  static const char *const kGamepadKeyNames[] = {
+    "Back", "Guide", "Start", "L3", "R3",
+    "L1", "R1", "DpadUp", "DpadDown", "DpadLeft", "DpadRight", "L2", "R2",
+    "Lb", "Rb", "A", "B", "X", "Y"
+  };
+  static const uint8 kGamepadKeyIds[] = {
+    kGamepadBtn_Back, kGamepadBtn_Guide, kGamepadBtn_Start, kGamepadBtn_L3, kGamepadBtn_R3,
+    kGamepadBtn_L1, kGamepadBtn_R1, kGamepadBtn_DpadUp, kGamepadBtn_DpadDown, kGamepadBtn_DpadLeft, kGamepadBtn_DpadRight, kGamepadBtn_L2, kGamepadBtn_R2,
+    kGamepadBtn_L1, kGamepadBtn_R1, kGamepadBtn_A, kGamepadBtn_B, kGamepadBtn_X, kGamepadBtn_Y,
+  };
+  for (size_t i = 0; i != countof(kGamepadKeyNames); i++) {
+    const char *r = StringStartsWithNoCase(s, kGamepadKeyNames[i]);
+    if (r) {
+      *value = r;
+      return kGamepadKeyIds[i];
+    }
+  }
+  return kGamepadBtn_Invalid;
+}
+
+static const uint8 kDefaultGamepadCmds[] = {
+  kGamepadBtn_DpadUp, kGamepadBtn_DpadDown, kGamepadBtn_DpadLeft, kGamepadBtn_DpadRight, kGamepadBtn_Back, kGamepadBtn_Start,
+  kGamepadBtn_B, kGamepadBtn_A, kGamepadBtn_Y, kGamepadBtn_X, kGamepadBtn_L1, kGamepadBtn_R1,
+};
+
+static void ParseGamepadArray(int gamepad, char *value, int cmd, int size) {
+  char *s;
+  int i = 0;
+  for (; i < size && (s = NextDelim(&value, ',')) != NULL; i++, cmd += (cmd != 0)) {
+    if (*s == 0)
+      continue;
+    int gamepad_cur = gamepad;
+    uint32 modifiers = 0;
+    const char *ss = s;
+    for (;;) {
+      int button = ParseGamepadButtonName(&ss);
+      if (button == kGamepadBtn_Invalid) BAD: {
+        fprintf(stderr, "Unknown gamepad button: '%s'\n", s);
+        break;
+      }
+      while (*ss == ' ' || *ss == '\t') ss++;
+      if (*ss == '+') {
+        ss++;
+        modifiers |= 1 << button;
+      } else if (*ss == 0) {
+        GamepadMap_Add(button + gamepad_cur * kGamepadBtn_Count, modifiers, cmd);
+        break;
+      } else
+        goto BAD;
+    }
+  }
+}
+
+static void RegisterDefaultKeys(void) {
+  for (int i = 1; i < countof(kKeyNameId); i++) {
+    if (!has_keynameid[i]) {
+      int size = kKeyNameId[i].size, k = kKeyNameId[i].id;
+      for (int j = 0; j < size; j++, k++)
+        KeyMapHash_Add(kDefaultKbdControls[k], k);
+    }
+  }
+  if (!(has_assigned_joypad_controls & 1)) {
+    for (int i = 0; i < countof(kDefaultGamepadCmds); i++)
+      GamepadMap_Add(kDefaultGamepadCmds[i], 0, kKeys_Controls + i);
+  }
+  if (!(has_assigned_joypad_controls & 2)) {
+    for (int i = 0; i < countof(kDefaultGamepadCmds); i++)
+      GamepadMap_Add(kDefaultGamepadCmds[i] + kGamepadBtn_Count, 0, kKeys_ControlsP2 + i);
+  }
+}
+
+static int GetIniSection(const char *s) {
+  if (StringEqualsNoCase(s, "[KeyMap]"))
+    return 0;
+  if (StringEqualsNoCase(s, "[Graphics]"))
+    return 1;
+  if (StringEqualsNoCase(s, "[Sound]"))
+    return 2;
+  if (StringEqualsNoCase(s, "[General]"))
+    return 3;
+  if (StringEqualsNoCase(s, "[Features]"))
+    return 4;
+  if (StringEqualsNoCase(s, "[GamepadMap]"))
+    return 5;
+  return -1;
+}
+
+static bool HandleIniConfig(int section, const char *key, char *value) {
+  if (section == 0) {
+    for (int i = 0; i < countof(kKeyNameId); i++) {
+      if (StringEqualsNoCase(key, kKeyNameId[i].name)) {
+        has_keynameid[i] = true;
+        ParseKeyArray(value, kKeyNameId[i].id, kKeyNameId[i].size);
+        return true;
+      }
+    }
+  } else if (section == 5) {
+    if (StringEqualsNoCase(key, "EnableGamepad1")) {
+      return ParseBool(value, &g_config.enable_gamepad[0]);
+    } else if (StringEqualsNoCase(key, "EnableGamepad2")) {
+      return ParseBool(value, &g_config.enable_gamepad[1]);
+    } else {
+      for (int i = 0; i < countof(kKeyNameId); i++) {
+        if (StringEqualsNoCase(key, kKeyNameId[i].name)) {
+          int id = kKeyNameId[i].id;
+          has_assigned_joypad_controls |= (id == kKeys_Controls) ? 1 : (id == kKeys_ControlsP2) ? 2 : 0;
+          ParseGamepadArray(id == kKeys_ControlsP2 ? 1 : 0, value, kKeyNameId[i].id, kKeyNameId[i].size);
+          return true;
+        }
+      }
+    }
+  } else if (section == 1) {
+    if (StringEqualsNoCase(key, "WindowSize")) {
+      char *s;
+      if (StringEqualsNoCase(value, "Auto")){
+        g_config.window_width  = 0;
+        g_config.window_height = 0;
+        return true;
+      }
+      while ((s = NextDelim(&value, 'x')) != NULL) {
+        if(g_config.window_width == 0) {
+          g_config.window_width = atoi(s);
+        } else {
+          g_config.window_height = atoi(s);
+          return true;
+        }
+      }
+    } else if (StringEqualsNoCase(key, "NewRenderer")) {
+      return ParseBool(value, &g_config.new_renderer);
+    } else if (StringEqualsNoCase(key, "IgnoreAspectRatio")) {
+      return ParseBool(value, &g_config.ignore_aspect_ratio);
+    } else if (StringEqualsNoCase(key, "Fullscreen")) {
+      g_config.fullscreen = (uint8)strtol(value, (char**)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "WindowScale")) {
+      g_config.window_scale = (uint8)strtol(value, (char**)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "OutputMethod")) {
+      g_config.output_method = StringEqualsNoCase(value, "SDL-Software") ? kOutputMethod_SDLSoftware :
+                               StringEqualsNoCase(value, "OpenGL") ? kOutputMethod_OpenGL : kOutputMethod_SDL;
+      return true;
+    } else if (StringEqualsNoCase(key, "LinearFiltering")) {
+      return ParseBool(value, &g_config.linear_filtering);
+    } else if (StringEqualsNoCase(key, "NoSpriteLimits")) {
+      return ParseBool(value, &g_config.no_sprite_limits);
+    } else if (StringEqualsNoCase(key, "Shader")) {
+      g_config.shader = *value ? value : NULL;
+      return true;
+    }
+  } else if (section == 2) {
+    if (StringEqualsNoCase(key, "EnableAudio")) {
+      return ParseBool(value, &g_config.enable_audio);
+    } else if (StringEqualsNoCase(key, "AudioFreq")) {
+      g_config.audio_freq = (uint16)strtol(value, (char**)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "AudioChannels")) {
+      g_config.audio_channels = (uint8)strtol(value, (char**)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "AudioSamples")) {
+      g_config.audio_samples = (uint16)strtol(value, (char**)NULL, 10);
+      return true;
+    }
+  } else if (section == 3) {
+    if (StringEqualsNoCase(key, "Autosave")) {
+      g_config.autosave = (bool)strtol(value, (char **)NULL, 10);
+      return true;
+    } else if (StringEqualsNoCase(key, "DisplayPerfInTitle")) {
+      return ParseBool(value, &g_config.display_perf_title);
+    } else if (StringEqualsNoCase(key, "DisableFrameDelay")) {
+      return ParseBool(value, &g_config.disable_frame_delay);
+    }
+  } else if (section == 4) {
+  }
+  return false;
+}
+
+static bool ParseOneConfigFile(const char *filename, int depth) {
+  char *filedata = (char*)ReadWholeFile(filename, NULL), *p;
+  if (!filedata)
+    return false;
+  
+  int section = -2;
+  g_config.memory_buffer = filedata;
+
+  for (int lineno = 1; (p = NextLineStripComments(&filedata)) != NULL; lineno++) {
+    if (*p == 0)
+      continue; // empty line
+    if (*p == '[') {
+      section = GetIniSection(p);
+      if (section < 0)
+        fprintf(stderr, "%s:%d: Invalid .ini section %s\n", filename, lineno, p);
+    } else if (*p == '!' && SkipPrefix(p + 1, "include ")) {
+      char *tt = p + 8;
+      char *new_filename = ReplaceFilenameWithNewPath(filename, NextPossiblyQuotedString(&tt));
+      if (depth > 10 || !ParseOneConfigFile(new_filename, depth + 1))
+        fprintf(stderr, "Warning: Unable to read %s\n", new_filename);
+      free(new_filename);
+    } else if (section == -2) {
+      fprintf(stderr, "%s:%d: Expecting [section]\n", filename, lineno);
+    } else {
+      char *v = SplitKeyValue(p);
+      if (v == NULL) {
+        fprintf(stderr, "%s:%d: Expecting 'key=value'\n", filename, lineno);
+        continue;
+      }
+      if (section >= 0 && !HandleIniConfig(section, p, v))
+        fprintf(stderr, "%s:%d: Can't parse '%s'\n", filename, lineno, p);
+    }
+  }
+  return true;
+}
+
+void ParseConfigFile(const char *filename) {
+  g_config.enable_audio = true;
+  /* Audio defaults match the values shipped in smw.ini's [Sound]
+   * section. Without these a release with no smw.ini next to the
+   * exe leaves audio_freq/audio_channels/audio_samples at 0, which
+   * either makes SDL_OpenAudioDevice fail or opens a degenerate
+   * device with frames-per-block math that produces silence. */
+  g_config.audio_freq = 32000;
+  g_config.audio_channels = 2;
+  g_config.audio_samples = 512;
+  /* Default to gamepad-enabled so a freshly-extracted release (no
+   * smw.ini next to the exe) still picks up a plugged-in
+   * SDL_GameController via OpenOneGamepad. Explicit `EnableGamepad1
+   * = false` in smw.ini overrides this. */
+  g_config.enable_gamepad[0] = true;
+  g_config.enable_gamepad[1] = true;
+
+  if (filename != NULL || !ParseOneConfigFile("smw.user.ini", 0)) {
+    if (filename == NULL)
+      filename = "smw.ini";
+    if (!ParseOneConfigFile(filename, 0))
+      fprintf(stderr, "Warning: Unable to read config file %s\n", filename);
+  }
+  RegisterDefaultKeys();
+}

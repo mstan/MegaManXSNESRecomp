@@ -1,0 +1,74 @@
+# Build artifacts
+build/
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.tlog
+*.log
+*.idb
+
+# ROM files (copyrighted)
+*.smc
+*.sfc
+*.rom
+
+# Extracted ROM data (generated from ROM at build time — copyrighted)
+smw_assets.dat
+assets/
+
+# Save files
+saves/
+*.sav
+*.srm
+
+# Boot traces (generated at runtime)
+boot_trace*.txt
+
+# IDE
+.vs/
+*.vcxproj.user
+
+# OS
+Thumbs.db
+.DS_Store
+
+# External repos accessed via junction/symlink (tracked in their own repos)
+snesrecomp/
+
+# Oracle disassembly repo (independent git clone)
+SMWDisX/
+
+# Claude auto-memory (per-user)
+memory/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Local-only config overrides (per-developer, applied after smw.ini)
+smw.local.ini
+
+
+# Active recompiler output — generated locally per-developer
+src/gen/
+
+# Triage scratch
+_triage/
+hw_trace.log
+
+# Screenshots / scratch BMPs
+*.bmp
+
+# Per-session debugging / triage scratch (any underscore-prefixed file
+# at the repo root is treated as scratch and not committed).
+_*
+
+# NuGet packages (restored on build)
+packages/
+
+# Release artifacts (built locally, uploaded via gh release upload)
+MegamanXRecomp-windows-*.zip
+mmx-v*.zip
+release-stage/

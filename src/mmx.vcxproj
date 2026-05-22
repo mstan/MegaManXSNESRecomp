@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Oracle|x64">
+      <Configuration>Oracle</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Oracle|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Oracle|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)build\bin-$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)build\bin-$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)build\bin-$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)build\bin-$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Oracle|x64'">
+    <OutDir>$(SolutionDir)build\bin-$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;SMW_DISABLE_LM=1;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
+    </ClCompile>
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;SMW_DISABLE_LM=1;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
+    </ClCompile>
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Oracle|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\snes9x-core;$(SolutionDir)snesrecomp\runner\snes9x-core\libretro;$(SolutionDir)snesrecomp\runner\snes9x-core\apu\bapu;$(SolutionDir)snesrecomp\runner\snes9x-core\libretro\libretro-common\include</AdditionalIncludeDirectories>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;_CRT_SECURE_NO_WARNINGS;ENABLE_ORACLE_BACKEND=1;ENABLE_SNES9X_ORACLE=1;__WIN32__;__LIBRETRO__</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\third_party\gl_core\gl_core_3_1.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\common_cpu_infra.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\common_rtl.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\recomp_hw.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\framedump.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\launcher.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\crc32.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\sha256.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\keybinds.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\cpu_state.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\cpu_trace.c" />
+    <ClCompile Include="config.c" />
+    <ClCompile Include="glsl_shader.c" />
+    <ClCompile Include="main.c" />
+    <ClCompile Include="post_mortem.c" />
+
+    <ClCompile Include="opengl.c" />
+    <ClCompile Include="platform\win32\volume_control.c" />
+    <ClCompile Include="mmx_00.c" />
+    <ClCompile Include="gen_stubs.c" />
+    <ClCompile Include="gen\mmx_00_v2.c" />
+    <ClCompile Include="gen\smw_04_v2.c" />
+    <ClCompile Include="gen\smw_07_v2.c" />
+    <ClCompile Include="gen\smw_01_v2.c" />
+    <ClCompile Include="gen\smw_02_v2.c" />
+    <ClCompile Include="gen\smw_03_v2.c" />
+    <ClCompile Include="gen\smw_05_v2.c" />
+    <ClCompile Include="gen\smw_0c_v2.c" />
+    <ClCompile Include="gen\smw_0d_v2.c" />
+    <ClCompile Include="gen\unresolved_stubs_v2.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\debug_server.c" />
+    <!-- Oracle-only sources. ExcludedFromBuild in every non-Oracle configuration
+         so Release|x64 / Debug|x64 binaries contain zero oracle code. -->
+    <ClCompile Include="..\snesrecomp\runner\src\emu_oracle_cmds.c">
+      <ExcludedFromBuild Condition="'$(Configuration)'!='Oracle'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes9x_bridge.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'!='Oracle'">true</ExcludedFromBuild>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <!-- banks.h has no C++ issues (pure preprocessor), but keep the
+           forced include off the C++ bridge TU to avoid accidental
+           name-collision with snes9x's globals. -->
+      <ForcedIncludeFiles />
+    </ClCompile>
+    <ClCompile Include="mmx_cpu_infra.c" />
+    <ClCompile Include="mmx_rtl.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\snes\apu.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes\cart.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">MinSpace</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MinSpace</Optimization>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes\cpu.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes\dma.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes\dsp.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes\ppu.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\snes\ppu_old.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\snes\snes.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\snes\snes_other.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\snes\spc.c">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">MinSpace</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MinSpace</Optimization>
+    </ClCompile>
+    <ClCompile Include="mmx_spc_player.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\util.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\third_party\gl_core\gl_core_3_1.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\common_cpu_infra.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\common_rtl.h" />
+    <ClInclude Include="config.h" />
+    <ClInclude Include="consts.h" />
+    <ClInclude Include="..\recomp\funcs.h" />
+    <ClInclude Include="glsl_shader.h" />
+    <ClInclude Include="mmx_rtl.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\apu.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\cart.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\cpu.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\dma.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\dsp.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\dsp_regs.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\ppu.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\saveload.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\snes.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\snes_regs.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\snes\spc.h" />
+    <ClInclude Include="mmx_spc_player.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\types.h" />
+    <ClInclude Include="..\snesrecomp\runner\src\util.h" />
+    <ClInclude Include="variables.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Oracle-only: statically link snes9x core. The ProjectReference
+         is condition-gated on $(Configuration)=='Oracle' so Release|x64
+         / Debug|x64 builds never visit snes9x_core.vcxproj. -->
+    <ProjectReference Include="..\snes9x_core.vcxproj" Condition="'$(Configuration)'=='Oracle'">
+      <Project>{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\sdl2.nuget.redist.2.26.3\build\native\sdl2.nuget.redist.targets" Condition="Exists('..\packages\sdl2.nuget.redist.2.26.3\build\native\sdl2.nuget.redist.targets')" />
+    <Import Project="..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets" Condition="Exists('..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\sdl2.nuget.redist.2.26.3\build\native\sdl2.nuget.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.redist.2.26.3\build\native\sdl2.nuget.redist.targets'))" />
+    <Error Condition="!Exists('..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets'))" />
+  </Target>
+</Project>
