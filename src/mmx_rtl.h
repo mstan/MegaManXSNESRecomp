@@ -4,9 +4,8 @@
 #include "common_cpu_infra.h"
 #include "snes/snes_regs.h"
 
-void SmwRunOneFrameOfGame_Internal();
-
 void MmxDrawPpuFrame(void);
 void MmxRunOneFrameOfGame(void);
+void MmxSchedulerTick(void);
 
 #endif  // SMW_SMW_RTL_H_

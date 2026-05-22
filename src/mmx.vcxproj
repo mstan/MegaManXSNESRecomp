@@ -205,7 +205,11 @@
     <ClCompile Include="gen\mmx_00_v2.c" />
     <ClCompile Include="gen\mmx_01_v2.c" />
     <ClCompile Include="gen\mmx_02_v2.c" />
+    <ClCompile Include="gen\mmx_03_v2.c" />
     <ClCompile Include="gen\mmx_04_v2.c" />
+    <ClCompile Include="gen\mmx_06_v2.c" />
+    <ClCompile Include="gen\mmx_07_v2.c" />
+    <ClCompile Include="gen\mmx_08_v2.c" />
     <ClCompile Include="..\snesrecomp\runner\src\debug_server.c" />
     <!-- Oracle-only sources. ExcludedFromBuild in every non-Oracle configuration
          so Release|x64 / Debug|x64 binaries contain zero oracle code. -->

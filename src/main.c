@@ -72,7 +72,7 @@ enum {
   kDefaultSamples = 2048,
 };
 
-static const char kWindowTitle[] = "SMW";
+static const char kWindowTitle[] = "Megaman X Recomp";
 static uint32 g_win_flags = SDL_WINDOW_RESIZABLE;
 static SDL_Window *g_window;
 
