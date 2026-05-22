@@ -33,6 +33,7 @@ uint8_t g_mmx_task_yield_countdown;
 /* Task-entry handler table. Map handler PC (16-bit) -> C function ptr
  * for the recomp'd task body. */
 extern RecompReturn Task0_M1X1(CpuState *cpu);
+extern RecompReturn Task_89C9_M1X1(CpuState *cpu);
 extern RecompReturn Task_B091_M1X1(CpuState *cpu);
 extern RecompReturn Task_B25B_M1X1(CpuState *cpu);
 extern RecompReturn Task_B38D_M1X1(CpuState *cpu);
@@ -42,6 +43,7 @@ extern RecompReturn Task_E6B1_M1X1(CpuState *cpu);
 static RecompReturn mmx_dispatch_task_pc(CpuState *cpu, uint16_t pc) {
   switch (pc) {
     case 0x852C: return Task0_M1X1(cpu);
+    case 0x89C9: return Task_89C9_M1X1(cpu);
     case 0xB091: return Task_B091_M1X1(cpu);
     case 0xB25B: return Task_B25B_M1X1(cpu);
     case 0xB38D: return Task_B38D_M1X1(cpu);
