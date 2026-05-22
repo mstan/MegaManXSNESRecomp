@@ -1,76 +1,104 @@
 # Open issues — MegamanXRecomp
 
-## Cooperative task scheduler at $00:8099 — HLE pending
+## Status — 2026-05-22
 
-The asm "main loop" at `$00:8099` is a cooperative-coroutine task
-scheduler, not a normal frame-tick function. It cannot be called from
-the C host as-is because it terminates with `JMP $8099` (infinite),
-and the inner spinlock on `$7E:0B9D` deadlocks without an NMI
-interrupting the host thread.
+The runtime no longer hangs or crashes. The C-host fiber scheduler is
+operating correctly: Task0 ($852C) and Task_B25B ($B25B) are both
+dispatched per host frame, both yield (state=2 cd=1) and resume, and
+the slot-walking + per-slot S restoration is preserving each task's
+emulated 65816 stack window across ticks.
 
-Confirmed structure (cross-referenced against the public disassembly
-at [MarkAlarm/MMX1-Disassembly](https://github.com/MarkAlarm/MMX1-Disassembly)):
+End-to-end, the recompiled MMX:
 
-```
-Slot fields, 16 bytes per slot at $0030-$006F (4 slots at $30/$40/$50/$60):
-  $30,X = state (0=empty, 1=ready, 2=delayed, 3=suspended)
-  $31,X = delay countdown (state 2)
-  $32,X / $33,X = handler PC (used for JMP ($0032,X) at $80E6)
-  $34,X / $35,X = saved S (resume state-3 tasks via TCS + PLP/PLY/PLX/RTS)
-  $36,X / $37,X = entry-task S setup (state-1 start path)
-```
+- Boots through ResetHandler without crashing
+- Loads CGRAM (palette data verified non-zero at $00-$3F)
+- Fires DMA-to-VRAM uploads from bank-0 routines around $B9F3
+- Holds inidisp = $C9 (forced blank + brightness $9) — Task0 is
+  parked in its attract fade-wait loop at $00:$867F-$8693
 
-Yield site: `$00:80F8` (`SEP #$30 ; LDX $A0 ; STZ $30,X ; BRA $80B9`).
+No visible screen content yet: bit 7 of $2100 (forced blank) is set
+on every frame because Task0 hasn't reached the unblank step.
 
-### Concrete next-session plan
+## The two recompiler-level fixes that unblocked the scheduler
 
-Sub-tasks, in dependency order:
+1. **Decoder sibling-jump tail-call rule generalised (2026-05-22).**
+   The earlier form refused inline-import only when the sibling entry
+   sat ABOVE the current function in PC space (`pc >= end` +
+   `pred_pc < end`). MMX's TaskDie at $00:$80F8 sits BELOW its callers
+   ($852C, $B091, $B25B, ...) and slipped through — every task body's
+   JMP $80F8 inlined the asm scheduler walk into the calling task,
+   which overwrote the current slot's $30,X state byte and then
+   walked into the asm coroutine-resume at $80E9. Now any JUMP edge
+   into a named sibling function entry is a tail-call.
 
-1. **Framework: generic `hle_func` cfg directive.** The existing
-   `hle_spc_upload` directive is hard-coded to emit one specific C
-   helper call. The task-scheduler HLE needs the same shape but
-   targeting different C functions per cfg entry (yield wrappers,
-   the dispatcher itself, etc.). Add a `hle_func <pc> <c_func_name>`
-   directive that emits a stub forwarding to the named C helper.
-   This is the unblocker — without it, hand-written HLE bodies in
-   `gen_stubs.c` collide with recompiler-emitted bodies at link time.
+2. **$00:$8121 conditional yield wrapper HLE'd (2026-05-22).**
+   `BIT $0B9D ; BMI yield ; RTS`. The BMI-taken path PHX/PHY/PHP, sets
+   slot state=$02/cd=$01, TSCs the saved-S into $34,X, and JMPs to
+   the asm scheduler — to be resumed via $80E9's TCS/PLP/PLY/PLX/RTS.
+   Under the C-host fiber model the asm coroutine-resume doesn't run,
+   so the JMP $8099 (HLE-replaced by MainLoopReturn) just returns
+   NORMAL — leaving 3 emulated-stack bytes pushed that the asm
+   scheduler was supposed to pop. The caller's post-JSR
+   PLB/PLP/PLY/PLX then reads the wrong bytes and the next iteration
+   of Task_B25B's decompressor runs with corrupted state ($F8
+   especially), then trips the asm's CPX #$8000 / BCS-self panic at
+   $B2E2. HleMmxYieldVblank reads $0B9D, yields iff bit 7 is set,
+   and otherwise returns without touching the stack.
 
-2. **Initial task entry-PC enumeration.** From the disassembly:
-   - Task 0 (slot $30) is installed at boot with handler PC `$00:852C`
-     via `LDA #$852C / JSR $00:813B` at `$00:807F-$8082`.
-   - Task slot entry-S values come from the table `DATA16_868067`
-     (= `$00:8067` via LoROM mirror): `$013F, $017F, $01BF, $01FF,
-     $023F, $027F, $02BF` (slots 0-6).
-   - Task 0's body at `$00:852C` JSRs through many helpers and yields
-     via wrappers at `$00:8100`, `$00:810C`, `$00:8A45`, `$00:8995`,
-     `$00:8121`. Tasks 1-6 are spawned dynamically.
+## Remaining: Task0 progress past the attract fade-wait loop
 
-3. **Yield wrappers as `hle_func` entries.** `$8100` / `$810C` are
-   the canonical yields. They `BRA $80B9` (scheduler next-slot) and
-   never return to the caller. C HLE for these = `longjmp` to a
-   per-task `jmp_buf` saved by the C scheduler before invoking the
-   task body. The other "yield-ish" entries at `$8121` and similar
-   conditionally yield based on `BIT $0B9D`.
+Task0 reaches the fade-wait loop at $$00:$867F-$8693 (writes Y |
+$E0 to $CB/$CC/$CD then yields, up to $1F iterations or until
+$00:$86AC's input-check returns Z=0). With no controller input the
+loop should exit naturally after $1F yields and continue past
+$8695. In our run, scene-index byte at DP $C0 stays at $17 for
+thousands of frames — Task0 is not progressing past this point.
 
-4. **C-host scheduler in `mmx_rtl.c`.** One iteration per host
-   frame. For state=1 slots, set `cpu->S` to slot's entry-S (from
-   `g_ram[$36+X]`), look up the handler PC from `g_ram[$32+X]`,
-   `setjmp(per_slot_jmp_buf)`, call the cfg-declared `func` for that
-   PC. For state=2 slots, decrement countdown; on zero, the same
-   resume path via the saved-S at `g_ram[$34+X]` — this needs a
-   coroutine that can re-enter mid-function, which only works if the
-   yield site preserved enough state to restart from the post-yield
-   PC (asm intent) OR we accept restart-from-entry semantics (lossy
-   but might progress task-0 via the `$7E:FFFF` progress flag the
-   task body already uses as a state machine).
+## Concrete next-session lead — wrong DB at Task_B25B dispatch
 
-5. **Variant discovery.** Each `func` declared above needs the
-   correct (M, X) entry variant. Scheduler invokes task at `$852C`
-   with M=1 X=1 (verified from `$80DA` flow: previous `SEP #$30` at
-   `$80E9` is for state-2 path; `$80DA` enters with whatever M/X the
-   dispatch loop had, which is M=1 X=1 from `$809F SEP #$30`).
+Task_B25B's decompressor reads its per-iteration count table from
+`LDA $F6F7,Y` (absolute,Y with DB providing bank). Y is derived
+from DP $98 (`5*$98`). The trace shows cpu->DB = $F6 when Task_B25B
+runs. In LoROM with a 1.5 MiB ROM, bank $F6 reads at addr
+$F7AB (= $F6F7 + Y for Y = $B4 from $98 = $24) are out-of-ROM →
+snes9x core returns open bus → `(open_bus + 7) >> 3` produces a
+huge $FA, the outer loop runs many thousand times, X overflows
+past the $8000 destination bound, and STX $F8 at $B2E4 writes a
+corrupted $F8/$F9 pair (observed: $00 $E0 → 16-bit value $E000).
+On the NEXT dispatch of Task_B25B, the corrupted $F8 is read into
+X and the decompressor spins forever at $B2E2 again.
 
-## SHA-256 of `mmx.sfc` was computed locally only
+The PLB chain leading into the run was $00 → $86 → $E3 → $BB →
+$F6 (visible in DB-WATCH events in `_run.log`). The recomp is
+faithfully executing the asm PLBs — the question is whether the
+asm at Task_B25B's caller is supposed to have DB = $86 at the
+moment of dispatch (real ROM data at $86:F7AB is a valid count
+table) and our C-host scheduler is failing to restore it, or
+whether the asm legitimately runs with DB = $F6 and there's a
+SEPARATE init path that sets DP $98 to a value that makes
+`F6F7 + 5*$98` land back inside valid ROM.
+
+The first thing to do next session: dump the asm at $00:$B238
+(the install wrapper called via `JSL $00:B238`) and trace the
+specific call site that installs Task_B25B + sets DP $98 (or
+sets DB ahead of the install). The wrapper itself at $B23C-$B25A
+does NOT PHB — so DB inherits from the install's caller. Find that
+caller.
+
+## Spurious $E0 every-4-bytes WRAM pattern (red herring)
+
+Dumps of arbitrary WRAM addresses show $E0 at every offset 4N+1
+(e.g. $0001, $0005, $0009, ..., $00FD, $0101, $0105, ...). This is
+NOT corruption — it's the OAM-Y-coord "hide sprite" idiom MMX uses
+across many tables. Confirmed by tracking the writes: STA abs,X
+with base $0701, $0801, $0700, etc. and A = $E0 (off-screen Y).
+Recompiler is faithfully emitting these stores. They land in the
+OAM shadow tables and look noisy in DP dumps because some MMX
+tables alias DP-range addresses via the LoROM bank-mirror.
+
+## Pre-existing items (not yet revisited)
+
+### SHA-256 of `mmx.sfc` was computed locally only
 
 The expected hash in `src/main.c`
 (`b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32`)
