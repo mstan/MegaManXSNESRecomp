@@ -154,8 +154,10 @@ static inline void mmx_restore_cpu(CpuState *c, const MmxSlotCpuSave *s) {
 
 extern const char *g_last_recomp_func;
 extern int snes_frame_counter;
+#if SNESRECOMP_TRACE
 extern uint8_t g_boundary_frozen;
 extern StackDriftTripwire g_stack_drift_tripwire;  /* declared in cpu_trace.h (already included) */
+#endif
 
 static void CALLBACK mmx_fiber_entry(void *param) {
   uint8_t slot_idx = (uint8_t)(uintptr_t)param;
@@ -181,12 +183,14 @@ static void CALLBACK mmx_fiber_entry(void *param) {
             g_cpu.DB, g_cpu.PB, g_cpu.m_flag, g_cpu.x_flag);
     fflush(stderr);
   }
+#if SNESRECOMP_TRACE
   if (mmx_rtl_diag_enabled() && slot_idx == 0 && !g_stack_drift_tripwire.triggered) {
     g_stack_drift_tripwire.triggered = 1;  /* freezes cpu_trace */
     g_boundary_frozen = 1;                 /* freezes boundary ring */
     fprintf(stderr, "[fiber_die] froze rings for inspection\n");
     fflush(stderr);
   }
+#endif
   /* Mark slot empty, then bounce back to the scheduler. The scheduler
    * will see g_slot_done and destroy the fiber. */
   g_slot_done[slot_idx] = 1;
