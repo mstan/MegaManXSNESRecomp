@@ -415,8 +415,8 @@ static bool ParseOneConfigFile(const char *filename, int depth) {
 
 void ParseConfigFile(const char *filename) {
   g_config.enable_audio = true;
-  /* Audio defaults match the values shipped in smw.ini's [Sound]
-   * section. Without these a release with no smw.ini next to the
+  /* Audio defaults match the values shipped in mmx.ini's [Sound]
+   * section. Without these a release with no mmx.ini next to the
    * exe leaves audio_freq/audio_channels/audio_samples at 0, which
    * either makes SDL_OpenAudioDevice fail or opens a degenerate
    * device with frames-per-block math that produces silence. */
@@ -424,15 +424,15 @@ void ParseConfigFile(const char *filename) {
   g_config.audio_channels = 2;
   g_config.audio_samples = 512;
   /* Default to gamepad-enabled so a freshly-extracted release (no
-   * smw.ini next to the exe) still picks up a plugged-in
+   * mmx.ini next to the exe) still picks up a plugged-in
    * SDL_GameController via OpenOneGamepad. Explicit `EnableGamepad1
-   * = false` in smw.ini overrides this. */
+   * = false` in mmx.ini overrides this. */
   g_config.enable_gamepad[0] = true;
   g_config.enable_gamepad[1] = true;
 
   if (filename != NULL || !ParseOneConfigFile("smw.user.ini", 0)) {
     if (filename == NULL)
-      filename = "smw.ini";
+      filename = "mmx.ini";
     if (!ParseOneConfigFile(filename, 0))
       fprintf(stderr, "Warning: Unable to read config file %s\n", filename);
   }
