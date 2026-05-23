@@ -58,8 +58,10 @@ src/gen/
 _triage/
 hw_trace.log
 
-# Screenshots / scratch BMPs
+# Screenshots / scratch BMPs + their auto-converted PNG companions
+# (python _convert.py shot.bmp emits shot.png alongside the source).
 *.bmp
+shot*.png
 
 # Per-session debugging / triage scratch (any underscore-prefixed file
 # at the repo root is treated as scratch and not committed).
