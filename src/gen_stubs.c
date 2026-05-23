@@ -8,6 +8,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "cpu_state.h"
 #include "common_rtl.h"
 #include "cpu_trace.h"
@@ -18,10 +19,36 @@
  * scheduler fiber; the fiber resumes here on the next dispatch. */
 extern void mmx_host_yield(uint8_t countdown);
 extern uint8_t g_mmx_task_slot_x;  /* asm $A0 mirror, current slot offset */
+extern int snes_frame_counter;
+extern void RecompStackDump(void);
+
+static int mmx_hle_diag_enabled(void) {
+  static int s_init = 0;
+  static int s_enabled = 0;
+  if (!s_init) {
+    const char *v = getenv("MMX_RTL_DIAG");
+    s_enabled = (v && v[0] && v[0] != '0');
+    s_init = 1;
+  }
+  return s_enabled;
+}
 
 RecompReturn HleMmxYieldOneFrame(CpuState *cpu) {
   /* $00:8100: yield, wake next frame. */
-  (void)cpu;
+  static int s_logged_bad_slot0_yield = 0;
+  if (mmx_hle_diag_enabled() &&
+      !s_logged_bad_slot0_yield && g_mmx_task_slot_x == 0 && cpu->D != 0) {
+    s_logged_bad_slot0_yield = 1;
+    fprintf(stderr,
+            "[mmx_yield_bad_state] frame=%d slot=0 A=$%04X X=$%04X Y=$%04X S=$%04X D=$%04X DB=$%02X PB=$%02X P=$%02X m=%u x=%u\n",
+            snes_frame_counter, cpu->A, cpu->X, cpu->Y, cpu->S, cpu->D,
+            cpu->DB, cpu->PB, cpu->P, cpu->m_flag, cpu->x_flag);
+    RecompStackDump();
+    fflush(stderr);
+#if SNESRECOMP_TRACE
+    g_stack_drift_tripwire.triggered = 1;
+#endif
+  }
   mmx_host_yield(1);
   /* On resume (next dispatch), fall through and return normally —
    * the caller (asm's JSR $8100) continues at the post-JSR site. */

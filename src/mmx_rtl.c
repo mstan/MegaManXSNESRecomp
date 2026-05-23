@@ -40,6 +40,8 @@ extern RecompReturn Task_B38D_M1X1(CpuState *cpu);
 extern RecompReturn Task_B436_M1X1(CpuState *cpu);
 extern RecompReturn Task_E6B1_M1X1(CpuState *cpu);
 
+static int mmx_rtl_diag_enabled(void);
+
 static RecompReturn mmx_dispatch_task_pc(CpuState *cpu, uint16_t pc) {
   switch (pc) {
     case 0x852C: return Task0_M1X1(cpu);
@@ -50,8 +52,10 @@ static RecompReturn mmx_dispatch_task_pc(CpuState *cpu, uint16_t pc) {
     case 0xB436: return Task_B436_M1X1(cpu);
     case 0xE6B1: return Task_E6B1_M1X1(cpu);
     default:
-      fprintf(stderr, "[mmx_sched] unknown task PC $00:%04X (slot=$%02X)\n",
-              pc, g_mmx_task_slot_x);
+      if (mmx_rtl_diag_enabled()) {
+        fprintf(stderr, "[mmx_sched] unknown task PC $00:%04X (slot=$%02X)\n",
+                pc, g_mmx_task_slot_x);
+      }
       return RECOMP_RETURN_NORMAL;
   }
 }
@@ -82,6 +86,7 @@ static RecompReturn mmx_dispatch_task_pc(CpuState *cpu, uint16_t pc) {
 static void *g_scheduler_fiber = NULL;
 static void *g_slot_fiber[MMX_NSLOTS] = {0};
 static uint16_t g_slot_fiber_pc[MMX_NSLOTS] = {0};
+static uint8_t g_slot_prev_state[MMX_NSLOTS] = {0};
 static uint8_t g_slot_done[MMX_NSLOTS] = {0};
 static uint8_t g_slot_yield_cd[MMX_NSLOTS] = {0};
 /* Saved CpuState per slot. The C-host fiber preserves the C stack but
@@ -110,6 +115,22 @@ typedef struct MmxSlotCpuSave {
 static MmxSlotCpuSave g_slot_saved_state[MMX_NSLOTS] = {0};
 static MmxSlotCpuSave g_saved_scheduler_state = {0};
 static uint8_t g_current_slot_idx = 0xFF;
+
+static int mmx_rtl_diag_enabled(void) {
+  static int s_init = 0;
+  static int s_enabled = 0;
+  if (!s_init) {
+    const char *v = getenv("MMX_RTL_DIAG");
+    s_enabled = (v && v[0] && v[0] != '0');
+    s_init = 1;
+  }
+  return s_enabled;
+}
+
+static inline uint16_t mmx_slot_handler_from_ram(uint8_t x) {
+    return (uint16_t)g_ram[(0x32 + x) & 0xFFFF]
+         | ((uint16_t)g_ram[(0x33 + x) & 0xFFFF] << 8);
+}
 
 static inline void mmx_save_cpu(MmxSlotCpuSave *s, const CpuState *c) {
     s->A = c->A; s->X = c->X; s->Y = c->Y; s->S = c->S; s->D = c->D;
@@ -152,13 +173,15 @@ static void CALLBACK mmx_fiber_entry(void *param) {
    * unexpected return — the trace freeze is auto-triggered via the
    * stack-drift mechanism (which also freezes cpu_trace via
    * capture()'s check). */
-  fprintf(stderr, "[fiber_die] frame=%d slot=%u pc=$%04X last_func=%s A=$%04X X=$%04X Y=$%04X S=$%04X D=$%04X DB=$%02X PB=$%02X m=%d x=%d\n",
-          snes_frame_counter, slot_idx, pc,
-          g_last_recomp_func ? g_last_recomp_func : "?",
-          g_cpu.A, g_cpu.X, g_cpu.Y, g_cpu.S, g_cpu.D,
-          g_cpu.DB, g_cpu.PB, g_cpu.m_flag, g_cpu.x_flag);
-  fflush(stderr);
-  if (slot_idx == 0 && !g_stack_drift_tripwire.triggered) {
+  if (mmx_rtl_diag_enabled()) {
+    fprintf(stderr, "[fiber_die] frame=%d slot=%u pc=$%04X last_func=%s A=$%04X X=$%04X Y=$%04X S=$%04X D=$%04X DB=$%02X PB=$%02X m=%d x=%d\n",
+            snes_frame_counter, slot_idx, pc,
+            g_last_recomp_func ? g_last_recomp_func : "?",
+            g_cpu.A, g_cpu.X, g_cpu.Y, g_cpu.S, g_cpu.D,
+            g_cpu.DB, g_cpu.PB, g_cpu.m_flag, g_cpu.x_flag);
+    fflush(stderr);
+  }
+  if (mmx_rtl_diag_enabled() && slot_idx == 0 && !g_stack_drift_tripwire.triggered) {
     g_stack_drift_tripwire.triggered = 1;  /* freezes cpu_trace */
     g_boundary_frozen = 1;                 /* freezes boundary ring */
     fprintf(stderr, "[fiber_die] froze rings for inspection\n");
@@ -201,7 +224,7 @@ void MmxSchedulerTick(void) {
   /* NMI handler has already run; $0B9D is $FF. Bump frame counter. */
   ++(*(uint8_t*)(g_ram + 0x0B9B));
   static uint32_t s_tick_n = 0;
-  bool dbg = (s_tick_n < 8);
+  bool dbg = mmx_rtl_diag_enabled() && (s_tick_n < 8);
   if (dbg) {
     fprintf(stderr, "[tick %u] slots: ", s_tick_n);
     for (uint8_t x = 0x00; x < 0x70; x += 0x10) {
@@ -219,27 +242,45 @@ void MmxSchedulerTick(void) {
     g_mmx_task_slot_x = x;
     g_current_slot_idx = slot_idx;
     uint8_t state = g_ram[(0x30 + x) & 0xFFFF];
-    if (state == 0x00 || state == 0x03) continue;  /* empty / running */
+    if (state == 0x00 || state == 0x03) {  /* empty / running */
+      g_slot_prev_state[slot_idx] = state;
+      continue;
+    }
     if (state == 0x02) {
       uint8_t cd = g_ram[(0x31 + x) & 0xFFFF];
       if (cd > 1) {
         g_ram[(0x31 + x) & 0xFFFF] = cd - 1;
+        g_slot_prev_state[slot_idx] = state;
         continue;
       }
       /* countdown hit zero: fall through to resume */
     }
     /* state == 1 (initial) or state == 2 + cd==0 (resume) */
-    uint16_t handler = (uint16_t)g_ram[(0x32 + x) & 0xFFFF]
-                     | ((uint16_t)g_ram[(0x33 + x) & 0xFFFF] << 8);
-    if (g_slot_fiber[slot_idx] == NULL || g_slot_fiber_pc[slot_idx] != handler) {
-      /* Tear down stale fiber (if any) — handler PC changed, this is
-       * a fresh install rather than a resume. */
+    bool fresh_install = (state == 0x01 && g_slot_prev_state[slot_idx] != 0x01);
+    uint16_t handler = fresh_install ? mmx_slot_handler_from_ram(x)
+                                     : g_slot_fiber_pc[slot_idx];
+    if (fresh_install) {
+      /* $00:813B just installed this slot. This is the scheduler's
+       * only authoritative read of the handler bytes; between
+       * dispatches MMX reuses $32/$33 as scratch. */
       if (g_slot_fiber[slot_idx] != NULL) {
         DeleteFiber(g_slot_fiber[slot_idx]);
         g_slot_fiber[slot_idx] = NULL;
       }
       g_slot_fiber_pc[slot_idx] = handler;
       g_slot_done[slot_idx] = 0;
+      g_slot_saved_state[slot_idx].saved = 0;
+    }
+    if (g_slot_fiber[slot_idx] == NULL) {
+      if (handler == 0) {
+        handler = mmx_slot_handler_from_ram(x);
+        g_slot_fiber_pc[slot_idx] = handler;
+        if (mmx_rtl_diag_enabled()) {
+          fprintf(stderr, "[mmx_sched] slot=%u state=$%02X missing cached handler; using ram pc=$%04X\n",
+                  slot_idx, state, handler);
+          fflush(stderr);
+        }
+      }
       /* 1 MiB stack per fiber — recomp'd bodies can recurse deeply. */
       g_slot_fiber[slot_idx] = CreateFiber(
           1024 * 1024, mmx_fiber_entry, (void*)(uintptr_t)slot_idx);
@@ -248,9 +289,11 @@ void MmxSchedulerTick(void) {
                 slot_idx, GetLastError());
         abort();
       }
-      fprintf(stderr, "[fiber_new] frame=%d slot=%u pc=$%04X\n",
-              snes_frame_counter, slot_idx, handler);
-      fflush(stderr);
+      if (mmx_rtl_diag_enabled()) {
+        fprintf(stderr, "[fiber_new] frame=%d slot=%u pc=$%04X\n",
+                snes_frame_counter, slot_idx, handler);
+        fflush(stderr);
+      }
     } else {
       if (dbg) fprintf(stderr, "  -> RESUME slot=%u pc=$%04X\n",
                        slot_idx, handler);
@@ -287,6 +330,7 @@ void MmxSchedulerTick(void) {
       if (dbg) fprintf(stderr, "  <- slot=%u yielded cd=%u\n",
                        slot_idx, g_slot_yield_cd[slot_idx]);
     }
+    g_slot_prev_state[slot_idx] = g_ram[(0x30 + x) & 0xFFFF];
   }
   g_current_slot_idx = 0xFF;
   /* Ack-clear NMI handshake flags so NMI's gated DMA path runs.
@@ -320,11 +364,10 @@ void MmxDrawPpuFrame(void) {
 
   Dma *dma = g_dma;
 
-  /* Scaffold: kick HDMA with the SNES WRAM mirror byte of HDMAEN.
-   * MMX writes its desired channel mask to $7E:0033 during the NMI
-   * handler before STA $420C; tap the same value here. Tighten this
-   * once the real WRAM mirror address is identified from the asm. */
-  dma_startDma(dma, *(uint8*)(g_ram + 0x0033), true);
+  /* Reinitialize HDMA from the actual $420C value written during NMI.
+   * $7E:0033 is task-slot/sprite scratch in MMX and is not a stable
+   * HDMAEN mirror. */
+  dma_startDma(dma, g_snesrecomp_last_hdmaen, true);
 
   SimpleHdma_Init(&hdma_chans[0], &dma->channel[5]);
   SimpleHdma_Init(&hdma_chans[1], &dma->channel[6]);
@@ -401,14 +444,14 @@ void MmxRunOneFrameOfGame(void) {
   // clears the latch on read.
   if (g_first_frame_done) {
     static int s_diag_frames = 0;
-    if (s_diag_frames < 5) {
+    if (mmx_rtl_diag_enabled() && s_diag_frames < 5) {
       fprintf(stderr, "  [pre-NMI ] slot0 state=$%02X cd=$%02X pc=$%02X%02X\n",
               g_ram[0x30], g_ram[0x31], g_ram[0x33], g_ram[0x32]);
     }
     g_snes->inNmi = true;
     I_NMI(&g_cpu);
     cpu_trace_px_breadcrumb(&g_cpu, 0x2001, "after_I_NMI");
-    if (s_diag_frames < 5) {
+    if (mmx_rtl_diag_enabled() && s_diag_frames < 5) {
       fprintf(stderr, "  [post-NMI] slot0 state=$%02X cd=$%02X pc=$%02X%02X\n",
               g_ram[0x30], g_ram[0x31], g_ram[0x33], g_ram[0x32]);
       s_diag_frames++;
@@ -429,4 +472,3 @@ void MmxRunOneFrameOfGame(void) {
   cpu_trace_px_breadcrumb(&g_cpu, 0x2003, "after_Internal");
   g_first_frame_done = true;
 }
-
