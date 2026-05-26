@@ -64,6 +64,10 @@ hw_trace.log
 *.bmp
 *.png
 
+# Curated triage evidence referenced by ISSUES.md — tracked despite *.png above.
+!issue-screenshots/
+!issue-screenshots/*.png
+
 # Per-session debugging / triage scratch (any underscore-prefixed file
 # at the repo root is treated as scratch and not committed).
 _*
