@@ -1,6 +1,20 @@
 # Issues — MegamanXRecomp
 
-> **OPEN:** one rendering issue — sprite-bandwidth garbling (below).
+> **OPEN:** one rendering issue — a BRIEF sprite/OBJ-layer + HUD dropout
+> under heavy sprite load (X, the fish, and the HUD vanish for a moment
+> after a fish explosion, then re-appear). Transient, self-recovering;
+> the digger-area artifacting is the same class. See "Open" below.
+>
+> **RESOLVED (2026-05-26) on branch `feat/cpu-s-stack-model`:** the
+> heavy-load **scheduler softlock / black-screen** that this issue used
+> to manifest as. Root cause was the snesrecomp Option-1 `cpu->S`
+> return-frame model leaking the stack pointer down into zero page,
+> corrupting the DMA queue tail and spinning the `82C8→B9F3→$BA48`
+> walker. Three coordinated fixes landed it (see "Resolution progress
+> (Option-1)" below). The build now boots fully and recovers from heavy
+> load instead of freezing — the residual is only the transient dropout
+> above. Lives on `feat/cpu-s-stack-model` (both repos); `main` is still
+> the pre-Option-1 v0.1.1 baseline.
 >
 > **RESOLVED (2026-05-26), retained for regression:** two freezes
 > (Chill Penguin kill, Dr Light capsule). Neither reproduces against the
@@ -15,16 +29,59 @@
 
 ### Sprite / OBJ-layer dropout + tile artifacting under heavy sprite load (filed 2026-05-26)
 
-**Status: OPEN.** Reproduced. Now understood as a **scheduler softlock**,
-NOT a pure render bug: the foreground wedges at `YieldOneFrame_M0X0`, the
-per-frame OAM build stops, and NMI keeps DMA-copying the frozen OAM buffer —
-so sprites + HUD stay gone while the frame counter still advances. The
-Y=0xE0 OAM contents are a downstream symptom. **Root-cause CLASS identified:**
-stack-balance leaks in the JSR/JSL ↔ RTS/RTL + PEI-trampoline + indirect-
-dispatch family (same systemic divergence as the resolved Dr Light freeze);
-the complete fix is the snesrecomp `cpu->S` JSR/JSL model rewrite
-(`IMPROVEMENTS.md` Option 1). See "Deeper finding" + "Root-cause CLASS" below
-— supersedes the initial render/OAM-overflow framing.
+**Status: OPEN (much reduced) on `feat/cpu-s-stack-model`.** The
+heavy-load **scheduler softlock / black-screen is RESOLVED** — the build
+boots fully and the game RECOVERS from heavy load (X dies/respawns, no
+freeze). What remains is a **brief, self-recovering sprite/OBJ-layer +
+HUD dropout**: after destroying a fish and it exploding, X + the fish +
+the HUD vanish for a moment, then re-appear (the HUD even partially
+re-appears while X is inside a fish). This is the milder original
+"artifacting/dropout" variant — same class as the armored-armadillo
+digger area. Repro is unchanged (the `_fastfire.ps1 -loadslot 1` recipe
+below). See "Resolution progress (Option-1)" immediately below for what
+was fixed and what remains.
+
+#### Resolution progress (Option-1 cpu->S model) — 2026-05-26
+
+Root cause of the softlock/blackout: snesrecomp Option-1 models JSR/JSL
+return frames on `cpu->S`. Three places leaked `cpu->S`; each leak
+accumulated until S drifted into zero page, where a stack push / the
+`D56F` subtree's D-relative writes (D=$0098) landed on the DMA queue tail
+`$00A5/A6` (= a code-address-looking value like `$D665`), so the NMI
+walker `82C8 → JMP $B9F3 → $BA48` (the same `BCS`-self trap as the Dr
+Light freeze) spun on an unwalkable tail → watchdog → softlock/blackout.
+
+Three coordinated fixes (all on `feat/cpu-s-stack-model`):
+
+1. **Interrupt-frame ABI** — `cpu_push_interrupt_frame()` (snesrecomp
+   `runner/src/cpu_state.h`), called before `I_NMI`/`I_IRQ` in MMX
+   `src/mmx_rtl.c`. Models the hardware interrupt-entry push so the
+   handler's `RTI` pop balances. Without it `cpu->S` drifted to page 2.
+2. **Cooperative-yield frame pops** — the yield HLEs
+   (`HleMmxYieldOneFrame`/`NFrames`/`Vblank` in MMX `src/gen_stubs.c`)
+   now pop the 2-byte Option-1 JSR return frame (`cpu->S += 2`) that the
+   coroutine RESUME's RTS pops on hardware. Fixed the **boot wedge**
+   (`cpu->S` was leaking 2B/yield into zero page during boot).
+3. **Dispatch miss-restore** *(the heavy-load fix)* —
+   `cpu_dispatch_pc_from`'s lookup-miss path restored `cpu->S = _entry_s`
+   (bare), but the RTS/RTL had already popped its return frame, so this
+   **under-popped by `frame_size`**, leaking the caller's frame on EVERY
+   miss. An `host_return_valid=0` callee dispatches on every RTS; under
+   heavy load the boundary `dispatch_log` showed **205 misses/burst**
+   (vs 3 at boot) in the `D56F/D5DF/9A6A/9976/9E68` enqueue subtree →
+   2B/frame `cpu->S` drift → the softlock. Fix: `_emit_return` now passes
+   `_entry_s + frame_size` (codegen.py) so a miss restores the
+   post-return-pop S. This is what reduced the softlock/blackout to the
+   transient dropout.
+
+**Remaining (this OPEN issue):** the brief OBJ-layer + HUD dropout after
+a fish explosion. cpu->S no longer net-drifts to zero page, so it is no
+longer the walker-spin softlock. Likely a narrower per-frame OAM/DMA
+throughput or a smaller transient stack/state perturbation under the
+explosion's heavy load — to be pinned next (the `s0drift` diagnostic in
+`mmx_rtl.c`, gated on `MMX_RTL_DIAG`, shows `cpu->S` now oscillates and
+recovers rather than monotonically drifting). The historical
+softlock-era analysis below is retained for context.
 
 #### Summary (TL;DR)
 

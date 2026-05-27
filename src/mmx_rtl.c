@@ -210,6 +210,29 @@ void mmx_host_yield(uint8_t countdown) {
   g_ram[(0x31 + x) & 0xFFFF] = countdown;
   g_slot_yield_cd[slot_idx] = countdown;
   mmx_save_cpu(&g_slot_saved_state[slot_idx], &g_cpu);
+#if SNESRECOMP_TRACE
+  /* DIAG: track slot-0 yield-time cpu->S across frames. A persistent
+   * downward drift = a per-frame stack leak in slot-0's foreground run
+   * (the in-stage heavy-load softlock root). Freeze the boundary ring at
+   * the first CLEAN drift onset (S still high in page 1) so the leaking
+   * frame's complete events are captured for offline analysis. */
+  if (slot_idx == 0 && mmx_rtl_diag_enabled()) {
+    static uint16_t s_prev_s0 = 0; static int s_prev_frame = -1;
+    if (s_prev_frame >= 0 && g_cpu.S != s_prev_s0) {
+      int dd = (int)g_cpu.S - (int)s_prev_s0;
+      fprintf(stderr, "[s0drift] frame=%d S=$%04X prevS=$%04X d=%+d\n",
+              snes_frame_counter, g_cpu.S, s_prev_s0, dd);
+      fflush(stderr);
+      if (dd < 0 && g_cpu.S > 0x0150 && !g_boundary_frozen) {
+        g_boundary_frozen = 1;
+        fprintf(stderr, "[s0drift] froze boundary ring at clean drift onset (frame %d)\n",
+                snes_frame_counter);
+        fflush(stderr);
+      }
+    }
+    s_prev_s0 = g_cpu.S; s_prev_frame = snes_frame_counter;
+  }
+#endif
   SwitchToFiber(g_scheduler_fiber);
   /* Resume: restore the full CpuState for this slot. */
   mmx_restore_cpu(&g_cpu, &g_slot_saved_state[slot_idx]);
