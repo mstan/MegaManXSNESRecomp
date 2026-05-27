@@ -48,9 +48,47 @@ scrolls) while the game-logic foreground is frozen. Chain:
 symptom) Chill Penguin softlock, and the (resolved-as-symptom) Dr Light
 freeze are all the same `cpu->S`-vs-host-C-stack divergence in this subtree.
 **Fix:** snesrecomp `IMPROVEMENTS.md` **Option 1** — model JSR/JSL return
-frames on `cpu->S`, RTS/RTL as pop-and-dispatch (in progress on branch
-`feat/cpu-s-stack-model`). Point patches per site are stubs and were
-disproven by Dr Light's `force_variant_at` experiment.
+frames on `cpu->S`, RTS/RTL as pop-and-dispatch (attempted on branch
+`feat/cpu-s-stack-model` — see "Fix attempt #1" below). Point patches per site
+are stubs and were disproven by Dr Light's `force_variant_at` experiment.
+
+#### Fix attempt #1 — Option-1 cpu->S model (2026-05-26) — NOT landed, parked on branch
+
+Implemented the full Option-1 `cpu->S` JSR/JSL return-frame ABI (+ ChatGPT's
+`host_return_valid` refinement) on snesrecomp branch `feat/cpu-s-stack-model`.
+**Full implementation detail + the staged diagnosis is in snesrecomp
+`IMPROVEMENTS.md` on that branch** (committed). Outcome:
+
+- **Compiles + runs**, but **regresses boot**: wedges by ~frame 448–456 in the
+  NMI DMA-queue walker `bank_00_82C8` (watchdog trips every frame → black
+  screen). Multi-layer, not a clean fix.
+- **Layers fixed:** (1) `cpu->S` page-2 drift; (2) interrupt-frame ABI — `RTI`
+  pops the native/emu frame the NMI/IRQ entry pushes, AND `mmx_rtl.c` enforces
+  the cpu->S-balanced invariant around `I_NMI`/`I_IRQ` (save S before, restore
+  after). After these, `cpu->S` stays in page 1 (`$01ff`).
+- **Still broken:** the DMA-queue tail `$00A5/A6` is corrupted to `$B30E` — a
+  code-address-looking value (stray return-frame write), which `82C8` can't
+  walk → spin. NOT from cpu->S drift (S is page 1 now), so a *different*
+  Option-1 stack-correctness failure mode writes the bad value there. The
+  `$00A5` writer was not pinned (the armed WRAM-watch produced no hit in the
+  captured stderr; next session should `wram_writes_at 0xa5` with `trace_wram`
+  armed on `$00A5`).
+- **Remaining failure modes (boundary-ring per-function S-deltas):** IRQ chain
+  (`I_IRQ`/`IrqHandler` −14, `84C3` +13 — path-dependent: early-exit vs full
+  handler); NMI DMA-processing chain's cross-function stack protocol
+  (`83D9` dispatcher `JMP ($83EB,X)` → `83F1` / `8428`, where `8428` ends in
+  `BRA $83FC` back into `83F1`'s shared tail → `81E3`/`82C8`).
+- **How to resume (for whoever picks this up):** `git checkout
+  feat/cpu-s-stack-model` in snesrecomp; read `IMPROVEMENTS.md`. The
+  empirical loop is regen (~7min) → build Oracle (~5min) → boot → boundary-ring
+  S-delta (socket script: pair entry/exit by `entry_seq`, flag non-`+2`/`+3`).
+  Find the `$00A5=$B30E` writer first — that's the actual wedge cause now that
+  cpu->S no longer drifts.
+
+**Safe state (2026-05-26):** snesrecomp reverted to `main`, MMX `src/mmx_rtl.c`
+reverted, `src/gen` regenerated from `main`, Oracle rebuilt. Working game =
+Production v0.1.1 (boss-freeze fix; untouched throughout). Option-1 lives only
+on `feat/cpu-s-stack-model`.
 
 #### Symptom
 
