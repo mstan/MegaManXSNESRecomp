@@ -392,6 +392,10 @@ void MmxDrawPpuFrame(void) {
       // and clears the flag; assert it here so the handler takes the
       // timer-IRQ path instead of exiting immediately.
       g_snes->inIrq = true;
+      /* Option-1 cpu->S ABI: model the hardware IRQ-entry push so the
+       * handler's RTI has a frame to pop (paired with cpu_state.h's RTI
+       * pop). Without it cpu->S drifts on every interrupt. */
+      cpu_push_interrupt_frame(&g_cpu);
       I_IRQ(&g_cpu);
       trigger = g_snes->vIrqEnabled ? g_snes->vTimer + 1 : -1;
     }
@@ -453,6 +457,10 @@ void MmxRunOneFrameOfGame(void) {
               g_ram[0x30], g_ram[0x31], g_ram[0x33], g_ram[0x32]);
     }
     g_snes->inNmi = true;
+    /* Option-1 cpu->S ABI: model the hardware NMI-entry push so the
+     * handler's RTI has a frame to pop (paired with cpu_state.h's RTI
+     * pop). Without it cpu->S drifts on every interrupt. */
+    cpu_push_interrupt_frame(&g_cpu);
     I_NMI(&g_cpu);
     cpu_trace_px_breadcrumb(&g_cpu, 0x2001, "after_I_NMI");
     if (mmx_rtl_diag_enabled() && s_diag_frames < 5) {

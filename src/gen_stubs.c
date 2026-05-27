@@ -51,7 +51,20 @@ RecompReturn HleMmxYieldOneFrame(CpuState *cpu) {
   }
   mmx_host_yield(1);
   /* On resume (next dispatch), fall through and return normally —
-   * the caller (asm's JSR $8100) continues at the post-JSR site. */
+   * the caller (asm's JSR $8100) continues at the post-JSR site.
+   *
+   * Option-1 cpu->S ABI: the JSR $8100 site pushed a 2-byte return
+   * frame onto cpu->S. On hardware the coroutine RESUME pops it via
+   * its RTS (REP #$30 ; TCS ; PLP ; PLY ; PLX ; RTS). This fiber HLE
+   * collapses yield+resume into a single C return, so it must pop that
+   * frame here to model the resume RTS. Without it cpu->S leaks 2
+   * bytes per yield, the leak is persisted across frames by the
+   * per-slot CpuState save (mmx_save_cpu saves cpu->S), and cpu->S
+   * drifts down into zero page — eventually a JSR push lands on the
+   * DMA queue tail ($00A5/A6), wedging the 82C8 -> B9F3 -> BA48
+   * walker. (Always exactly one frame, whether $8100 was JSR'd
+   * directly or tail-reached with an inherited caller frame.) */
+  cpu->S = (uint16)(cpu->S + 2);
   return RECOMP_RETURN_NORMAL;
 }
 
@@ -60,6 +73,9 @@ RecompReturn HleMmxYieldNFrames(CpuState *cpu) {
   uint8_t n = (uint8_t)(cpu->A & 0xFF);
   if (n == 0) n = 1;
   mmx_host_yield(n);
+  /* Option-1 cpu->S ABI: pop the JSR return frame (see
+   * HleMmxYieldOneFrame for the full rationale). */
+  cpu->S = (uint16)(cpu->S + 2);
   return RECOMP_RETURN_NORMAL;
 }
 
@@ -68,12 +84,17 @@ RecompReturn HleMmxYieldVblank(CpuState *cpu) {
    * without yielding when $0B9D bit 7 is clear; otherwise yields with
    * cd=1, just like $8100. Caller's PHX/PHY/PHP/PHB at the JSR site
    * (e.g. Task_B25B at $B2CC-$B2CF) is popped by the caller's own
-   * post-JSR PLB/PLP/PLY/PLX — we don't touch the emulated stack. */
-  (void)cpu;
+   * post-JSR PLB/PLP/PLY/PLX — those caller-saved regs are separate
+   * from the JSR return frame handled below.
+   *
+   * Option-1 cpu->S ABI: BOTH paths consume one JSR return frame — the
+   * RTS path directly, the yield path via the resume RTS — so pop the
+   * 2-byte frame here (see HleMmxYieldOneFrame for full rationale). */
   uint8_t v = g_ram[0x0B9D];
   if (v & 0x80) {
     mmx_host_yield(1);
   }
+  cpu->S = (uint16)(cpu->S + 2);
   return RECOMP_RETURN_NORMAL;
 }
 
