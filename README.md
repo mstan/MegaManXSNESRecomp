@@ -19,26 +19,27 @@ similar projects: recompile the CPU, emulate the silicon.
 The ROM is **never** redistributed — you supply your own legally-dumped
 copy.
 
-## Current status: 0.1.0 — playable, with frequent lockups and visual bugs
+## Current status: 1.0.0 — fully playable
 
-Hand-verified end-to-end through:
+Hand-verified playable end-to-end. The Option-1 `cpu->S` return-frame
+model (snesrecomp `926d61e`) resolved the heavy-load softlocks and
+fiber-scheduler lockups that capped the 0.1.x line — the game now
+recovers from heavy sprite/OAM load instead of stalling.
 
 - Boot → Capcom logo → attract intro (X on the Highway stage, Zero on
-  the motorcycle) → title screen.
-- Attract demo plays back through multiple scene transitions.
+  the motorcycle) → title screen → gameplay.
 
-**Known issues at this release**
+**Known issues at this release (minor, non-blocking):**
 
-- **Frequent lockups.** Various points in the game stall the C-host
-  fiber scheduler. Save state often.
-- **Visible visual bugs.** Sprite-mode timing, HDMA windowing, and
-  BG layer priority all have rough edges in places.
+- Brief, self-recovering sprite/HUD dropout immediately after a fish
+  explosion (a transient heavy-OAM collapse that recovers on its own).
+  See `ISSUES.md`.
+- Isolated rough edges in sprite-mode timing / HDMA windowing / BG
+  layer priority in a few spots.
 
-This is `0.1.0` — the first release that gets past the boot fade-wait
-and into rendered content. Active development; expect:
-
-- Some branches don't build; only `main` is guaranteed to build.
-- APIs and recompiler output change without notice.
+This is `1.0.0` — the first fully-playable release. It remains a
+recompilation project under active development; recompiler output and
+internal APIs may change between versions.
 
 If you hit a reproducible lockup or visual regression, please open an
 issue with a savestate (`Shift+F1`) and the frame at which it

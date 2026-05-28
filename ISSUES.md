@@ -27,6 +27,28 @@
 
 ## Open
 
+### Health-capsule consume softlock — fill-health routine never terminates (filed 2026-05-27)
+
+**Status: RESOLVED 2026-05-28 — could not reproduce.** Re-tested on a
+fresh boot of the v1.0.0 Production build: the fill-health routine
+terminates normally. The original report was a stale-savestate artifact
+(MMX repro requires a full relaunch from boot, never a loadstate — F1
+loads desync). Originally observed on the `main` build (`c95930a`,
+Option-1 + OAM-wipe fix). Picking up / consuming
+a **health (life-energy) capsule** softlocks the game: the "refill health"
+routine runs **forever** — the per-tick health-fill loop never stops, the
+capsule never empties/decrements, so the game is stuck in the fill
+animation indefinitely. Classic non-terminating-loop softlock.
+
+Likely a loop whose exit condition (capsule amount reaches 0, or health
+reaches max) never trips — i.e. the decrement/compare that should end the
+fill isn't happening (a counter that doesn't change, or a compare reading
+the wrong byte). Could be Option-1-related (a mis-pop perturbing the
+loop's counter/flag) or an independent decoder/loop bug — **undiagnosed**.
+NOT yet reproduced under instrumentation. To do next time: catch the
+spinning loop's PC via the boundary/block ring, find the health-fill
+counter var and why its terminating compare never fires.
+
 ### Sprite / OBJ-layer dropout + tile artifacting under heavy sprite load (filed 2026-05-26)
 
 **Status: OPEN (much reduced) on `feat/cpu-s-stack-model`.** The
