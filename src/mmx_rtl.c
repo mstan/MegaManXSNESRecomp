@@ -557,4 +557,9 @@ void MmxRunOneFrameOfGame(void) {
   MmxSchedulerTick();
   cpu_trace_px_breadcrumb(&g_cpu, 0x2003, "after_Internal");
   g_first_frame_done = true;
+  /* Per-frame stage-load tracer snapshot (diagnostics; no-op in Production). */
+  {
+    extern void debug_server_loadin_tick(void);
+    debug_server_loadin_tick();
+  }
 }

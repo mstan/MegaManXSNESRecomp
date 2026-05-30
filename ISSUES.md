@@ -87,6 +87,102 @@ glue-level (`src/mmx_rtl.c` `MmxRunOneFrameOfGame` runs `I_NMI` →
 `MmxSchedulerTick` → `MmxDrawPpuFrame`; brightness takes effect the same
 frame, DMA-queue content one NMI later).
 
+#### CORRECTION (2026-05-30, cont.) — it is NOT a fade-timing bug
+
+A precise same-epoch capture (per-frame `inidisp` curve + VRAM write
+frames + dense screenshots) revised the above:
+
+- `inidisp` is **`0x0f` (full brightness) for the ENTIRE highway-load
+  window** (e.g. frames 1013–1183). There is **no sustained forced-blank
+  and no brightness fade** around the highway load. The "black" early
+  frames are full-brightness rendering of **empty/unloaded VRAM+CGRAM**,
+  not a blank. (The per-NMI `LDA #$80; STA $2100` at gen `mmx_00_v2.c`
+  ~L3851 force-blanks only for the duration of the NMI's own DMA each
+  frame, then restores brightness from the game's value — invisible to
+  the once-per-frame FrameRecord sample. Standard, not the bug.)
+- So the earlier "reveal runs ahead of the load" framing is **wrong** —
+  there is no reveal/fade to hold. The screen is displayed throughout
+  while the background tiles upload into it.
+- The real shape: the **foreground** highway-structure tiles
+  (`0x3000–0x6000`) upload at ~f1034, but the **distant cityscape** tiles
+  (`~0x7000–0x9000`) don't finish until ~f1140 — **~106 frames later** —
+  and `vScroll` pans 0→256 at ~f1057 (the opening camera move). The user
+  sees the background fill in over those ~106 frames.
+
+**Open question this raises:** is the ~106-frame background-load lag a
+recomp-specific scheduler/cadence divergence (background-upload task runs
+much later than on hardware), or is it close to authentic (the opening
+camera pan legitimately streams the far BG in) and merely more visible
+here? **This cannot be answered without a hardware/snes9x reference** for
+the same from-boot sequence — distinguishing "recomp bug" from "authentic
+but ugly" is exactly what the oracle is for (legitimate from-boot use,
+unlike the save-state repros it's disabled for). Deferred pending that
+decision; a speculative scheduler change must not ship into the playable
+build without knowing the target behavior.
+
+#### Per-frame tracer findings (2026-05-30, cont.) — `loadin_get`
+
+Added an always-on per-frame stage-load tracer (`debug_server.c`:
+`debug_server_loadin_tick` + `loadin_get` cmd; BG-write counters in the
+VRAM hook, lo=`0x2000-6FFF` foreground / hi=`0x7000-BFFF` cityscape;
+ticked from `MmxRunOneFrameOfGame`). It spans the whole load with no
+truncation (the generic rings could not). One run (highway at f1023):
+
+| frames | inidisp | activity |
+|---|---|---|
+| f704 | `0x80` BLANK | bg_hi 2048 (only blanked upload frame) |
+| f783–789 | `0x0f` on | bg_lo 512; bg_hi 8192×3 (~24 KB cityscape bulk) |
+| f881 | `0x0f` on | **bg_lo 18944 (~foreground bulk)** |
+| f898 | `0x0f` on | bg_hi 8192 |
+| f904–918 | `0x0f` on | vScroll 0→256 (camera pan); bg_hi 288/frame stream |
+| f984–994 | `0x0f` on | bg_hi 1024/frame stream |
+
+So the game blanks briefly (f704) then **lifts the blank (~f783) well
+before the bulk fg/bg uploads (f783–898) complete**, and then streams
+more background as the camera pans (vScroll→256 at f904). All of f783+ is
+at full brightness → the populate is visible. `$0100/$0101` read 0x00
+throughout (highway intro is GameMode 0; the **vScroll** is the live
+signal, not those bytes).
+
+#### ROOT CAUSE pinned (2026-05-30, cont.) — fade-in completes before the content uploads
+
+Found the brightness/fade shadow and the fade routines via the WRAM-write
+ring (`trace_wram 0xB3` + `wram_writes_at 0xB3`), correlated with the
+`loadin_get` upload trace in ONE coherent run (highway at f1030):
+
+- **`$00B3` = the fade/brightness shadow** (live fade level; `0x80` =
+  forced blank, `0x00..0x0f` = brightness). The NMI writes it to `$2100`
+  each frame; `$00:A05B` does `LDA #$80; STA $00B3; STA $2100`.
+- **`bank_00_8973` = fade-IN** (steps `$00B3` `0x02→0x0f`);
+  **`bank_00_8995` = fade-OUT** (steps `0x0f→0x00`).
+- Timeline: intro scene fades … → **highway fade-IN completes at f740**
+  (`$00B3 = 0x0f`) → **`$00B3` is NEVER written again through f1030.**
+- The highway **content uploads at f792–1004** — cityscape bulk
+  (8192×3 @ f792–798), **foreground bulk 18944 @ f890**, then camera-pan
+  streaming (288–1024/frame at vScroll=256, f913–1004) — ALL at
+  `inidisp = 0x0f`.
+
+**So:** the screen reaches full brightness at **f740**, then the stage
+content uploads over the next **~52–264 frames while fully displayed**.
+The game **never re-blanks for the highway stage-load** in the recomp —
+it rides the intro's fade-in and builds the stage on a lit screen. On
+hardware the content is present when the stage appears (user's YouTube
+ref shows a complete BG at READY), so the recomp either (a) is missing a
+re-blank the game intends for the stage-load, or (b) reveals ~260 frames
+too early relative to its (scheduler-paced) upload.
+
+**Fix options (next):**
+1. *Glue, low-risk, reversible:* hold the rendered screen blank during
+   the stage-content upload — now a well-defined window (bulk BG writes
+   resuming AFTER an intro fade-in, settling when BG writes quiesce).
+   Approximates hardware's "content present when shown"; judge by eye.
+2. *True fix (deeper RE):* find why the highway stage-init doesn't
+   re-blank `$00B3` (control-flow / scheduler-cadence divergence vs
+   hardware) and restore it. Higher effort, touches the playable build.
+
+(Per-frame `loadin_get` tracer + `$00B3` semantics are the tools; both
+kept. Tracer is always-on.)
+
 #### Ruled out
 
 - **DMA throughput / per-DMA rate limit.** Not the cause: `$420B`
