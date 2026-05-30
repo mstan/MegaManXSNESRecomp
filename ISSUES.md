@@ -27,6 +27,213 @@
 
 ## Open
 
+### Scene-transition reveal desynced from BG load — highway BG "loads in late" + boss-select fade off (filed 2026-05-30)
+
+**Status: OPEN — root cause identified at the class level; exact gating
+site + fix pending.** Investigated on the `mmx-highway-loadin` worktree
+(Oracle build off v1.0.0 baseline snesrecomp `926d61e`; debug server
+port 4379). **User-confirmed: this is ONE root cause behind TWO reported
+symptoms** — the highway-intro BG "loads in slow/late" AND the
+stage-end → boss-select "black screen longer than normal + fade-in a
+bit off." Both are scene transitions where the screen **reveal (INIDISP
+brightness ramp) is decoupled from DMA-load completion**.
+
+#### Symptom
+
+- **Highway intro:** entering the opening Highway stage, the distant
+  **background** (cityscape / dark cloud tiles) visibly fills in over
+  ~1 s *after* the scene is already on screen at full brightness — black
+  unloaded tile chunks in the sky that resolve late. The green highway
+  *structure* (nearer layer) is fine; it's the far BG that lags. "In the
+  normal game it just loads immediately." Matches the user's screenshot.
+- **Boss-select:** the black screen between a finished stage and the
+  boss-select grid lasts longer than normal and the fade-in is off.
+  (Not yet captured under instrumentation — reachable only by clearing a
+  stage; deferred. Same mechanism, manifesting in the other direction —
+  the reveal/black timing not tracking the load.)
+
+#### Evidence (same-epoch, `snes_frame_counter`; one clean run)
+
+Title → GAME START → black stage-load transition (`~f1033`) → BG uploads
+in stages via the **NMI VRAM-DMA-queue walker** `bank_00_82C8`
+(stack `I_NMI → NmiHandler → 83D9 → 83F1 → 82C8`):
+
+| VRAM byte region | role | uploaded at frame |
+|---|---|---|
+| `0x3000–0x6000` | highway-structure char (BG1) | **1030** (one frame, bulk) |
+| `0xA000–0xB000` | tilemaps | **1060–1067** |
+| `0x8000` | distant cityscape detail | **1136** |
+
+Per-frame `inidisp` ring (always-on FrameRecord): screen reaches **full
+brightness (`0x0f`) by ~f1085** — i.e. the reveal completes ~50 frames
+BEFORE the cityscape detail finishes uploading (f1136), and the scene is
+shown bright with the far BG still streaming in. Dense frame-stamped
+screenshots confirm: `f903` = title screen, `f1033` = black transition,
+`f1138` = highway with the far BG still showing dark unloaded chunks;
+a few seconds later the sky is clean. So the chunks are transient
+unloaded tiles, not art.
+
+#### Root cause (class)
+
+A **transition-cadence divergence** between the recomp's NMI / cooperative-
+scheduler frame model and hardware. The game's stage-init sequences
+"load near layer → reveal → load far layer" across frames; on hardware
+the far-BG load lands before/under the reveal (forced-blank), so it's
+never seen. In the recomp the reveal (INIDISP ramp, applied immediately
+when the main loop writes it) runs *ahead* of the far-BG load task, so
+the bright scene is rendered before that DMA batch is queued/flushed.
+This is the same *class* as the Option-1 / scheduler-timing work, and is
+glue-level (`src/mmx_rtl.c` `MmxRunOneFrameOfGame` runs `I_NMI` →
+`MmxSchedulerTick` → `MmxDrawPpuFrame`; brightness takes effect the same
+frame, DMA-queue content one NMI later).
+
+#### Ruled out
+
+- **DMA throughput / per-DMA rate limit.** Not the cause: `$420B`
+  (MDMAEN) does the *entire* transfer synchronously inline
+  (`snes.c` `while (dma_cycle(...)) {}`). Each upload batch lands in a
+  single frame; there is no per-frame byte budget to "speed up."
+- **A missing/dropped forced-blank during the load.** The black
+  transition IS a real blank and the near layer DOES upload under it; the
+  defect is specifically the *reveal un-syncing from the far-BG load*,
+  not an absent blank.
+- **"Accelerate the load to beat the fade" as the fix.** Rejected
+  (user-aligned): the staggering is the game's own stage-init pacing
+  (decompress/queue in steps), which spans real frames on hardware too —
+  forcing it faster means reaching into the game's load state machine,
+  risking desync of the playable build, and is inauthentic. The
+  authentic fix is to hold the reveal until the load is in.
+
+#### Next steps
+
+1. Pin the **exact gating**: what advances the INIDISP brightness ramp
+   vs. what schedules the far-BG (cityscape) DMA batch — find why the
+   recomp runs the reveal ~50 frames ahead of that batch (boundary-ring /
+   per-frame task trace across `f1030–1140`).
+2. Implement the **"true" fix** glue-side in `mmx_rtl.c`: hold the
+   reveal/fade until the stage-load DMA queue is drained (or correct the
+   transition cadence) — visual-timing only, do NOT touch game logic.
+3. **Decisive reference (set aside):** a from-boot snes9x-oracle compare
+   of reveal-vs-load timing would confirm hardware behavior; the oracle
+   is disabled in `mmx.ini` and from-boot input determinism is a risk
+   (see [No oracle when save-state repro] note) — but a from-boot
+   highway run is the legitimate case if pursued.
+4. Re-verify boss-select with the same fix (expected to resolve both).
+5. **Guard:** confirm MMX stays fully playable + no SMW/ALttP regression
+   class after any scheduler/NMI-cadence change.
+
+Diagnostic env + helpers (`_dbg/_shot/_timeline.ps1`, the always-on
+`trace_vram` + FrameRecord rings, `last_vram_write_to`) documented in
+the per-user memory `project_mmx_worktree_diag_env`.
+
+### Music-rate ticking + occasional off-tune audio — dual-producer APU sample drop (filed 2026-05-30)
+
+**Status: FIXED 2026-05-30 (ear-verified by user) — framework-side ring
+buffer.** User report: a subtle **ticking sound in the music** plus
+**occasional** (~5%) **notes that sound off** (not a constant pitch
+error — a single note occasionally wrong), audible on the Highway after
+the music starts. User flagged this as the same *class* as a fixed
+PokemonStadiumRecomp bug ("the ticks ended up being some type of
+truncation"). Confirmed: same class. After the fix the user reports the
+"off-packet squelches" are gone.
+
+#### Cross-reference (the analog)
+
+`F:\Projects\n64recomp\PokemonStadiumRecomp` ISSUES.md "Music-rate
+periodic tick — FIXED 2026-05-28": an N64 `AI_LEN_REG` that read 0
+killed the game's audio-pacing feedback loop → audio **over-production**
+→ a host sample-**decimation** valve dropped samples mid-waveform →
+~4 clicks/s. Lesson: a producer/consumer imbalance in the audio path,
+resolved by a sample **drop/truncation**, surfaces as a periodic click.
+
+#### Root cause (MMX, code-confirmed)
+
+The DSP output sample buffer is **fixed at 534 samples** and **silently
+drops** anything beyond it:
+
+```c
+// runner/src/snes/dsp.c  (dsp_cycle)
+if (dsp->sampleOffset < 534) {            // <-- HARD CAP
+  dsp->sampleBuffer[sampleOffset*2]   = totalL;
+  dsp->sampleBuffer[sampleOffset*2+1] = totalR;
+  dsp->sampleOffset++;                    // samples past 534 are DISCARDED
+}
+```
+
+That buffer has **two concurrent producers** (serialized by `RtlApuLock`):
+
+1. **Audio thread** — `RtlRenderAudio` (`common_rtl.c`) cycles the APU
+   `while (sampleOffset < 534)` then `dsp_getSamples` copies 534 and
+   resets `sampleOffset = 0`. One drain per SDL audio callback.
+2. **CPU thread** — `snes_catchupApu` (`snes.c`) loops `apu_cycle` on
+   every APU-port touch (`RtlApuWrite`/`snes_readBBus`), to keep the
+   SPC700 advanced for `$2140-$2143` port timing. `apu_cycle` runs
+   `dsp_cycle` every 32 cycles → it **also produces output samples** into
+   the same buffer.
+
+When the game drives heavy APU-port traffic (feeding the music
+sequencer / SFX), the CPU-thread catchup fills `sampleBuffer` to 534
+**between** audio callbacks; further produced samples hit the cap and are
+**dropped**. Each dropped run = a gap in the waveform = a **tick**; the
+lost-sample timing jitter also shifts note phase → **occasional
+off-tune**. Tick rate scales with port traffic, so it's more audible in
+busy music — matching "subtly in the music," "hear it on highway." The
+`if (sampleOffset < 534)` guard is the "truncation" the user recalled.
+
+#### Ruled out
+
+- **Output resampling / `g_frames_per_block` truncation.**
+  `main.c` opens SDL with `allowed_changes = 0`, so `have.freq == 32000`
+  (SDL resamples to the device internally). Then
+  `g_frames_per_block = 534*32000/32000 = 534` and `dsp_getSamples`'
+  `adder = 534/534 = 1.0` → an exact 1:1 copy, no per-block phase reset
+  error. So the integer-truncation-on-non-32000-rate path is NOT the
+  cause at the shipped config. (Secondary watch item: if a host is ever
+  forced to a non-clean rate, `dsp_getSamples` is point/nearest-neighbor
+  with a per-block `location = 0.0` reset — verify `have.freq` if
+  symptoms change.)
+- **ADPCM predictor / voice reuse.** (The PokemonStadium twin ruled this
+  out via `adpcm_decode_recent`; the MMX path is the snes9x DSP and the
+  defect is the buffer cap, upstream of decode.)
+
+#### Fix (landed in `snesrecomp/runner/src` — framework-side)
+
+Replaced the fixed 534-sample buffer with a power-of-two **ring** so the
+CPU-thread catch-up can write ahead without dropping; the audio thread
+consumes the oldest 534 (FIFO, continuous phase) per block. This
+**self-balances**: `RtlRenderAudio` only produces the shortfall the
+catch-up hasn't already supplied (`while (avail < 534)`), so total SPC
+advance stays at the consumption rate and bursty production is *buffered*
+rather than dropped. Eliminates the squelch (no drop) and the occasional
+off-note (no mid-note discontinuity), and smooths the bursty SPC advance
+into a steady output rate.
+
+- `snes/dsp.h`: `sampleBuffer[534*2]` + `uint16 sampleOffset` →
+  `sampleBuffer[DSP_SAMPLE_RING*2]` (`DSP_SAMPLE_RING = 8192`, ~256 ms)
+  + monotonic `uint32 sampleWrite/sampleRead` (mask-indexed, wrap-safe).
+- `snes/dsp.c`: `dsp_cycle` writes to the ring, drops ONLY on true
+  overflow (audio thread stalled — never under normal pacing);
+  `dsp_getSamples` consumes the oldest 534 by absolute read index;
+  `dsp_reset` zeroes both counters.
+- `common_rtl.c` `RtlRenderAudio`: gates on `sampleWrite-sampleRead` ≥ 534
+  instead of `sampleOffset`.
+
+**Verification:** ear-confirmed by user on the Highway — "not hearing the
+off-packet squelches." No crash/regression to boot or gameplay; SPC
+output ports active, frame advancing.
+
+**Watch item:** if catch-up ever sustains over-production the ring fills
+→ added latency, then drops resume (rare). Not observed. A drop /
+high-water counter would make this an objective regression guard
+(deferred).
+
+**Ship path:** this is shared `snesrecomp/runner/src/snes/` runtime — the
+edits currently live (uncommitted) in the `_mmx_snesrecomp` worktree
+(snesrecomp `926d61e`, detached). To ship: commit framework-side (benefits
+SMW/ALttP/all SNES titles), then rebuild MMX Production. Guard the other
+games' audio for no regression. Same "fix belongs in the runtime fork"
+conclusion as the PokemonStadium twin.
+
 ### Health-capsule consume softlock — fill-health routine never terminates (filed 2026-05-27)
 
 **Status: RESOLVED 2026-05-28 — could not reproduce.** Re-tested on a
