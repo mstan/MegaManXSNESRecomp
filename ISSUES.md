@@ -427,10 +427,49 @@ sessions reported "oracle desyncs to garbage." Cause found + fixed:
   `SET_PIXEL_FORMAT` (RGB565/0RGB1555/XRGB8888). Oracle screenshots are
   now correct.
 
-**Next (the real fix) + the trap to avoid:** find the exact wrong-width
-branch in Task0's highway-intro path that puts the fade ahead of the bulk
-load, then fix m/x propagation at that site (recompiler-class). Guard
-SMW/ALttP.
+#### Session-3 cont. — m/x-variant hypothesis DISPROVEN at the milestone calls; it is control-flow sequencing
+
+Boundary-ring capture (8M ring, `freeze_at_frame 1130`, regex-parsed —
+`boundary_get` emits both `"X"` register and `"x"` flag so `ConvertFrom-Json`
+chokes; parse with regex). Recomp milestone ENTRY order, one run:
+
+| frame | fn | variant | note |
+|---|---|---|---|
+| 795 | `8A45` | M1X1 | under-blank partial load |
+| **876** | **`8973`** | M1X1 | **fade-in (reveal)** |
+| 985 | `94E7` | M1X1 | bulk loader (post-fade) |
+| 990 | `991B` | M1X1 | bulk loader (post-fade) |
+| 1083 | `9989` | M1X1 | bulk loader (post-fade) |
+
+**Every milestone runs at the correct M1X1 width.** The earlier
+`M0X1`↔`M1X1` flip seen in the `loadin_slots` *yield* variant was just the
+yield site varying frame-to-frame, NOT a wrong-width dispatch at the
+fade/loaders. So **the "wrong m/x variant / m/x propagation" root cause is
+DISPROVEN at these call sites** — do NOT patch m/x dispatch on that basis.
+
+Call chain of the deferred loader (frozen ring, f1064):
+`Task0 → bank_00_931F → bank_00_94E7 → bank_00_8A45` (the DMA-upload helper),
+**interleaved every frame with the `D56F` object/OAM engine**
+(`91AA→9271→D56F→…→D625→bank_04_9086→Yield`). I.e. by the build-in window
+Task0 is already running the gameplay object engine AND a per-frame BG
+loader (`931F→94E7→8A45`) — all at M1X1.
+
+**Refined open question:** why are the bulk BG uploads (cityscape `bg_hi`
+8192×3 and FG `bg_lo` 18944) issued by this `931F→94E7→8A45` path *after*
+the fade (`8973`) rather than under the preceding blank? It is a control-
+flow / sequencing divergence, NOT a wrong-width decode. Caveat for the next
+pass: part of the post-fade `bg_hi` traffic (the `288–1024/frame` stream at
+`vScroll=256`, f1124+) is the **authentic camera-pan reveal** and must not be
+mistaken for the bug; the bug is specifically the *bulk* `bg_hi 8192×3`
+(~f1004–1009) + `bg_lo 18944` (~f1047/1101) landing on a lit screen.
+
+**Next (the real fix) + traps to avoid:** determine why the `931F→94E7`
+bulk uploads are sequenced after `8973` (not a width bug — all M1X1). Needs
+a clean oracle execution-ORDER reference for `$80:8973` vs `$80:94E7`
+(the 1M oracle insn-ring evicts the stage-init unless reset at the highway
+blank or dumped incrementally — `_oracle_insn2.ps1` does incremental dumps;
+execution is in bank `$80`, not `$00`). Then the smallest fix at the proven
+edge. Guard SMW/ALttP.
 
 - **`find_first_divergence` does NOT work here (trap).** It diffs recomp
   WRAM vs oracle WRAM *at the same input-frame assuming lock-step game
