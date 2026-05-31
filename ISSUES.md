@@ -27,9 +27,33 @@
 
 ## Open
 
-### Scene-transition reveal desynced from BG load — highway BG "loads in late" + boss-select fade off (filed 2026-05-30)
+### Scene-transition reveal desynced from BG load — highway BG "loads in late" + boss-select fade off (filed 2026-05-30) — ✅ FIXED 2026-05-30 (Session-7)
 
-> #### ⭐ DECISIVE UPDATE (2026-05-30, session 3) — NOT a presentation bug; build-in is a recomp m/x divergence, PROVEN against real hardware
+> #### ✅✅ RESOLVED (2026-05-30, Session-7) — highway build-in FIXED + VALIDATED. Root cause = a MISSING cfg task-entry, NOT m/x.
+>
+> **The highway BG build-in is fixed.** Root cause (full proof in
+> `## Session-7` below): the recomp's C-host coop scheduler routes each
+> resumed task slot's handler PC through a hand-written switch
+> (`mmx_rtl.c mmx_dispatch_task_pc`); task entry PCs must be declared in
+> `recomp/bank00.cfg`. The slot-4 **fade-OUT/blank task `$89DB`** (sibling
+> of the already-declared reveal task `$89C9`) was **never declared**, so
+> the recompiler emitted no `Task_89DB` and the dispatcher silently dropped
+> it at `default`. Result: no fade-out → no re-blank → the stage streamed
+> its bulk BG onto a lit screen, then the `$89C9` reveal no-op'd (already
+> lit). **Fix** = add `func Task_89DB 89db` (bank00.cfg) + `case 0x89DB`
+> (mmx_rtl.c) + regen + rebuild. **Validated:** all bulk-BG now uploads
+> under forced-blank (`inidisp=0x80`, LIT=0), highway reveals with the
+> complete cityscape+HUD (no black chunks, matches hardware), ride cutscene
+> plays normally. MMX-only change → SMW/ALttP untouched. **Uncommitted**;
+> Production rebuild + boss-select/heavy-load guards still pending.
+>
+> **CORRECTION of the Session-3 box below:** the "m/x divergence reorders
+> fade ahead of load" hypothesis was **wrong** (width is M1X1 throughout —
+> re-confirmed Sessions 3c–6). The real defect is the dropped `$89DB`
+> scheduler task. Everything from the Session-3 box down is RETAINED for
+> history but superseded by Session-5/6/7.
+
+> #### ⭐ DECISIVE UPDATE (2026-05-30, session 3) — NOT a presentation bug; build-in is a recomp m/x divergence, PROVEN against real hardware [SUPERSEDED — see Session-7; it is NOT m/x]
 >
 > A clean-session re-verification (full investigation in
 > `## Session-3 decisive findings` below) **overturns** the
@@ -62,9 +86,10 @@
 > their "is it authentic / scheduler is faithful" conclusions are
 > **superseded** by the hardware reference above.
 
-**Status: OPEN — root cause class PROVEN (recomp m/x divergence reorders
-fade ahead of bulk BG load; hardware loads-under-blank-then-reveals);
-exact wrong branch + fix pending.** Investigated on the
+**Status: ✅ FIXED 2026-05-30 (Session-7) — dropped scheduler task `$89DB`
+re-declared; validated (bulk BG loads under blank, highway reveals complete).
+Production rebuild + boss-select/heavy-load regression guards pending.** (The
+struck-through "m/x divergence" framing below is SUPERSEDED.) Investigated on the
 `mmx-highway-loadin` worktree (Oracle build off v1.0.0 baseline
 snesrecomp `926d61e`; debug server port 4379). **User-confirmed: this is
 ONE root cause behind TWO reported symptoms** — the highway-intro BG
@@ -547,6 +572,499 @@ display-side, NOT stage-gated. Guard SMW/ALttP.
 - Capture scripts (gitignored `_*`): `_cap_highway.ps1` (recomp filmstrip
   + loadin), `_oracle_nav.ps1` (oracle filmstrip + `$00B3` timeline),
   `_cap_slots.ps1` (loadin_slots window).
+
+#### Session-4 (2026-05-30) — late bulk BG is the gameplay OBJECT ENGINE (`953F`) streaming POST-fade; reframed to a Task0 phase-ordering (engine-entry vs reveal-fade), NOT one enqueue branch
+
+Clean from-cold-boot re-capture on the **current build** (no rebuild;
+`fix/scene-transition-loadin`). Method honored the ring discipline:
+queried always-on rings for the window, did not arm-then-hope.
+
+**`$00A5/$00A6` software DMA queue is the WRONG signal — ruled out.**
+Armed `trace_wram a5 a6` from boot (`_cap_enqueue.ps1`); the tail is
+touched ONLY by the per-frame NMI OAM/scroll DMA (`B787←B668` enqueue,
+walker `82C8` reset) and is **DORMANT f544→f1183** — i.e. across the
+entire highway load window. The bulk BG does **not** flow through it;
+it is direct (synchronous `$420B`) DMA, attributable only via the
+VRAM-write ring. (`$00A5` resumes at f1183 = camera-pan/gameplay start,
+confirming it is the gameplay OAM/scroll queue, not the bulk-BG path.)
+
+**Bug window (this run, loadin ring): bulk-on-LIT (`inidisp 0x0f`) at
+f996/998/1001 (cityscape `bg_hi 8192×3`) + f1093 (FG `bg_lo 18944`) +
+f1110 (cityscape).** Under-blank partial loads preceded each reveal
+(f698–711, f901–912). Two reveal-fades: `8973`@f711, `8973`@f912.
+
+**Boundary ring frozen at the bug onset (`freeze_at_frame`, 8M ring,
+zero eviction — `boundary_idx`=37519 total; `_cap_bnd3.ps1`). Milestone
+ENTRY timeline (regex-parsed; dup `X`/`x` keys):**
+
+| frame | call (depth) | P | m,x |
+|---|---|---|---|
+| 711 | `8973` fade (d1, Task0 direct) | 0x31 | 1,1 |
+| 912 | `8973` fade (d1, Task0 direct) | 0x33 | 1,1 |
+| 995 | `931F`→`94E7`→`8B90`→`8A45` (d3–5) | 0x33 | 1,1 |
+| 997–1000 | `953F`→`9579`→`991B`→`8B90`→`8A45` (d1–4) | 0x31 | 1,1 |
+| 1093 | `953F`→`9989`→`8B90` (d1–4) | 0x33 | 1,1 |
+| 1109–1114 | `8A45`/`8B90` | 0x33 | 1,1 |
+
+**Width is M1X1 EVERYWHERE — re-confirmed NOT a width bug** (every
+milestone m=1,x=1; matches Session-3).
+
+**NEW MECHANISM — the late bulk BG is the per-frame gameplay OBJECT
+ENGINE `953F`, not the intro/stage-init loader.** `953F` is a jump-table
+dispatcher (gen `mmx_00_v2.c:224646`) on the **zero-page global `$00D2`**
+(`D=0x0000` at all entries, confirmed from the boundary `D` field):
+`X = [$7E:00D2]; _idx = X/2`; 6-entry table → case 1 = `9579`(→`991B`,
+cityscape) … `9989` = FG; leaf `8A45` does the `$420B` DMA. During the
+bug window `$00D2`=2 (X=2 → case 1 streamer). **Crucially `953F` does NOT
+run at all before f995** — the gameplay object-engine loop is not entered
+until AFTER the f912 reveal fade. Between f912 and f995 Task0 sits in the
+scripted `B2EB` delay (~83 frames).
+
+**The reframe (supersedes "one fade-vs-load branch"):** the divergence is
+the ORDER of two Task0 phases —
+- **Recomp:** reveal-fade `8973`@f912 → ~83f `B2EB` delay → enter object
+  engine `953F`@f995 (streams bulk cityscape+FG on a LIT screen) = BUG.
+- **Hardware** (Session-3 oracle order proof): engine-subtree loader
+  `9989`@f1120 → fade `8973`@f1147 = BG streamed under blank, then reveal.
+
+So hardware enters/runs the gameplay engine (which streams the bulk BG)
+**before** the reveal fade; the recomp does the reveal fade first and
+enters the engine after. This is a **Task0 phase-ordering / engine-entry
+cadence** divergence, consistent with Session-3's "multi-path enqueue
+cadence" honest status — now concretely identified as *gameplay-engine
+entry happening after the reveal instead of before it.* NOT width, NOT
+`$00A5`, NOT display-side.
+
+**Still NOT a proven single instruction edge (hard rule → no patch).**
+The open question: what in Task0's intro state machine orders the reveal
+fade (`8973`@f912) ahead of the gameplay-engine entry (first `953F`@f995),
+when hardware orders them the other way? `$0100/$0101` GameMode stays 0
+throughout, so it is NOT GameMode-gated.
+
+**Next probe (decisive):** PC-aligned Task0 trace across ~f850–1000
+(recomp block-trace / boundary EXITs) vs the oracle insn-trace (bank
+`$80`, incremental tail dump), to find the branch where recomp takes
+"fade now" while hardware takes "run engine / keep loading". Candidate
+state to trace on BOTH sides: whatever Task0 reads right before the
+`8973`@f912 call, and the trigger that first enters `953F` (the
+gameplay-loop dispatch). Then prove the exact PC + diverging value.
+
+Capture scripts added (gitignored `_*`): `_cap_enqueue.ps1`
+(`$00A5` + loadin), `_cap_bnd3.ps1` (reach highway → freeze 8M boundary
+ring → milestone ENTRY dump + loadin). Artifacts: `_enq_a5.json`,
+`_enq_loadin.json`, `_bnd3_raw.json`, `_bnd3_window.json`,
+`_bnd3_loadin.json`.
+
+##### Session-4 cont. — fade call site is `$91B5` scene-init (fixed load→fade sequence); the late bulk is a SEPARATE engine. Likely NOT a single branch.
+
+Drilled into the recomp's own instruction-block trace (the always-on
+`capture()` ring, `trace_get_v2 event=0 frame_lo=.. frame_hi=..`, frozen by
+`freeze_at_frame`; the v2 codegen does NOT emit `debug_on_block_enter`, so
+the `trace_blocks`/`get_block_trace` ring is dead here — use `trace_get_v2`).
+
+- The reveal fade is called from **`bank_00_91B5`** at PC **`$9269`** (`JSR
+  $8973`). `$91B5` is the highway **scene-init**, a FIXED linear sequence:
+  `$9261 LDA#$10` → `JSR $89E1` → `$9266 JSR $935D` (load) → `$9269 JSR $8973`
+  (fade) → `$926C STA [D+$3b]=$FF; RTS`. **No conditional gates the fade** —
+  it is unconditionally the call right after `$935D`.
+- **`bank_00_935D`** = a fixed list of `LDY #<fileID>; JSL $82:8011`
+  (load-graphics-file via the bank-02 decompress+DMA loader): Y =
+  `0x12,0x2e,0x26,…`. These are the **under-blank** loads. So `$91B5` loads
+  a fixed file set, then immediately fades — atomically, same function,
+  no yield between load and fade.
+- The **post-fade bulk** (cityscape `bg_hi 8192×3`, FG `bg_lo 18944`) is a
+  **DIFFERENT file set** streamed by the **separate per-frame gameplay
+  engine `953F`** (dispatch on `$00D2`), which does not begin until ~90
+  frames AFTER `$91B5`'s fade. On hardware (Session-3 order proof) that
+  engine's loader `9989` runs BEFORE the fade `8973`.
+
+**So the divergence is a PHASE ORDERING between two independent producers —
+Task0's scene-init `$91B5` (load fixed set + reveal) vs Task0's entry into
+the gameplay BG-streamer engine `953F` — not a single wrong branch inside
+either.** `$91B5` itself is branch-free at the fade; width is M1X1; `$00D2`
+routes the engine correctly once it runs. What differs is *when Task0 starts
+running the engine relative to running `$91B5`'s fade.* Hardware runs the
+engine first; recomp runs `$91B5`/fade first.
+
+**Honest implication for the "prove one instruction edge" bar (hard rule):**
+the evidence across Sessions 1–4 now points to a **scheduler / task-ordering
+cadence** divergence (which of Task0's phases the cooperative fiber model
+runs in which frame), NOT a single branch reading a single diverging
+flag/value. There may be no single edge to prove. Candidate true root:
+the MMX glue cooperative scheduler (`mmx_rtl.c MmxRunOneFrameOfGame` /
+`MmxSchedulerTick`: `I_NMI → scheduler → draw`) sequences Task0's
+scene-init vs the gameplay-engine task in a different order/frame than
+hardware's real CPU+NMI timing — i.e. a **scheduler-faithfulness bug in the
+glue**, which would be a legitimate (non-hack) fix target. This needs an
+oracle PC-aligned check of Task0's phase order (does HW interleave the
+engine task between scene-init load and the fade?) to confirm before any
+change. Decision point flagged for the next session — see handoff.
+
+Block-trace artifacts (gitignored): `_blk_loadin.json`, `_blk_fade3.json`
+(fade call-site path). The block-trace freeze edit to `debug_server.c`
+`debug_on_block_enter` was reverted (that hook is dead in v2 codegen).
+
+##### Session-4 cont.2 — DISPATCH located: `$91AA` on `[D+$39]` (state 0=`$91B5` init-load+fade, state 2=`$9271` engine). Oracle CONFIRMS hardware streams ~120f then fades once.
+
+Pinned the dispatch that owns load-vs-reveal. The highway object runs
+**`bank_00_91AA`**, a 3-entry jump table on the object state byte
+**`[D+$0039]`** (gen `mmx_00_v2.c:277608`):
+- **state 0 → `$91B5`** = INIT: `JSR $89E1` → `JSR $935D` (load a fixed gfx
+  file list via `JSL $82:8011`) → **`JSR $8973` (fade-IN)** → `STA [D+$3b]=$FF`.
+- **state 2 → `$9271`** → `D56F` = the per-frame object/stream engine.
+- state 4 → next.
+
+Standard actor `init→run`: state 0 inits (load + reveal), then advances to
+state 2 (engine streams every frame). So both HW and recomp run `$91B5`
+once then `$9271` — it is NOT a wrong-path selection.
+
+**Oracle (real ROM, `_oracle_order.ps1` + the 4 new milestone PCs, window
+f1156–2518) — hardware execution order, decisive:**
+- `91B5`/`935D`/`89E1` = **0 hits** in-window (the init ran BEFORE f1156).
+- engine `953F` = **1160 hits**; loaders `991B`×1, `9989`×6, `8A45`×4
+  stream the BG across **f1156–1261** (~120 frames).
+- fade `8973` = **exactly 1 hit @ f1280** — i.e. AFTER all the streaming,
+  and NOT reached via `$91B5` (which never ran in-window).
+
+##### Session-4 cont.3 (2026-05-30) — CORRECTION: "instant-DMA-collapse" hypothesis REFUTED. Late element is the `$953F`/`$00D2` bulk-stream phase, not a collapsed init.
+
+A finer recomp capture (`_cap_bnd3` with `91AA/91B5/935D/9271` added,
+frozen at the highway; loadin correlated) **refutes** the prior
+"synchronous DMA collapses `$91B5`'s load so it falls straight into the
+fade" hypothesis. Do NOT treat that as the theory.
+
+Corrected facts (recomp, one clean run, frozen f1204):
+- **`$91B5` scene-init does NOT collapse.** It enters @f753, its
+  under-blank load runs f785–855, its fade follows — it spans ~100+
+  frames, paced normally. Synchronous DMA is NOT collapsing it. (The
+  earlier "f877 all one frame" observation was only the *tail* blocks
+  `$9261→$9266→$9269` executing together, not the whole init.)
+- **The object/engine flow runs BEFORE the reveal.** `$91AA` dispatches
+  on `[$0039]` correctly: state 0 → `$91B5` (init, @f753), then state 2
+  (X=`0x0002`) → `$9271` object/`D56F` engine, which runs @f894–965.
+- **Reveal fade completes @f891** (inidisp/`$00B3` → `0x0f`).
+- **The actual LATE element is the bulk-BG stream phase** = the separate
+  per-frame dispatcher **`$953F`** (on **`[$00D2]`**) → `$9579`→`$991B`
+  (cityscape) / `$9989` (foreground) → `$8A45` (the `$420B` DMA). It does
+  not start streaming the bulk until **~f967**, i.e. AFTER the f891
+  reveal. cityscape `bg_hi 8192` @f966/968/971, FG `bg_lo 18944` @f1063,
+  more @f1080 — all at inidisp `0x0f`.
+
+**Order, corrected:**
+- **Recomp:** reveal fade `$8973` reaches visible/full-bright (f891) →
+  **then** `$953F`/`$991B`/`$9989` bulk BG streams onto the LIT screen
+  (f966–1080).
+- **Hardware/oracle:** `$953F`/`$991B`/`$9989` bulk BG stream happens
+  **before** reveal fade `$8973` (oracle: stream f1156–1261, fade f1280).
+
+**Current target (NOT yet pinned):** find what gates/advances `[$00D2]`
+or otherwise triggers the `$953F` bulk-stream phase such that it runs
+AFTER `$8973` in recomp but BEFORE `$8973` on hardware. It is a nested
+state-machine ordering (`$91AA`/`[$0039]` scene-vs-engine; `$953F`/`[$00D2]`
+when-to-stream), NOT a collapsed init and NOT (on current evidence) an
+m/x width bug. **Do NOT conclude "implicit DMA/vblank timing" until the
+`$00D2`/`$953F` gating is fully traced** — the direct DMA can be
+synchronous and still correct; the more likely cause is the stream-phase
+gate/counter advancing late.
+
+**Next probe (in progress):** trace every read/write of `$00D2`, the
+branches in/just-before `$953F` that depend on it, and transitions into
+`$953F`/`$9579`/`$991B`/`$9989`/`$8A45`/`$8973` — recomp vs oracle,
+aligned by PC/milestone (NOT absolute frame). Find the first divergent
+edge (exact PC, input value/flags, branch result, first bad state write)
+that delays the stream phase past the fade.
+
+Captures: `_oracle_order.json` (HW milestone order), `_bnd3_raw.json` /
+`_bnd3_loadin.json` (recomp milestone + brightness/bulk timeline).
+`mmx.ini EnableSnes9xOracle` toggled true only for reference runs, left
+**false**.
+
+##### Session-4 cont.4 (2026-05-30) — stream-gate traced to `$953F`/`$9550`/`$00D2`; `$1F9B` is a RED HERRING. Ordering divergence confirmed; exact single edge still a multi-var handshake.
+
+Traced `$00D2` (the `$953F` bulk-stream dispatch state) write timeline on
+the recomp (`trace_wram` from boot, frozen at highway):
+- `$953F` dispatches on **`[$00D2]`**: 0 → `$9550` (wait state), 2 →
+  `$9579`→`$991B` (cityscape stream), 4 → next chunk. `$991B`/`$9989` are
+  only reachable with `$00D2`≥2, so they ENCODE the gate state.
+- `$00D2` flips 0→2 (stream start) at **f1068** (one run) / **f1011**
+  (another). The reveal (`$00B3`→`0x0f`) was at **f1009** / **f919**
+  respectively. **So `$00D2`→2 (stream start) lands ~60–90 frames AFTER
+  the reveal.**
+- `$9550` sets `$00D2:=2` at block `$9567`, reached only if block `$9562`'s
+  check `[$1F9B]==0` passes. **`$1F9B` is a RED HERRING — it is 0 the
+  entire run**, so that check never blocks. The `$9550` top-gate is
+  `[D+$00d3]` (`if d3!=0 goto $9576` wait path), and the proximate trigger
+  observed is **`$1F7A`**: set `0x23` @f529, **cleared to 0 by loader
+  `$94E7`←`$931F` @f1065**, immediately followed by `$00D2`→2 @f1068. So
+  the stream gate opens when the loader `$94E7` finishes its batch — and
+  that finish is AFTER the reveal.
+
+**Ordering divergence — CONFIRMED both sides (via insn-milestone order, the
+reliable oracle signal; per-variable `emu_wram_timeseries` returned only
+f1 samples — unreliable, do not use it for this):**
+
+| event | recomp | hardware (oracle) |
+|---|---|---|
+| reveal fade `$8973` → full bright | f1009 (one run) | f1280 (single, LAST) |
+| stream gate `$00D2`→2 (⇒ `$991B`/`$9989` run) | **f1068 (AFTER reveal)** | ≤f1161 (`$991B`@1161) — **BEFORE reveal** |
+| bulk BG stream `$991B`/`$9989` | f1068+ (on lit screen) | f1156–1261 (under blank) |
+
+So: **hardware advances the stream gate and streams the bulk BEFORE the
+reveal fade; the recomp reveals first, then the loader/`$94E7` finishes and
+the gate opens (`$00D2`→2) after.** Equivalent statements: "stream gate
+opens late" ≡ "reveal fires early relative to the load." Which side is
+*the* bug (gate-too-late vs reveal-too-early) is not yet decided — both are
+the same ordering flip.
+
+**Honest status:** the gate is a **multi-variable handshake**
+(`$00D2`/`$00D3`/`$1F7A`/`$1F99`, plus whatever triggers the `$8973` reveal
+independently), NOT yet reduced to one provable branch + diverging value.
+The recomp-side static + ring analysis has bottomed out here; the exact
+"why does the reveal fire before the loader finishes" needs either (a) an
+oracle insn-trace of the **reveal trigger** path (what calls the final
+`$8973` on HW and what it waits for) aligned by PC, or (b) tracing `$1F7A`
+/ the `$94E7` loader-batch progress on HW. The oracle `emu_wram_timeseries`
+tool is currently unreliable (f1-only); the working oracle signal is
+`emu_get_insn_trace` milestone order (incremental tail dumps).
+
+Captures (gitignored): `_d2_writes.json` (`$00D2`), `_d2_1f7a.json`,
+`_d2_1f9b.json` (red herring), `_d2_loadin.json`; `_cap_d2.ps1`,
+`_cap_ogate.ps1`.
+
+#### Session-5 (2026-05-30) — DECIDED: **REVEAL FIRES EARLY** (conclusion 2). Reliable oracle watch tooling stood up; reveal caller pinned both sides; gate is NOT late.
+
+The session-4 "gate-too-late vs reveal-too-early" question is **resolved: the
+reveal fires early.** Decided with reliable, hook-based oracle observability
+(NOT the f1-only `emu_wram_timeseries`, which stays unreliable).
+
+**Tooling (Task A — validated, mostly already existed).** The decisive
+observers are the always-on hook tools, queried (not armed-then-hoped):
+- `emu_block_watch_arm <pc24> <ramoffs> [maxhits]` / `emu_block_watch_get`
+  — captures regs (A/X/Y/S/D/DB/PB/P) **+ up to 8 WRAM bytes on every entry**
+  to a bank-`$80` PC. This *is* the per-milestone watch with state.
+- `emu_wram_writes_at <addr>` — per-write `(frame,pc,before,after)`, reliable.
+- **NEW (bounded, runner-only, no regen):** added a **caller return address**
+  (`"ret"`) to the oracle block-watch hit — read off the stack at entry
+  (`snes9x_bridge.cpp` `emu_block_watch_hit.r_ret` +
+  `snes9x_bridge_block_watch_get_ret`; emitted by
+  `emu_oracle_cmds.c h_emu_block_watch_get`). Gives the reveal caller directly.
+- Recomp side already mirrors this (`block_watch_*`, `wram_writes_at` with
+  `func`/`parent`, `boundary_get` with `depth`/`PB`/`S`).
+- `EnableSnes9xOracle=true` for the from-boot reference; left **false** after.
+  Capture scripts (gitignored): `_owatch.ps1`, `_owatch2.ps1`, `_owatch3.ps1`
+  (definitive same-run), `_rwatch.ps1`. Build: `Oracle|x64`, runner-only.
+
+**Oracle order (one clean run; the load is bracketed by BLANK):**
+`$91B5` highway-init runs **while still bright** (b3=`0x0f`, `$1F7A`=`0x23`) →
+screen fades-OUT then **forced-blank** (b3→`0x80` via `$8089ba`) → under blank:
+`$94E7` clears `$1F7A` → gate **`$00D2`→2** (`$809571`) → cityscape `$991B` →
+FG `$9989` (`$00D2`→4) → **reveal fade-IN at `$80898e`, dispatched from `$89C9`
+via the task JMP-table at `$80:80E6`, only AFTER the stream (`$00D2`=`0x04`).**
+So hardware = **load/stream UNDER BLANK, then reveal.** `$8973` is the fade
+*engine*; the highway reveal enters it from `$89C9` (a deep, PB=`$80` dispatch),
+NOT from `$91B5`.
+
+**Recomp order (SAME run, internally consistent):** the highway **scene-init
+`$8973` fade-IN fires EARLY** — `bank_00_8973` at f865 (b3 `0x80`→`0x0f`),
+called **directly from Task0 at depth 1, PB=`$00`** (the `$91B5` init path) —
+*before* the gate/stream. b3 reaches `0x0f` at f891 and **is never written
+again** (no re-blank). Only *then*: `$94E7` clears `$1F7A` (f976), gate
+`$00D2`→2 (f979), cityscape `$991B` (f981), FG `$9989` (f1074–1198) — all on a
+**lit** screen → the visible build-in. **The recomp DOES reach the correct deep
+reveal — `Task_89C9`→`$8973` at f1199 (depth 3, PB=`$80`) — but it is a NO-OP**
+because b3 is already `0x0f`.
+
+**Why "reveal early," not "gate late" (the clincher):** the recomp's
+gate/stream/`$89C9` sequence is intact and correctly ordered relative to the
+load (`$94E7`→`$00D2`→2→`$991B`/`$9989`→`$89C9`); the gate even opens *earlier*
+in the recomp's own timeline (f979) than on hardware (f1148). Nothing is late.
+The one displaced event is the **scene-init fade-IN** (Task0→`$8973`, f865),
+which lights the screen before the load and pre-empts the proper post-stream
+`$89C9` reveal (which then no-ops). It is an **order reversal with ~equal
+spacing** (recomp reveal→gate ≈ +114f; oracle gate→reveal ≈ −121f), i.e. a
+clean flip — and the side that is mis-placed is the **reveal**.
+
+| event | oracle order | oracle pc | oracle state @event | oracle reason | recomp order | recomp pc | recomp state @event | recomp reason | concl |
+|---|---|---|---|---|---|---|---|---|---|
+| highway scene-init `$91B5` | 1 (f988) | `$80:91B5` | b3=0f, d2=0, 1f7a=23 | runs while bright; does NOT reveal highway | 1 (f753→fade f865) | `bank_00_91B5`→`$8973` | b3 0x80→0x0f | **its fade-IN lights screen (reveal)** | — |
+| forced blank | 2 (f1137) | `$80:8089ba` | b3→0x80 | blank held for load | — | (absent after f891) | b3 stays 0x0f | **no re-blank** | div |
+| `$94E7` clears `$1F7A` | 3 (f1148) | `$80:94E7` | b3=80, 1f7a 23→00 | loader, under blank | 3 (f976) | `bank_00_94E7` | b3=0f, 1f7a 23→00 | loader, on lit screen | same logic |
+| gate `$00D2`→2 | 4 (f1148) | `$80:9571` | b3=80 | stream gate opens (blank) | 4 (f979) | (gate path) | b3=0f | gate opens (lit) — **not late** | — |
+| bulk stream `$991B`/`$9989` | 5 (f1150–1171) | `$80:991B`/`9989` | b3=80, d2→04 | **streams UNDER BLANK** | 5 (f981–1198) | `bank_00_991B`/`9989` | b3=0f | **streams on LIT screen** | div=visible |
+| reveal `$8973` (deep) | 6 (f1269) | `$89C9`→`$8973` | b3 0x80→0f, d2=04 | **reveal AFTER stream** | 6 (f1199) | `Task_89C9`→`$8973` | b3 already 0f | **NO-OP (already revealed)** | **reveal early** |
+
+**Conclusion: #2 — reveal fires early.** Root hunt (next) = the **reveal
+trigger/caller path**: why the recomp runs the `$91B5`/Task0 scene-init
+`$8973` fade-IN (lighting the screen) at f865 while b3 is blank, instead of
+holding the blank and deferring the reveal to the `$89C9` post-stream dispatch
+(`$00D2`=`0x04`) as hardware does. Equivalent framing: the recomp does not hold
+forced-blank through the stage-load; find the branch/sequence in Task0's
+highway-object init that emits the fade-in ahead of the load, vs hardware's
+keep-blank-until-`$89C9`. NOT width (M1X1 throughout), NOT the gate, NOT
+display-side. **Do NOT patch** until that single sequencing edge is shown.
+
+Captures (gitignored `_o*`/`_rw*`): `_o3_obw.json` (oracle block-watch+ret),
+`_o3_o_*.json` (oracle writes), `_o3_rbnd.json`/`_o3_rwin.json` (recomp
+boundary), `_o3_r_*.json` (recomp writes).
+
+#### Session-6 (2026-05-30) — REFINED: not "reveal early" at the shallow fade — it is a **MISSING RE-BLANK** before the bulk load (answer C). The shallow `$91B5` fade is correct on BOTH sides.
+
+Drilled the shallow vs deep `$8973` callers and the blank path. **The Session-5
+"reveal early" framing is sharpened, not overturned:** the displaced event is
+NOT the shallow fade (both sides do it and it legitimately reveals) — it is the
+**forced-blank that hardware re-applies before the bulk highway load and the
+recomp does not.**
+
+**`$8973` census (both sides, same runs):** `$8973` is the fade ENGINE, entered
+from two sites. (1) SHALLOW: `$91B5`→`$8973` at `$80:9269` — the highway
+**object-init** fade; it is reached on BOTH (oracle f1023, recomp f853) **from
+b3=`0x80` (blank)** and on BOTH it ramps b3→`0x0f` (reveals). Identical → NOT the
+bug. (2) DEEP: the `$89C9` dispatch (via the `$80:80E6` scheduler JMP-table) →
+`$8973` — hardware's post-stream reveal; the recomp reaches it too (`Task_89C9`
+f1170) but it **no-ops** (b3 already `0x0f`).
+
+**The real divergence — the per-frame scene fade-controller (`$8C5x`) and its
+forced-blank:**
+- Oracle b3 cycle for the highway: shallow reveal (`$91B5` f1023) → **fade-OUT
+  `$8995` (f1089)** → **forced-blank `$8089b8/ba` (f1119, b3→`0x80`)** → bulk load
+  UNDER BLANK (gate `$00D2`→2, `$991B`/`$9989`) → **deep reveal `$89C9` (f1232+)**.
+- Recomp: shallow reveal (`$91B5` f853→`0x0f`@879) → **b3 NEVER written again**
+  (no fade-out, no blank) → bulk load on the LIT screen → deep `$89C9` no-op.
+- **Execution census (`emu_block_watch`/`block_watch`, same run `_owatch6`):** the
+  scene fade-controller `$8C58`/`$8C5B`/`$8CB3` runs on the oracle **every frame**
+  across f1014–1088 & f1169–1228 (136 hits); fade-OUT `$8995` fires f1089/f1197;
+  blank `$8089ba` f1119/f1227. On the **recomp**: `$8C5B` runs **once @f645**,
+  `$8995` **once @f614** — **NEITHER in the highway-load window.** So the recomp's
+  per-frame fade-controller is **dormant** during the load.
+- **Oracle blank dispatch path (insn-trace into f1119):** the `$80:8080`
+  cooperative-scheduler dispatcher (`$80AB LDA slot,X; CMP; JMP/branch`) resumes a
+  fade task into `$8089b4`→`$80899b`, where `LDA $..; AND #; BEQ $89b6` selects
+  the set-blank branch (`LDA #$80; STA $00B3`). So the re-blank is produced by a
+  **per-frame fade task driven by the `$8080` scheduler** — the same scheduler
+  family as the Option-1 work.
+- **Recomp scheduler slots in the window (`loadin_slots`):** only Task0 (`$852C`)
+  + vblank (`$B25B`) (+transient `$E6B1`) are active; **no fade-controller slot**.
+  The recomp CAN fade/blank (it does so for the intro cutscenes, f27–879, and a
+  pre-highway cutscene in `_owatch7` loads-under-blank-then-reveals correctly) —
+  so the capability exists; what is missing is running the scene fade-controller
+  task that holds blank through the **highway bulk-load** phase.
+
+| event | oracle order | oracle pc / caller | oracle b3 | oracle d2 | recomp order | recomp pc / caller | recomp b3 | recomp d2 | conclusion |
+|---|---|---|---|---|---|---|---|---|---|
+| shallow fade (object-init) | f1023 | `$8973`←`$91B5`/`$9269` | 0x80→0f | 00 | f853 | `$8973`←`$91B5` | 0x80→0f | 00 | SAME (not bug) |
+| fade-controller per-frame | f1014–1228 | `$8C58`/`$8C5B`/`$8CB3` (136×) | — | — | — | (1× @f645 only) | — | — | **recomp dormant** |
+| fade-OUT | f1089 | `$8995` | 0f→00 | — | (none in window) | `$8995` @f614 only | — | — | **divergence** |
+| forced re-blank | f1119 | `$8089b8`←`$8080` sched | 00→0x80 | — | (none) | — | stays 0f | — | **MISSING (root)** |
+| gate `$00D2`→2 | f1148 | `$9571` | 0x80 | 0→2 | f979 | gate path | 0f | 0→2 | gate not late |
+| bulk stream | f1150–1171 | `$991B`/`$9989` | 0x80 | →4 | f981–1198 | `$991B`/`$9989` | 0f | →4 | lit vs blank |
+| deep reveal | f1232 | `$89C9`→`$8973` | 0x80→0f | 04 | f1170 | `Task_89C9`→`$8973` | 0f (no-op) | 04 | reveal wasted |
+
+**Answer: C** — the shallow `$91B5`→`$8973` fade is acceptable (both sides reveal
+there); the recomp **misses the forced-blank** that hardware re-applies before the
+highway bulk-load. The first divergent edge is localized to the **per-frame scene
+fade-controller task (`$8C5x` → `$8995` fade-OUT → `$8089b8` blank), driven by the
+`$80:8080` cooperative scheduler on hardware, NOT being run by the recomp's
+scheduler during the highway-load window** (only Task0+vblank run; the fade-
+controller slot is absent/dormant). This is the **scheduler-faithfulness /
+task-scheduling** family (same root class as Option-1 `cpu->S`/dispatch), **not** a
+single WRAM-state branch (so not D) and **not** the gate (`$00D2`/`$953F` open on
+time). **Still NOT reduced to one provable instruction edge** — the open root is
+*why the recomp's cooperative scheduler does not run the scene fade-controller
+task in this window* (which slot it should occupy, and the install/resume/
+countdown branch that drops it). **Do NOT patch** until that is shown.
+
+CAVEAT (frame variance): absolute game-frames vary run-to-run (HLE boot + wall-
+clock-paced START presses), and `cgadsub=0xbd` can match more than one transition;
+all cross-side claims above use **same-run** oracle-vs-recomp captures
+(`_owatch3`/`_owatch6`). `_owatch7` reached only a pre-highway cutscene (Task0+
+vblank only, no `$91xx`/`$953F`) so it is off-target for the bulk-load bug.
+
+Captures (gitignored): `_o4_*`/`_o6_*`/`_o7_*` (census, blank dispatch path,
+slot table). Bounded tool add (uncommitted, runner-only): oracle block-watch
+caller `ret` (see Session-5).
+
+#### Session-7 (2026-05-30) — ROOT CAUSE PROVEN + FIXED: the fade-OUT/blank task `$89DB` was a MISSING cfg task-entry → scheduler dropped it (answer D). One-line config fix + dispatch case.
+
+The "scheduler doesn't run the fade-controller" (Session-6) is now reduced to a
+single proven edge and fixed.
+
+**Scheduler model.** The recomp replaces the asm cooperative scheduler
+(`$00:8099`/`$80E6 JMP ($0032,X)`) with a C-host fiber scheduler
+(`mmx_rtl.c MmxSchedulerTick`). It reads the **WRAM slot table**
+(`$0030+slot<<4`: state; `$0032+x`: handler PC; `$0036+x`: saved S; 7 slots,
+bases `$013F/$017F/$01BF/$01FF/$023F/$027F/$02BF`). Game code installs tasks via
+`$00:813B` (at entry **A=handler PC**, **X=slot offset**; writes `$32+X`=handler,
+`$30+X`=1). When the scheduler resumes a slot it routes the handler PC through a
+**hand-written switch `mmx_dispatch_task_pc` (mmx_rtl.c:46)** to the recompiled
+`Task_xxxx` body. Task entry PCs are **not auto-discovered** (they are
+`LDA #imm` operands feeding `$813B`); they must be declared in `recomp/bank00.cfg`
+as `func Task_xxxx <pc>` (the cfg comment says so explicitly).
+
+**Install census (block_watch on `$813B`, A=handler/X=slot, same run, bug
+reproduced — bulk FG `bg_lo=18944` on a LIT screen @f1230):**
+- The highway fade-controller is **slot 4** (offset `$40`, state `$0070`).
+- Oracle installs slot4 = **`$89DB`** (caller `$80:8C58`, the per-frame scene
+  controller) = fade-OUT→blank, then slot4 = **`$89C9`** (caller `$80:94DB`, the
+  loader) = reveal. Recomp installs the SAME: slot4 `$89DB`@f1131 + `$89C9`@f1144
+  (D=0, so written exactly where the scheduler reads). **Install is NOT missing.**
+- BUT recomp `$0089DB`/`$00899D` (fade-task body) = **0 hits** — the installed
+  `$89DB` task **never executes**; `$0089C9` reveal ran (no-op, b3 already `0x0f`).
+
+**Exact edge.** `Task_89C9_M1X1` is emitted (`$89C9`: `JSR $8973` fade-IN → die)
+and is a `case` in `mmx_dispatch_task_pc`. Its **sibling `$89DB`** (the fade-OUT
+half: `JSR $8995` → forced-blank `$8089b8` `b3:=0x80` → die) was **never declared
+in `recomp/bank00.cfg`**, so the recompiler emitted **no `Task_89DB`** (no
+`L_89DB` label, not in `mmx_dispatch_v2.c`), and `mmx_dispatch_task_pc` has **no
+`case 0x89DB`** → resuming slot 4 with handler `$89DB` falls to `default` →
+`RECOMP_RETURN_NORMAL` (silent drop). No fade-out → no re-blank → bulk BG paints a
+lit screen. The reveal `$89C9` then no-ops because the shallow `$91B5` fade already
+lit the screen.
+
+Fade-task logic confirmed (gen `$899D`): `A=$00B3; if ((A & 0x0F)==0) goto $89B6
+(b3:=0x80 BLANK) else ramp toward target Y`. So the blank only happens once the
+fade-OUT (`$89DB`→`$8995`) ramps brightness to 0 — exactly the task that was
+dropped.
+
+| event | oracle: slot/state/handler/caller | recomp: slot/state/handler/exec | verdict |
+|---|---|---|---|
+| install fade-OUT task | slot4 state=1 handler=`$89DB` ← `$8C58` @f1108 | slot4 state=1 handler=`$89DB` ← (Task0) @f1131, D=0 | **same install** |
+| run fade-OUT task | `$89DB`/`$899D` execute → `$8995` fade-out | `$0089DB`/`$00899D` = **0 hits (dropped at dispatch default)** | **DIVERGED (root)** |
+| forced-blank | `$8089b8` b3→0x80 (under blank load) | never (b3 stays 0x0f) | diverged |
+| install + run reveal | slot4 `$89C9` ← `$94DB`, reveals after load | slot4 `$89C9` runs but **no-op** (b3 already 0f) | reveal wasted |
+
+**Conclusion: D (scheduler skip)** — the fade-OUT/blank task `$89DB` is installed
+in slot 4 but `mmx_dispatch_task_pc` has no case for it (and the recompiler never
+emitted a body), so the dispatcher silently drops it. Slot that should contain the
+fade-controller = **slot 4**; reason it doesn't run = **undeclared task entry
+`$89DB`**.
+
+**Fix (smallest, config + glue; matches the cfg's documented mechanism):**
+1. `recomp/bank00.cfg`: add `func Task_89DB 89db` (next to `Task_89C9`).
+2. `src/mmx_rtl.c`: add `extern RecompReturn Task_89DB_M1X1(...)` + `case 0x89DB:
+   return Task_89DB_M1X1(cpu);` to `mmx_dispatch_task_pc`.
+3. Regen (emits `Task_89DB_M1X1` + dispatch entry) + rebuild Oracle.
+NOT Highway-specific, NOT display-side, NOT M/X, NOT generated-code edit, NOT an
+interpreter fallback. **Status: APPLIED + VALIDATED (2026-05-30).**
+
+**Validation (recomp, post-fix, `_val89db.ps1`/`_val_highway.png`/`_val_play.png`):**
+- Regen emitted `Task_89DB_M1X1` (entry `$0089DB`, `L_89DB`) + dispatch entry
+  `{0x0089DBu,…}`; stub-lint = the same **242** known-v1.0.0 stubs (no new stubs);
+  built `Oracle|x64` clean.
+- **All 15 bulk-BG frames now upload UNDER BLANK (`ini=0x80`), LIT=0** — incl. the
+  FG bulk `bg_lo=18944`@f1266 now blank (was LIT@f1230 pre-fix). `$0089DB` now
+  executes (1 hit, was 0); blank step `$0089B6` runs in the load window (3 hits);
+  deep `$89C9` reveal now meaningful (screen was blanked → reveals).
+- **Visual:** highway reveals with the **complete distant cityscape + HUD already
+  present, no black-chunk build-in** (matches the hardware/oracle reference). The
+  opening ride cutscene plays normally afterward (not frozen, not over-blanked).
+- Scope: change is **MMX-only** (`recomp/bank00.cfg` + `src/mmx_rtl.c` glue; regen
+  re-emits only MMX `src/gen`). The shared recompiler and other games (SMW/ALttP)
+  are **untouched** → no ecosystem regression risk from this change.
+- Not yet exercised (broader regression matrix, recommended before ship): boss-
+  select transition; heavy-load risky areas (Launch Octopus/fish, Chill Penguin,
+  Dr. Light) — reachable only via longer play/save-states.
+
+Captures: `_o9_*`/`_o10_*`/`_o11_*` (install census, fade-task exec, bug confirm).
 
 ### Music-rate ticking + occasional off-tune audio — dual-producer APU sample drop (filed 2026-05-30)
 

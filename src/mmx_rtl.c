@@ -34,6 +34,7 @@ uint8_t g_mmx_task_yield_countdown;
  * for the recomp'd task body. */
 extern RecompReturn Task0_M1X1(CpuState *cpu);
 extern RecompReturn Task_89C9_M1X1(CpuState *cpu);
+extern RecompReturn Task_89DB_M1X1(CpuState *cpu);
 extern RecompReturn Task_B091_M1X1(CpuState *cpu);
 extern RecompReturn Task_B25B_M1X1(CpuState *cpu);
 extern RecompReturn Task_B38D_M1X1(CpuState *cpu);
@@ -46,6 +47,7 @@ static RecompReturn mmx_dispatch_task_pc(CpuState *cpu, uint16_t pc) {
   switch (pc) {
     case 0x852C: return Task0_M1X1(cpu);
     case 0x89C9: return Task_89C9_M1X1(cpu);
+    case 0x89DB: return Task_89DB_M1X1(cpu);
     case 0xB091: return Task_B091_M1X1(cpu);
     case 0xB25B: return Task_B25B_M1X1(cpu);
     case 0xB38D: return Task_B38D_M1X1(cpu);
@@ -557,9 +559,4 @@ void MmxRunOneFrameOfGame(void) {
   MmxSchedulerTick();
   cpu_trace_px_breadcrumb(&g_cpu, 0x2003, "after_Internal");
   g_first_frame_done = true;
-  /* Per-frame stage-load tracer snapshot (diagnostics; no-op in Production). */
-  {
-    extern void debug_server_loadin_tick(void);
-    debug_server_loadin_tick();
-  }
 }
