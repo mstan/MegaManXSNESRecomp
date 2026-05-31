@@ -493,12 +493,38 @@ recomp = single f1083), so the N/Z delta may be contextual rather than the
 branch the order depends on. Must locate the actual ordering branch and show
 it reads a diverging flag before claiming this.
 
-**Next (the real fix) — do NOT patch until the ordering branch is found:**
-trace Task0's control flow at the fade-vs-load decision (the parent of
-`8973` and of `931F→94E7`) on both sides; find the conditional whose flag
-diverges and flips the order; confirm the flag value recomp-vs-oracle at
-that exact branch PC. Then the smallest fix at that proven edge. NOT a width
-patch, NOT display-side, NOT stage-gated. Guard SMW/ALttP.
+#### Session-3 cont. — VRAM-write attribution: it is a multi-path ENQUEUE-cadence divergence, not one branch
+
+`last_vram_write_to` (per-write func+stack attribution; `trace_vram 0 0xffff`
+armed) at `freeze_at_frame 1112`:
+
+| VRAM byte | written frame | function (stack) | timing |
+|---|---|---|---|
+| `0x3000–0x5000` (FG) | **873** | `82C8` (NMI DMA-queue walker) | **under blank ✓** |
+| `0x2000` | 1065 | `8B90` ← `953F→9579→991B` | post-fade |
+| `0xa000–0xb000` (tilemaps) | 1066 | `82C8` (NMI walker, flushing queue) | post-fade |
+
+Key correction: the **foreground tiles DO upload under the blank** (f873).
+The post-fade uploads come from (a) the NMI DMA-queue walker `82C8` flushing
+DMA that was **enqueued late**, and (b) the `953F→9579→991B→8B90` path
+(`953F` = the task dispatcher implicated in the Option-1 / fish-softlock
+m-flip work). So the late BG is produced by the object/DMA-**enqueue** engine
+(the `D56F`/`953F` subtree) running post-fade — the **same subtree** as the
+Option-1 issues — and flushed by the NMI walker. This is a **broader
+enqueue-cadence divergence**, NOT a single fade-vs-load ordering branch, and
+every milestone reachable here runs at M1X1 (width is not it).
+
+**Honest status:** behaviorally proven (HW loads-then-reveals; recomp builds
+in; not presentation; not m/x width), narrowed to the post-fade enqueue
+cadence in the `953F`/`D56F`/NMI-walker interaction — but NOT isolated to one
+provable instruction edge, and the evidence points to a cadence divergence
+rather than one wrong branch. **Do not patch** until a single edge is proven
+(hard rule). Next probe: trace WHO enqueues the late DMA (the `953F→…→991B`
+enqueue path) and why it runs post-fade vs under-blank on HW — likely the
+same root as the Option-1 `cpu->S`/dispatch family
+([[Option-1 fix-attempt notes above]]); a from-boot oracle WRAM/enqueue-order
+compare on `953F`'s inputs is the decisive next step. NOT width, NOT
+display-side, NOT stage-gated. Guard SMW/ALttP.
 
 - **`find_first_divergence` does NOT work here (trap).** It diffs recomp
   WRAM vs oracle WRAM *at the same input-frame assuming lock-step game
