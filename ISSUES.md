@@ -463,13 +463,42 @@ pass: part of the post-fade `bg_hi` traffic (the `288–1024/frame` stream at
 mistaken for the bug; the bug is specifically the *bulk* `bg_hi 8192×3`
 (~f1004–1009) + `bg_lo 18944` (~f1047/1101) landing on a lit screen.
 
-**Next (the real fix) + traps to avoid:** determine why the `931F→94E7`
-bulk uploads are sequenced after `8973` (not a width bug — all M1X1). Needs
-a clean oracle execution-ORDER reference for `$80:8973` vs `$80:94E7`
-(the 1M oracle insn-ring evicts the stage-init unless reset at the highway
-blank or dumped incrementally — `_oracle_insn2.ps1` does incremental dumps;
-execution is in bank `$80`, not `$00`). Then the smallest fix at the proven
-edge. Guard SMW/ALttP.
+#### Session-3 cont. — ORDER REVERSAL PROVEN against hardware (load-then-fade vs fade-then-load)
+
+Oracle execution-order reference obtained (`_oracle_order.ps1`: incremental
+both-bank milestone dumps from the snes9x insn-trace tail, no reset; defeats
+1M-ring eviction; **execution is in bank `$80`**). Real-ROM highway window:
+
+| event_index | event | oracle pc | oracle f | oracle P (m/x) | recomp pc | recomp f | recomp P (m/x) | verdict |
+|---|---|---|---|---|---|---|---|---|
+| — | loader `9989` | `$80:9989` | 1120–1128 | 0xb0/b1 (m1x1) | `bank_00_9989` | 1083 | 0x33 (m1x1) | both M1X1 |
+| — | fade `8973` | `$80:8973` | **1147** | 0xb1 (m1x1) | `bank_00_8973` | **876** | 0x33/0x31 (m1x1) | both M1X1 |
+
+**ORACLE order: loader `9989` (f1120–1128) → fade `8973` (f1147) = LOAD-then-
+FADE. RECOMP order: fade `8973` (f876) → loaders `94E7/991B/9989` (f985–1083)
+= FADE-then-LOAD. The order is REVERSED.** That is the concrete divergent
+edge: the recomp's Task0 runs the reveal fade before the stage loaders;
+hardware runs the loaders (under blank) first, then the fade. This is why
+the recomp shows the BG build in on a lit screen.
+
+**Width is NOT the cause (re-confirmed):** every milestone runs at **m=1,x=1
+on both sides**. So this is NOT a wrong-width / wrong-variant dispatch bug.
+
+**Candidate cause (lead, NOT yet proven causal):** the entry-P **N and Z
+flags differ** — oracle `0xb0/0xb1` (N=1) vs recomp `0x31/0x33` (N=0). A
+wrong N/Z would flip a `BMI/BPL/BNE/BEQ` that sequences the load-vs-fade
+state. CAVEAT: entry-P is the caller's flag state and `9989` is reached via
+different call sites on each side (oracle = per-frame stream f1120–1128;
+recomp = single f1083), so the N/Z delta may be contextual rather than the
+branch the order depends on. Must locate the actual ordering branch and show
+it reads a diverging flag before claiming this.
+
+**Next (the real fix) — do NOT patch until the ordering branch is found:**
+trace Task0's control flow at the fade-vs-load decision (the parent of
+`8973` and of `931F→94E7`) on both sides; find the conditional whose flag
+diverges and flips the order; confirm the flag value recomp-vs-oracle at
+that exact branch PC. Then the smallest fix at that proven edge. NOT a width
+patch, NOT display-side, NOT stage-gated. Guard SMW/ALttP.
 
 - **`find_first_divergence` does NOT work here (trap).** It diffs recomp
   WRAM vs oracle WRAM *at the same input-frame assuming lock-step game
