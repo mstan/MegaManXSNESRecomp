@@ -9,8 +9,8 @@
 #include <setjmp.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <windows.h>
 #include <stdlib.h>
+#include "fiber_compat.h"   /* Win32 Fibers on Windows, ucontext shim on POSIX */
 
 /* C-host implementation of the MMX cooperative task scheduler at
  * $00:8099. Replaces the asm dispatch loop with a C function that:
