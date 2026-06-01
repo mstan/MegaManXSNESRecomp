@@ -221,7 +221,13 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <!-- Windows subsystem: true "just the game" build, no console window.
+           /ENTRY:mainCRTStartup keeps plain int main() as the entry; without
+           it, SDL2main.lib's WinMain is pulled in under the Windows subsystem
+           and requires an SDL_main symbol (the code uses main) -> LNK2001.
+           mainCRTStartup calls main() directly and allocates no console. -->
+      <SubSystem>Windows</SubSystem>
+      <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
