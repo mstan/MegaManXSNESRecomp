@@ -159,11 +159,19 @@
     <ClCompile>
       <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
-      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <!-- 4005: HIBYTE macro collision (types.h vs windows.h). banks.h is
+           force-included before any file's own <windows.h>, so types.h's
+           #undef can't win the ordering; the two defs are equivalent for the
+           16-bit uses here. Benign — the other configs tolerate it by not
+           treating warnings as errors; Debug suppresses it explicitly. -->
+      <DisableSpecificWarnings>4996;4005</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <!-- No TreatWarningAsError: the machine-generated banks (src/gen/*.c)
+           intentionally emit benign warnings (C4102 unreferenced label, etc.).
+           The other three configs don't treat warnings as errors either; this
+           setting was never validated (no Debug build had ever been produced). -->
       <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>

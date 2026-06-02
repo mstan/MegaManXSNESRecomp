@@ -266,6 +266,37 @@ void MmxSchedulerTick(void) {
     fprintf(stderr, "\n");
   }
   s_tick_n++;
+  /* Ack-clear the NMI handshake flag BEFORE dispatching tasks, modeling
+   * the asm scheduler's `STZ $0B9D` at $00:80C6 which clears it early so
+   * the bulk of each frame's task work runs with $0B9D==0.
+   *
+   * Why this matters for the graphics decompressor (Task B25B / B2EB,
+   * slot 6): its inner loop calls the CONDITIONAL vblank-yield at
+   * $00:8121 (`BIT $0B9D ; BMI yield ; RTS`, HLE'd as YieldVblank) every
+   * 32 decompressed units — "keep working unless an NMI has fired since
+   * we last looked." On hardware $0B9D is set by NMI at vblank, then
+   * STZ'd at $80C6, so the decompressor sees it CLEAR for most of the
+   * frame and only yields when the NEXT vblank's NMI re-sets it — letting
+   * it stream multiple 32-unit batches per frame.
+   *
+   * Previously the C-host cleared $0B9D only at the END of the tick (see
+   * the ack-clear after the slot loop). I_NMI runs before the tick and
+   * sets $0B9D=$FF, so the decompressor saw $FF on its FIRST $8121 check
+   * and yielded after a single 32-unit batch — ~1/3 the hardware
+   * throughput. That delayed every VRAM-streamed object's slot
+   * allocation (e.g. Spark Mandrill's dash-jump turtle allocated its tile
+   * base at cursor+~37f instead of hardware's +~14f, losing the race
+   * against the object's ~+30f activation, so the tile base latched 0 and
+   * the turtle rendered invisible).
+   *
+   * Clearing here (the $80C6 timing) makes $8121 a no-op within a tick:
+   * the recomp has no mid-tick NMI, so vblank has NOT re-fired during the
+   * tick, so the decompressor correctly runs its block to completion this
+   * frame. $8121 is used ONLY by the decompressor, so no other task's
+   * per-frame pacing is affected. I_NMI (which owns the gated DMA path
+   * and reads $0B9D before this point each frame) is unaffected: the tick
+   * leaves $0B9D==0, exactly as the end-of-tick clear did. */
+  g_ram[0x0B9D] = 0x00;
   for (uint8_t x = 0x00; x < 0x70; x += 0x10) {
     uint8_t slot_idx = x >> 4;
     g_mmx_task_slot_x = x;

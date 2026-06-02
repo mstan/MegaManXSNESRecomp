@@ -1,9 +1,27 @@
 # Issues — MegamanXRecomp
 
-> **OPEN:** one rendering issue — a BRIEF sprite/OBJ-layer + HUD dropout
-> under heavy sprite load (X, the fish, and the HUD vanish for a moment
-> after a fish explosion, then re-appear). Transient, self-recovering;
-> the digger-area artifacting is the same class. See "Open" below.
+> **OPEN:** one rendering issue.
+> 1. A BRIEF sprite/OBJ-layer + HUD dropout under heavy sprite load (X, the
+>    fish, and the HUD vanish for a moment after a fish explosion, then
+>    re-appear). Transient, self-recovering; the digger-area artifacting is
+>    the same class. See "Open" below.
+>
+> **RESOLVED (2026-06-01), released in `v1.0.4`:** **Spark Mandrill turtle
+> invisible on dash-jump.** Root cause was NOT a VRAM-DMA throttle (the
+> earlier "streaming 3× too slow / drain the NMI DMA each frame" framing was
+> wrong — the `$00:82C8` VRAM-DMA drains its full queue every frame). The
+> real throttle was the graphics **decompressor** (`Task_B25B`/`B2EB`,
+> slot 6): its conditional vblank-yield `$00:8121` (`BIT $0B9D ; BMI yield`,
+> HLE'd as `YieldVblank`) yielded after a single 32-unit batch each frame
+> because `MmxSchedulerTick` held `$0B9D = $FF` for the *entire* tick
+> (cleared only at the end). On hardware the asm scheduler's `$80C6
+> STZ $0B9D` clears it early, so the decompressor runs the bulk of the frame
+> with `$0B9D = 0` and streams many batches/frame. Fix: clear `$0B9D` at the
+> **start** of the slot walk in `MmxSchedulerTick` (model the `$80C6`
+> timing). Decompression blocks now complete in the same frame (`$7E:00F4`
+> set→clear within 1f, was 20/5/7f); turtle renders correctly on dash-jump
+> (user-confirmed). One-line runner fix; no codegen/bank change. See the
+> resolved write-up below.
 >
 > **RESOLVED (2026-05-26) on branch `feat/cpu-s-stack-model`:** the
 > heavy-load **scheduler softlock / black-screen** that this issue used
@@ -26,6 +44,177 @@
 ---
 
 ## Open
+
+### ✅ Spark Mandrill turtle renders INVISIBLE (but active) when approached via dash-jump (filed 2026-06-01) — FIXED 2026-06-01, released `v1.0.4`
+
+> **⚠️ CORRECTION (2026-06-01) — read this before the diagnosis trail below.**
+> The earlier conclusion in this section ("recomp VRAM streaming ~3× too
+> slow; fix = drain the NMI VRAM-DMA `$00:82C8` each frame via the
+> `$0B9D/$0BA0` handshake") and the "Round 2" line that *ruled out*
+> `HleMmxYieldVblank` were both **WRONG**. Verified against the live always-on
+> rings:
+> - The VRAM-DMA consumer `$00:82C8` is **healthy** — it drains its full
+>   queue (`$7E:00A3` `0x10 → 0`) **every single frame** (clean 1-frame
+>   sawtooth). It was never the throttle.
+> - The throttle is the graphics **decompressor** `Task_B25B` (slot 6,
+>   kicked off by `B23C`, inner engine `B2EB`). Its decompression loop calls
+>   the conditional vblank-yield `$00:8121` every 32 units (`AND #$1F`).
+>   `$8121` = `BIT $0B9D ; BMI yield ; RTS` (HLE'd as `YieldVblank`,
+>   `gen_stubs.c`) — yield iff `$0B9D` bit 7 set.
+> - `MmxSchedulerTick` set `$0B9D = $FF` (via `I_NMI`) before the slot walk
+>   and cleared it only at the **end** of the tick — so the decompressor saw
+>   `$FF` on its first `$8121` check and yielded after **one** 32-unit batch
+>   per frame (~⅓ hardware throughput). The `$7E:00F4` "decompression
+>   pending" flag therefore stayed set 20/5/7 frames per block (vs hardware
+>   1-2). The turtle's slot `$7F:828d` allocated at cursor **+37f** vs
+>   hardware **+14f** (`mmxref`), losing the race against the ~+30f dash
+>   activation → tile-base latched 0 → invisible.
+> - On hardware the asm scheduler's `$80C6 STZ $0B9D` clears the flag
+>   **early**, so the decompressor runs the bulk of the frame with
+>   `$0B9D = 0` and streams many batches/frame.
+>
+> **Fix (one line + comment, runner-only):** clear `$0B9D` at the **start**
+> of the slot walk in `MmxSchedulerTick` (`MegamanXRecomp/src/mmx_rtl.c`),
+> modeling the `$80C6` timing. `$8121` is used **exclusively** by the
+> decompressor, so no other task's pacing changes; the decompressor now runs
+> its block to completion within the tick. `I_NMI` (which owns the gated DMA
+> path and reads `$0B9D` before the tick each frame) is unaffected — the tick
+> still leaves `$0B9D = 0`. **Result:** `$7E:00F4` blocks complete in the
+> same frame (was 20/5/7f); turtle visible on dash-jump (user-confirmed). No
+> codegen/bank regen needed.
+>
+> *The detailed diagnosis trail below is retained for history; note that its
+> "fix pending in `$82C8`" conclusion is superseded by the correction above.*
+
+> **Symptom.** In Spark Mandrill's stage, a specific turtle enemy is
+> invisible — the turtle AND its projectiles — if the player approaches via
+> dash-jump (dash + jump together, the common speed tactic). Walk up to it
+> normally and it appears correctly. Either way the object stays fully
+> active (fires projectiles, deals contact damage). **User-confirmed: on
+> real hardware the turtle is never invisible → this is a recomp-only
+> divergence, NOT a game quirk.**
+>
+> **NOT the same as the Session-4/5/7 highway "reveal-fires-early" ordering
+> bug — that one is fixed (user-confirmed fade-in + boss-select correct).**
+>
+> #### Diagnosis (2026-06-01, Debug build, debug server :4379)
+>
+> Investigated by capturing OAM / VRAM / CGRAM / low-WRAM in a visible run
+> vs an invisible run and diffing (all via the always-on rings; block
+> tracing is non-functional in this build — ring stays empty — so the
+> `wram_writes_at` write-log was the attribution tool).
+>
+> **It is NOT a tile-DMA / VRAM-load failure.** The turtle's tiles are
+> fully resident in VRAM in both runs (verified `0x100` and `0x130` tile
+> regions both populated). The object logic and OAM sprite *assembly* are
+> correct too — OAM is emitted with the right shape and screen positions in
+> both runs (which is why it still shoots and hurts).
+>
+> **Root mechanism — the per-object OAM *binding* fields come out at
+> defaults on the dash-jump path.** The OAM assembler `$00:D6A7` (← `$D625`)
+> computes, per sprite (object struct base in `D`, e.g. turtle at `$7E:1028`):
+> - `tile = descriptor_tile + [D+0x18]` — `[D+0x18]` = object **tile-base /
+>   VRAM page**. Field `$7E:1040`: **`0x30` visible → `0x00` invisible** ⇒
+>   OAM points at the unloaded `0x100` region instead of `0x130`.
+> - `attr = (descriptor & 0xCE) | ([D+0x11] & 0x3f) ^ …` — `[D+0x11]` =
+>   **palette/priority**. Field `$7E:1039`: **`0x2b` (pal5/prio2) visible →
+>   `0x01` (pal0/prio0) invisible**. Priority 0 renders the sprite *behind*
+>   the stage foreground — the dominant cause of "invisible" (palette 0 is
+>   populated, so palette is not the cause). The `0x2a` (pal5+prio2) and the
+>   `0x30` tile-base are exactly the binding that is missing.
+>
+> Related diffs in the struct (`$1037`/`$103b`/`$103c`/`$103f`) are
+> animation/gfx-load state (`bank_04_8EEA`).
+>
+> **Writers (visible run):**
+> - palette/priority `$1039` is refreshed EVERY frame to `0x2b` by
+>   `bank_07_EBFE` (← `bank_00_FB78`).
+> - tile-base `$1040` is set ONCE at spawn (the gfx-load) and not refreshed;
+>   on the dash-jump path it is simply never set (stays `0x00`).
+>
+> **Root narrowed to the VRAM-allocation table `$7F:8200` (2026-06-01).**
+> Used the `watch_add` write-watchpoint (auto-pauses on a WRAM write +
+> snapshots a 16-frame caller stack via `parked`) to catch the tile-base
+> write in both runs without racing eviction. Tile-base `$1040` is written
+> by `bank_02_827D`, **identical call chain in both runs**:
+> `953F→9976→9A6A→D1ED→D4EA→D530→FB78→bank_07_EBFE→bank_07_EC3A→bank_02_827D`.
+> `827D` computes `tile-base = [$7F:8200 + slot]`, slot from the object's
+> gfx-index `[D+0x0a]` via a `$a5e4/$a5e5` table. Walk-vs-dash struct
+> compare: gfx-index `[D+0x0a]=0x5b` and intermediate `[D+0x16]=0x98` are
+> **IDENTICAL**; only the final `[$7F:8200+slot]` differs — `0x30` (walk) vs
+> `0x00` (dash-jump). The `$7F:8200` table is nearly all-zero on dash-jump:
+> the turtle's slot was never populated.
+>
+> **ROOT CAUSE = EXECUTION-ORDERING DIVERGENCE (confirmed 2026-06-01).**
+> The turtle's VRAM-alloc entry is `$7F:828d` (slot `0x8d`). The allocator
+> is **`bank_00_B15B`** (`$00:B15B`, the gfx/VRAM-slot manager). A watchpoint
+> on `$7F:828d` shows **B15B writes `0x30` on BOTH walk and dash-jump** — the
+> allocation is NOT skipped. The bug is ORDER: on the dash-jump run, at the
+> instant B15B writes `$7F:828d=0x30`, the turtle's tile-base `$1040` is
+> ALREADY `0x00` and attr `$1039` ALREADY `0x01`. So the consumer `827D`
+> (under `bank_07_EBFE`) already read the not-yet-allocated `$7F:828d=0`,
+> latched the unbound defaults, and never re-binds. On the walk run B15B
+> runs first → `827D` reads `0x30` → visible.
+>
+> **i.e. the dash-jump approach makes the recomp run the OAM-gfx binding
+> (`827D`) a frame BEFORE the VRAM allocator (`B15B`) — reverse of the walk
+> path and of hardware (where the turtle is never invisible).** Same class
+> as the fixed highway "reveal-before-load" ordering bug, distinct instance.
+> **ROOT CAUSE CONFIRMED 2026-06-01 — (A) recomp VRAM streaming is too slow,
+> verified against a hardware-accurate reference.** The "bind-before-alloc"
+> framing above is correct but the MECHANISM is allocator-LATE, not binder-
+> early. Refined with a frame-stamped streaming trace (`trace_wram` on the
+> VRAM-alloc table `$7F:8200-82ff` + streaming cursor `$00:1F08` + DMA gate
+> `$7E:00F4` + object slots), aligned to the `$1F08 0x04→0x05` cursor advance:
+> the streaming is FRAME-PACED and DETERMINISTIC, reaching the turtle's slot
+> `$7F:828d` at **cursor +37/+38f** in BOTH walk and dash; what differs by
+> approach is only WHEN the object activates (camera-driven: ~+30f fast dash
+> vs ~+134f walk). So the allocator simply needs ~38f of lead and a fast dash
+> gives only ~30f → loses by ~8f.
+>
+> A **standalone hardware-accurate reference** was built to settle whether
+> recomp streaming is too slow vs activation too early (the recomp+snes9x
+> *mirror* desyncs, so a non-mirrored emulator was needed): **`mmxref`**
+> (`F:\Projects\mmxref` — SDL2 + snes9x-1.63 libretro core, same per-frame WRAM
+> trace; reliable SDL input incl. PS5 pad, F1–F9 save states). Same turtle
+> approach, same `$1F08 0x04→0x05` → `$7F:828d=0x30` alignment:
+>
+> | | cursor → turtle alloc `$828d` | `$7E:00F4` DMA-chunk cadence |
+> |---|---|---|
+> | **snes9x (hardware)** | **+14f** (walk f30682→f30696, dash f19872→f19886) | **1–2 frames/chunk** |
+> | **recomp** | **+37f walk / +38f dash** | **4–7 frames/chunk** |
+>
+> Hardware allocates the turtle's VRAM **24 frames sooner** than the recomp,
+> because the per-chunk VRAM-DMA throttle (`$7E:00F4` "DMA-pending" semaphore:
+> set by the `B23C` decompressor, cleared by the NMI VRAM-DMA) drains **~3×
+> too slowly in the recomp**. So on a fast dash-jump hardware's +14f alloc
+> beats the ~+30f activation (visible) while the recomp's +38f alloc loses
+> (tile-base latches 0 → invisible). **Activation timing was never the issue.**
+>
+> **FIX (runner, NOT generated C):** make the gated NMI VRAM-DMA (`$00:82C8`,
+> gated on the `$0B9D/$0BA0` handshake bootstrapped by `MmxSchedulerTick` in
+> `snesrecomp/runner/src/mmx_rtl.c`) drain queued VRAM **each frame** like
+> hardware, so `$7E:00F4` clears in ~1 frame and streaming reaches the turtle
+> at ~+14f. **Validate:** recomp `$828d` alloc moves to ~cursor+14f, dash-jump
+> turtle renders visible, DMA cadence matches mmxref's 1–2f/chunk; regen all
+> banks + rebuild all configs + regression-test SMW/Zelda. HW-ref artifact:
+> `snes9x_walk_knowngood.jsonl`. Repro/measure tooling: `trace_wram 18200 182ff`
+> + `trace_wram 1f08 1f08` + `trace_wram f4 f8`, align to the cursor advance.
+>
+> **Object/OAM RAM map and tooling** (`MegamanXRecomp/tools/`:
+> `dbgprobe.py`, `oam_parse.py`, `vram_region.py`, `find_oam_buf.py`,
+> `scan_writers.py`, `diff_wram.py`, `find_turtle_slot2.py`, `sprite_cap.py`)
+> documented in the OAM/object-RAM section below / agent memory. Captures
+> saved at repo root: `cap_vis2_oam.json`/`wram_vis2.json` (visible),
+> `cap_inv2_oam.json`/`wram_inv2.json` (invisible), `vram_invisible.json`,
+> `cgram_invisible.json`.
+>
+> **Build note:** the MSVC `Debug|x64` config had never been built; fixed
+> two config bugs in `src/mmx.vcxproj` to produce it — added
+> `SNESRECOMP_TRACE=1` (was missing → `debug_server.c` collided with the
+> no-op header stubs) and removed `TreatWarningAsError` (the generated banks
+> emit benign warnings; the other three configs never treated warnings as
+> errors).
 
 ### Scene-transition reveal desynced from BG load — highway BG "loads in late" + boss-select fade off (filed 2026-05-30) — ✅ FIXED 2026-05-30 (Session-7)
 
