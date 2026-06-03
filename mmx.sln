@@ -5,15 +5,12 @@ VisualStudioVersion = 17.3.32825.248
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mmx", "src\mmx.vcxproj", "{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "snes9x_core", "snes9x_core.vcxproj", "{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
-		Oracle|x64 = Oracle|x64
 		Production|x64 = Production|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
@@ -25,17 +22,8 @@ Global
 		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Release|x64.Build.0 = Release|x64
 		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Release|x86.ActiveCfg = Release|Win32
 		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Release|x86.Build.0 = Release|Win32
-		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Oracle|x64.ActiveCfg = Oracle|x64
-		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Oracle|x64.Build.0 = Oracle|x64
 		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Production|x64.ActiveCfg = Production|x64
 		{1F8AB1B4-DAFB-4D6E-BF1E-F802FF5A52EE}.Production|x64.Build.0 = Production|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Oracle|x64.ActiveCfg = Oracle|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Oracle|x64.Build.0 = Oracle|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Production|x64.ActiveCfg = Oracle|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Debug|x64.ActiveCfg = Oracle|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Debug|x86.ActiveCfg = Oracle|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Release|x64.ActiveCfg = Oracle|x64
-		{9A5E3AE1-4F8C-4C63-BC2D-74AABBDDCCEE}.Release|x86.ActiveCfg = Oracle|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
