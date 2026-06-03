@@ -1,0 +1,18 @@
+# Pinned commit of github.com/mstan/snesrecomp used to build this repo.
+# Bumping this is a deliberate, reviewable change (snesrecomp is a separate
+# repo evolving on its own cadence). Update via:
+#   git -C ../snesrecomp rev-parse main > /tmp/sha && \
+#     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
+sha = 00425c6e5824f113528f0e4bc2ac6bf22573cca4
+# Branch: main. Created 2026-06-03 — first pin file for this repo, recording
+# the snesrecomp commit MMX currently builds against. 00425c6 lands the
+# reference-taint prune convergence fix: _scan_variant_refs resets `cur` on
+# the un-suffixed `void <name>(CpuState*)` entry-point aliases emit_bank
+# appends after each bank's bodies (previously every alias call was
+# attributed to the LAST real variant body in the bank, falsely tainting it;
+# pruning that body shifted the victim to the next so the prune never reached
+# a fixpoint — the SMW/ALttP regen treadmill). Companion: codegen emits
+# one-line dispatch case/default even with pre_call; v2_regen gets a fixed
+# 1.5h wall-clock cap + non-convergence backstops + rolling prune snapshots.
+# MMX regen-converges (0 ref-taint passes) and builds against this commit;
+# user-verified playing correctly. No rebuild required for this bump.
