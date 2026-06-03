@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-void smw_post_mortem_dump(const char *reason, void *fault_info);
+void recomp_post_mortem_dump(const char *reason, void *fault_info);
 
 #ifdef __cplusplus
 }

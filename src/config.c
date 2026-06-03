@@ -440,9 +440,9 @@ void ParseConfigFile(const char *filename) {
    * oracle is incompatible with the repro workflow. See config.h doc. */
   g_config.enable_snes9x_oracle = true;
 
-  if (filename != NULL || !ParseOneConfigFile("smw.user.ini", 0)) {
+  if (filename != NULL || !ParseOneConfigFile("config.user.ini", 0)) {
     if (filename == NULL)
-      filename = "mmx.ini";
+      filename = "config.ini";
     if (!ParseOneConfigFile(filename, 0))
       fprintf(stderr, "Warning: Unable to read config file %s\n", filename);
   }

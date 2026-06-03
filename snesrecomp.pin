@@ -3,7 +3,8 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 00425c6e5824f113528f0e4bc2ac6bf22573cca4
+sha = 95c2f207379d02fe56e3ae7db0388398d82d7324
+# 2026-06-03 bump: lands the in-process snes9x oracle removal + the recomp_post_mortem_dump genericization.
 # Branch: main. Created 2026-06-03 — first pin file for this repo, recording
 # the snesrecomp commit MMX currently builds against. 00425c6 lands the
 # reference-taint prune convergence fix: _scan_variant_refs resets `cur` on

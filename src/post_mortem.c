@@ -15,8 +15,8 @@
  *   - per-thread host stacks (Toolhelp32 + DbgHelp StackWalk64)
  *
  * Triggered from:
- *   - SEH unhandled-exception filter in main.c (smw_post_mortem_dump("seh", info))
- *   - signal() crash handler in main.c (smw_post_mortem_dump("signal", NULL))
+ *   - SEH unhandled-exception filter in main.c (recomp_post_mortem_dump("seh", info))
+ *   - signal() crash handler in main.c (recomp_post_mortem_dump("signal", NULL))
  *   - atexit() registered in main()
  *   - TCP "post_mortem_dump" command in debug_server.c
  *
@@ -598,7 +598,7 @@ static void dump_all_threads_json(FILE *f, void *fault_info_void) {
 
 /* ── Public entry ───────────────────────────────────────────────────── */
 
-void smw_post_mortem_dump(const char *reason, void *fault_info) {
+void recomp_post_mortem_dump(const char *reason, void *fault_info) {
     dump_lock();
 
     FILE *f = fopen(kReportPath, "w");
