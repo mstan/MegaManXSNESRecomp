@@ -60,7 +60,26 @@ bool g_new_ppu = true;
 
 struct SpcPlayer *g_spc_player;
 
-static uint8_t g_my_pixels[256 * 4 * 240];
+// Sized for the widescreen capacity (256 + 2*kPpuExtraLeftRight). With
+// widescreen off the PPU only writes the leading 256 columns, so this is
+// authentic-identical; the extra capacity is just unused tail.
+static uint8_t g_my_pixels[kPpuBufWidth * 4 * 240];
+
+// Widescreen border, in PPU columns per side (0 = authentic 256-wide).
+// EXPLORATORY (presentation-only): the shared runner renders the extra BG
+// columns, but MMX's own spawn/cull/HUD logic has NOT been widened (no
+// override layer like SMW's yet), so expect sprite pop-in at the 4:3 edge,
+// 9-bit OAM x wrap in the left margin, and garbage margins on bounded
+// screens. Default off = authentic.
+int g_ws_extra = 0;
+
+// Runtime widescreen master switch (mirrors SMW's; reserved for a future
+// MMX game-logic override layer).
+bool g_ws_active = false;
+
+// Hard cap from the SNES 9-bit OAM x space (see SMW's derivation:
+// 2*extra <= 192, so ~2.0:1 max for sprites).
+enum { kWsExtraMax = 95 };
 
 
 enum {
@@ -297,9 +316,17 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
 }
 
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
+  // Re-apply the widescreen border every frame (ppu_reset zeroes the PPU's
+  // copy on soft reset / load-state). PROBE: applied unconditionally — MMX
+  // has no known game-mode discriminator for "screens with valid BG past
+  // 256" yet; finding which screens need a pillarbox fallback is part of
+  // what this probe observes.
+  size_t row_bytes = (size_t)g_snes_width * 4;
+  if (g_ws_extra > 0)
+    PpuSetExtraSpace(g_ppu, (uint8_t)g_ws_extra);
   g_rtl_game_info->draw_ppu_frame();
   for (size_t y = 0, y_end = g_snes_height; y < y_end; y++)
-    memcpy((uint8 *)pixel_buffer + y * pitch, g_my_pixels + y * 256 * 4, 256 * 4);
+    memcpy((uint8 *)pixel_buffer + y * pitch, g_my_pixels + y * row_bytes, row_bytes);
 }
 
 #ifdef ENABLE_ORACLE_BACKEND
@@ -420,8 +447,10 @@ static bool SdlRenderer_Init(SDL_Window *window) {
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "best");
 
   int tex_mult = 1;
+  // Texture at the full widescreen capacity so dynamic resizes never need a
+  // texture recreate; BeginDraw locks the current-width subrect.
   g_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                g_snes_width * tex_mult, g_snes_height * tex_mult);
+                                (256 + 2 * kPpuExtraLeftRight) * tex_mult, g_snes_height * tex_mult);
   if (g_texture == NULL) {
     printf("Failed to create texture: %s\n", SDL_GetError());
     return false;
@@ -452,6 +481,31 @@ static void SdlRenderer_EndDraw(void) {
   SDL_RenderClear(g_renderer);
   SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect, NULL);
   SDL_RenderPresent(g_renderer); // vsyncs to 60 FPS?
+}
+
+// Dynamic widescreen: derive the border width from the actual window
+// aspect so the game view follows resizes (and fullscreen on wide
+// monitors), clamped to the 9-bit OAM budget (kWsExtraMax) and the PPU's
+// compiled capacity. No-op when widescreen is off or the width is right.
+static void WidescreenUpdateForWindow(int win_w, int win_h) {
+  if (!g_config.widescreen || win_w <= 0 || win_h <= 0)
+    return;
+  int target_w = (win_w * g_snes_height + win_h / 2) / win_h;
+  int extra = (target_w - 256) / 2;
+  int cap = IntMin(kPpuExtraLeftRight, kWsExtraMax);
+  extra = IntMax(0, IntMin(extra, cap));
+  if (extra == g_ws_extra)
+    return;
+  g_ws_extra = extra;
+  g_snes_width = 256 + 2 * extra;
+  g_ws_active = (extra > 0);
+  PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)g_snes_width * 4, 0);
+  // Apply immediately: RtlDrawPpuFrame's per-frame re-apply is gated on
+  // g_ws_extra > 0, so shrinking to exactly 4:3 would otherwise leave the
+  // PPU's old margins live.
+  PpuSetExtraSpace(g_ppu, (uint8_t)extra);
+  if (g_renderer && !g_config.ignore_aspect_ratio)
+    SDL_RenderSetLogicalSize(g_renderer, g_snes_width, g_snes_height);
 }
 
 static const struct RendererFuncs kSdlRendererFuncs = {
@@ -683,6 +737,22 @@ int main(int argc, char** argv) {
   g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
   g_snes_width = 256;
   g_snes_height = 224;// (g_config.extend_y ? 240 : 224);
+
+  // Widescreen (optional, default off -> authentic 256-wide). Render enough
+  // extra PPU columns that the square-pixel image fills 16:9 at the current
+  // height. Env var SNESRECOMP_WIDESCREEN overrides config (1/0).
+  {
+    const char *ws_env = getenv("SNESRECOMP_WIDESCREEN");
+    if (ws_env && *ws_env)
+      g_config.widescreen = (atoi(ws_env) != 0);
+  }
+  if (g_config.widescreen) {
+    int target_w = (g_snes_height * 16 + 4) / 9;   // round to nearest
+    g_ws_extra = IntMin((target_w - 256) / 2, kPpuExtraLeftRight);
+    if (g_ws_extra < 0) g_ws_extra = 0;
+    g_snes_width = 256 + g_ws_extra * 2;
+    g_ws_active = (g_ws_extra > 0);
+  }
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
     g_config.extend_y * kPpuRenderFlags_Height240 |
     g_config.no_sprite_limits * kPpuRenderFlags_NoSpriteLimits;
@@ -846,7 +916,16 @@ error_reading:;
     g_audiobuffer = (uint8 *)calloc(g_frames_per_block * have.channels * sizeof(int16), 1);
   }
 
-  PpuBeginDrawing(g_ppu, g_my_pixels, 256 * 4, 0);
+  PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)g_snes_width * 4, 0);
+
+  // Sync the border width to the window we actually got (config-sized,
+  // fullscreen-desktop on a wide monitor, etc.). Later resizes flow
+  // through SDL_WINDOWEVENT_SIZE_CHANGED.
+  {
+    int win_w = 0, win_h = 0;
+    SDL_GetWindowSize(g_window, &win_w, &win_h);
+    WidescreenUpdateForWindow(win_w, win_h);
+  }
 
   MkDir("saves");
     
@@ -934,6 +1013,10 @@ error_reading:;
         break;
       case SDL_KEYUP:
         HandleInput(event.key.keysym.sym, event.key.keysym.mod, false);
+        break;
+      case SDL_WINDOWEVENT:
+        if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+          WidescreenUpdateForWindow(event.window.data1, event.window.data2);
         break;
       case SDL_QUIT:
         running = false;
@@ -1365,6 +1448,12 @@ static const char kDefaultConfigIniContent[] =
   "\n"
   "# Remove the sprite limits per scan line\n"
   "NoSpriteLimits = 1\n"
+  "\n"
+  "# EXPLORATORY widescreen (16:9), presentation-only. The renderer fills\n"
+  "# the window's aspect with extra background columns, but the game's own\n"
+  "# spawn/cull/HUD logic is NOT widened yet: expect enemy pop-in at the\n"
+  "# 4:3 edge and artifacts on some screens. 0 = authentic (default).\n"
+  "Widescreen = 0\n"
   "\n"
   "[Sound]\n"
   "EnableAudio = 1\n"

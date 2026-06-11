@@ -3,7 +3,16 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 2b135e8f5f6acb7ec345d81ba8d0049043d5ecf4
+sha = cbf7fa72f16126c5577f42335d6f849341af7d5e
+# 2026-06-11 bump (2b135e8 -> cbf7fa7): widescreen runner support, for
+# the EXPLORATORY MMX widescreen probe branch. Runner-only (src/gen
+# untouched, no regen required); all changes runtime-gated and inert
+# unless the game opts in: OAM write/render ring buffers in the debug
+# server, sprite-level x gate widened to the left widescreen margin
+# (authentic at extraLeftCur == 0), opt-in BG3 HUD split (unused by
+# MMX). Ppu struct fields added BEFORE the snapshot region — savestate
+# layout unchanged. Same commit SMW main pins for its widescreen
+# release.
 # 2026-06-10 bump: exe-dir anchoring. 2b135e8 adds
 # snesrecomp_anchor_to_exe_dir()/snesrecomp_abspath() to the runner
 # launcher and absolutizes the argv ROM path before caching it in
