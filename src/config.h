@@ -50,9 +50,11 @@ typedef struct Config {
   bool autosave;
   bool extend_y;
   bool no_sprite_limits;
-  // EXPLORATORY widescreen (16:9), presentation-only: the runner renders
-  // the extra BG columns but MMX's game logic (spawn/cull/HUD) has not
-  // been widened. Off by default = authentic 256-wide SNES.
+  // EXPERIMENTAL widescreen (16:9), presentation-only, stages only: the
+  // runner renders the extra BG columns in player-controlled stages and
+  // pillarboxes everything else; MMX's game logic (column streaming,
+  // spawn/cull, HUD) has not been widened — see docs/WIDESCREEN.md.
+  // Off by default = authentic 256-wide SNES.
   bool widescreen;
   bool display_perf_title;
   bool disable_frame_delay;

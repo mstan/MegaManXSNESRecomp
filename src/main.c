@@ -66,11 +66,12 @@ struct SpcPlayer *g_spc_player;
 static uint8_t g_my_pixels[kPpuBufWidth * 4 * 240];
 
 // Widescreen border, in PPU columns per side (0 = authentic 256-wide).
-// EXPLORATORY (presentation-only): the shared runner renders the extra BG
-// columns, but MMX's own spawn/cull/HUD logic has NOT been widened (no
-// override layer like SMW's yet), so expect sprite pop-in at the 4:3 edge,
-// 9-bit OAM x wrap in the left margin, and garbage margins on bounded
-// screens. Default off = authentic.
+// Presentation-only Tier 1: the shared runner renders the extra BG columns
+// in player-controlled stages (gated in RtlDrawPpuFrame); MMX's own
+// spawn/cull/streaming logic is NOT widened (no override layer like SMW's),
+// so the leading margin fills as the engine streams it and enemies pop in
+// at the 4:3 edge. Tier 2 findings/blockers: docs/WIDESCREEN.md.
+// Default off = authentic.
 int g_ws_extra = 0;
 
 // Runtime widescreen master switch (mirrors SMW's; reserved for a future
@@ -315,15 +316,35 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
   return SDL_HITTEST_NORMAL;
 }
 
+extern uint8_t g_ram[0x20000];
+
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
   // Re-apply the widescreen border every frame (ppu_reset zeroes the PPU's
-  // copy on soft reset / load-state). PROBE: applied unconditionally — MMX
-  // has no known game-mode discriminator for "screens with valid BG past
-  // 256" yet; finding which screens need a pillarbox fallback is part of
-  // what this probe observes.
+  // copy on soft reset / load-state). Widescreen only in player-controlled
+  // stages; everything else (attract loop incl. its stage-engine demo
+  // segments, title, menus, story text, the in-stage pause overlay) is
+  // pillarboxed — those screens have no valid BG past the authentic 256
+  // columns and would show stale tilemap content (measured: the engine
+  // streams exactly one seam column at the 256-view edge per 8px of camera
+  // travel; see docs/WIDESCREEN.md).
+  //
+  // Discriminators (found empirically by diffing screenshot-labeled WRAM
+  // snapshots across title/menu/story/demo/stage/pause; no public RAM map
+  // documents these):
+  //   $00D1 == 0x02  player-controlled stage (attract demo stages read 0)
+  //   $00C3 bit 7    engine-halted overlay (set during the pause menu and
+  //                  title sequence; clear during live stage play)
   size_t row_bytes = (size_t)g_snes_width * 4;
-  if (g_ws_extra > 0)
-    PpuSetExtraSpace(g_ppu, (uint8_t)g_ws_extra);
+  if (g_ws_extra > 0) {
+    bool in_stage = (g_ram[0xD1] == 0x02) && !(g_ram[0xC3] & 0x80);
+    if (in_stage) {
+      PpuSetExtraSpace(g_ppu, (uint8_t)g_ws_extra);
+    } else {
+      // Center the authentic 256 view and black out the side margins.
+      PpuSetExtraSpaceCentered(g_ppu, (uint8_t)g_ws_extra);
+      memset(g_my_pixels, 0, row_bytes * g_snes_height);
+    }
+  }
   g_rtl_game_info->draw_ppu_frame();
   for (size_t y = 0, y_end = g_snes_height; y < y_end; y++)
     memcpy((uint8 *)pixel_buffer + y * pitch, g_my_pixels + y * row_bytes, row_bytes);
@@ -1449,10 +1470,13 @@ static const char kDefaultConfigIniContent[] =
   "# Remove the sprite limits per scan line\n"
   "NoSpriteLimits = 1\n"
   "\n"
-  "# EXPLORATORY widescreen (16:9), presentation-only. The renderer fills\n"
-  "# the window's aspect with extra background columns, but the game's own\n"
-  "# spawn/cull/HUD logic is NOT widened yet: expect enemy pop-in at the\n"
-  "# 4:3 edge and artifacts on some screens. 0 = authentic (default).\n"
+  "# EXPERIMENTAL widescreen (16:9), presentation-only, stages only. In\n"
+  "# player-controlled stages the renderer fills the window's aspect with\n"
+  "# extra background columns; menus, the attract loop, and the pause screen\n"
+  "# stay authentic 4:3 (pillarboxed). Known limits: the margin ahead of\n"
+  "# your direction of travel fills in only as the game streams it (stale\n"
+  "# until visited), and enemies still spawn/cull on the 4:3 window, so\n"
+  "# expect pop-in at the old screen edge. 0 = authentic (default).\n"
   "Widescreen = 0\n"
   "\n"
   "[Sound]\n"
