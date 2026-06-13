@@ -3,7 +3,14 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = c17bef708054758030682930de03ef65e7a0b0dd
+sha = 26063a0008bc0fe3699de243743054a79f8c636d
+# 2026-06-13 bump (c17bef7 -> 26063a0): reconcile MMX onto runner main.
+# Pulls the shadow-enhancements framework (dsp_shadow.c / audio_shadow.c /
+# color_lut.c), the APU port-write scheduler + widescreen runner support,
+# MSU-1 (msu1.c, default-OFF), the permissive ROM resolver, and the MSVC
+# build fix for msu1.c. mmx.vcxproj gains those four snes/*.c sources (they
+# are referenced unconditionally by the runner now). Runner-only for MMX;
+# src/gen untouched, no regen. Default-OFF features stay byte-identical.
 # 2026-06-11 bump (bf64f0d -> c17bef7): docs-only delta
 # (ISSUES.md turbo music-drop note). No code, no regen, no rebuild.
 # Unifies SMW/MMX/ALttP on the runner main tip ahead of the Zelda
