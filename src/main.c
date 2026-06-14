@@ -771,7 +771,7 @@ int main(int argc, char** argv) {
         memset(&gi, 0, sizeof(gi));
         gi.name = "Mega Man X";
         gi.region = "(USA)";
-        gi.sram_path = "saves/smw.srm";  /* matches kMmxGameInfo.title */
+        gi.sram_path = "saves/save.srm";  /* generic SRAM path (RtlReadSram migrates legacy) */
         gi.expected_crc = 0xDED53C64u;
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxUsaSha256;   /* single accepted digest */
