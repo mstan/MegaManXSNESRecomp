@@ -56,10 +56,18 @@ target_include_directories(MegaManXSNESRecomp PRIVATE
     ${SDL2_INCLUDE_DIRS}
 )
 
+# prod-vs-debug via the single SNESRECOMP_ENABLE_TRACE switch (runner.cmake,
+# default OFF). Prod: no debug_server.c / TCP server / rings. Debug:
+# -DSNESRECOMP_ENABLE_TRACE=ON. tools/build-linux.sh --config {prod,debug} sets it.
+if(SNESRECOMP_ENABLE_TRACE)
+    set(_MMX_TRACE 1)
+else()
+    set(_MMX_TRACE 0)
+endif()
 target_compile_definitions(MegaManXSNESRecomp PRIVATE
     SMW_DISABLE_LM=1
     SYSTEM_VOLUME_MIXER_AVAILABLE=0   # Win32 WASAPI volume control excluded
-    SNESRECOMP_TRACE=0                # no TCP debug server (debug_server.c excluded)
+    SNESRECOMP_TRACE=${_MMX_TRACE}    # TCP debug server: 0 in prod, 1 in debug
     SNESRECOMP_REVERSE_DEBUG=0        # raw WRAM stores; matches non-debug generated C
 )
 
@@ -73,4 +81,5 @@ endif()
 target_link_libraries(MegaManXSNESRecomp PRIVATE
     ${SDL2_LIBRARIES}
     OpenGL::GL
+    m                                 # libm: glsl_shader.c uses pow() (implicit on macOS)
 )
