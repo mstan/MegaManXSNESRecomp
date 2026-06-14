@@ -661,6 +661,11 @@ int main(int argc, char** argv) {
     extern int snesrecomp_anchor_to_exe_dir(void);
     snesrecomp_anchor_to_exe_dir();
   }
+
+  /* Carry a legacy saves/smw.srm forward to the generic saves/save.srm BEFORE the
+   * launcher runs, so its SAVES panel shows the migrated save on the first launch
+   * after upgrading. Idempotent; RtlReadSram also calls it on boot as a fallback. */
+  RtlMigrateLegacySram("smw");
   if (!config_file)
     EnsureConfigIni();
   /* Pin config.ini to the exe directory for all reads/writes, regardless of the
