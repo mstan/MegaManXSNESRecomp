@@ -141,9 +141,9 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\lib\RmlUi\Include;$(SolutionDir)snesrecomp\lib\RmlUi\Backends;$(SolutionDir)snesrecomp\runner\src\launcher</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <!-- 4005: HIBYTE macro collision (types.h vs windows.h). banks.h is
            force-included before any file's own <windows.h>, so types.h's
@@ -152,6 +152,7 @@
            treating warnings as errors; Debug suppresses it explicitly. -->
       <DisableSpecificWarnings>4996;4005</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <!-- No TreatWarningAsError: the machine-generated banks (src/gen/*.c)
            intentionally emit benign warnings (C4102 unreferenced label, etc.).
            The other three configs don't treat warnings as errors either; this
@@ -159,34 +160,38 @@
       <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)snesrecomp\lib\_build\out\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>rmlui.lib;freetype.lib;opengl32.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\lib\RmlUi\Include;$(SolutionDir)snesrecomp\lib\RmlUi\Backends;$(SolutionDir)snesrecomp\runner\src\launcher</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)snesrecomp\lib\_build\out\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>rmlui.lib;freetype.lib;opengl32.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Production|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\lib\RmlUi\Include;$(SolutionDir)snesrecomp\lib\RmlUi\Backends;$(SolutionDir)snesrecomp\runner\src\launcher</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <!-- Production: SNESRECOMP_TRACE is NOT defined (default 0). The
            cpu_trace.h / debug_server.h #else blocks compile every call
            into a no-op static inline; debug_server.c and cpu_trace.c
            are ExcludedFromBuild below. -->
-      <PreprocessorDefinitions>NDEBUG;SMW_DISABLE_LM=1;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;SMW_DISABLE_LM=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <ForcedIncludeFiles>$(ProjectDir)banks.h</ForcedIncludeFiles>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -209,7 +214,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)snesrecomp\lib\_build\out\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>rmlui.lib;freetype.lib;opengl32.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -219,6 +225,24 @@
     <ClCompile Include="..\snesrecomp\runner\src\recomp_hw.c" />
     <ClCompile Include="..\snesrecomp\runner\src\framedump.c" />
     <ClCompile Include="..\snesrecomp\runner\src\launcher.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\launcher\launcher_gui.cpp">
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>RMLUI_STATIC_LIB;RMLUI_NO_THIRDPARTY_CONTAINERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\lib\RmlUi\Backends\RmlUi_Renderer_GL3.cpp">
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>RMLUI_STATIC_LIB;RMLUI_NO_THIRDPARTY_CONTAINERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\snesrecomp\lib\RmlUi\Backends\RmlUi_Platform_SDL.cpp">
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>RMLUI_STATIC_LIB;RMLUI_NO_THIRDPARTY_CONTAINERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\snesrecomp\runner\src\crc32.c" />
     <ClCompile Include="..\snesrecomp\runner\src\sha256.c" />
     <ClCompile Include="..\snesrecomp\runner\src\keybinds.c" />
@@ -328,5 +352,25 @@
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\sdl2.nuget.redist.2.26.3\build\native\sdl2.nuget.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.redist.2.26.3\build\native\sdl2.nuget.redist.targets'))" />
     <Error Condition="!Exists('..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets'))" />
+  </Target>
+
+  <!-- Stage the shared RmlUi launcher assets next to the exe. x64 only. -->
+  <Target Name="CopyLauncherAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <ItemGroup>
+      <LauncherAssets Include="$(SolutionDir)snesrecomp\runner\src\launcher\assets\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(LauncherAssets)"
+          DestinationFiles="@(LauncherAssets->'$(OutDir)launcher\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Per-game launcher assets (boxart). boxart.tga -> launcher root. -->
+  <Target Name="CopyGameLauncherAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <ItemGroup>
+      <GameLauncherAssets Include="$(SolutionDir)recomp\launcher\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GameLauncherAssets)"
+          DestinationFiles="@(GameLauncherAssets->'$(OutDir)launcher\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
   </Target>
 </Project>

@@ -51,7 +51,6 @@ typedef struct Config {
   bool extend_y;
   bool no_sprite_limits;
   bool display_perf_title;
-  bool disable_frame_delay;
 
   /* Oracle-build only. When false, main.c skips snes_oracle_init_default
    * and calls snes_oracle_set_disabled_by_game so the dispatcher refuses
@@ -97,5 +96,9 @@ enum {
 extern Config g_config;
 
 void ParseConfigFile(const char *filename);
+// Persist the launcher-editable settings back into `filename` (or config.ini)
+// with a surgical, comment-preserving in-place update. Called after the GUI
+// launcher returns PLAY.
+void WriteConfigFile(const char *filename);
 int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod);
 int FindCmdForGamepadButton(int button, uint32 modifiers);

@@ -3,7 +3,12 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 26063a0008bc0fe3699de243743054a79f8c636d
+sha = 2ae1488ef808cdd87bd9c6fa8fa7d63a33beccc6
+# 2026-06-13 bump (26063a0 -> 2ae1488): add the shared RmlUi pre-boot
+# launcher module (runner/src/launcher/) + RmlUi/FreeType submodules.
+# Companion MMX side wires the launcher (mmx.vcxproj, main.c GameInfo,
+# config WriteConfigFile). MMX has no widescreen and no MSU-1, so both
+# launcher panels are hidden. Runner-only for the engine; src/gen untouched.
 # 2026-06-13 bump (c17bef7 -> 26063a0): reconcile MMX onto runner main.
 # Pulls the shadow-enhancements framework (dsp_shadow.c / audio_shadow.c /
 # color_lut.c), the APU port-write scheduler + widescreen runner support,

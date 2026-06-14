@@ -24,6 +24,9 @@
 #include "config.h"
 #include "util.h"
 #include "mmx_spc_player.h"
+#if defined(SNES_LAUNCHER)
+#include "launcher_capi.h"   /* shared RmlUi pre-boot launcher (snes_launcher_run_window) */
+#endif
 
 #include "snes/snes.h"
 #ifdef __SWITCH__
@@ -645,6 +648,83 @@ int main(int argc, char** argv) {
       0x1e,0x19,0x6b,0xdf,0x1a,0xc6,0xdd,0xc7,
       0xcb,0x92,0x4b,0x1a,0xd0,0xbe,0x2d,0x32,
     };
+    int rom_resolved_by_launcher = 0;
+
+#if defined(SNES_LAUNCHER)
+    /* GUI launcher: pick/verify ROM + tune settings before boot. MMX has no
+     * widescreen and no MSU-1, so both of those panels are hidden (per-game
+     * GameInfo flags). Skipped for headless paths / positional ROM / env. */
+    {
+      int headless = start_paused || (script_file != NULL) || (framedump_dir != NULL);
+      int have_positional = (argc >= 1 && argv[0] && argv[0][0] != '-' && argv[0][0] != '\0');
+      const char *no_launcher = getenv("SNESRECOMP_NO_LAUNCHER");
+      if (!headless && !have_positional && !(no_launcher && *no_launcher)) {
+        SnesLauncherCSettings ls;
+        memset(&ls, 0, sizeof(ls));
+        ls.output_method = g_config.output_method;
+        ls.window_scale  = g_config.window_scale ? g_config.window_scale : 2;
+        ls.fullscreen    = g_config.fullscreen;
+        ls.ignore_aspect = g_config.ignore_aspect_ratio;
+        ls.linear_filter = g_config.linear_filtering;
+        ls.widescreen    = 0;   /* MMX: no widescreen path (panel hidden) */
+        ls.enable_audio  = g_config.enable_audio;
+        ls.audio_freq    = g_config.audio_freq;
+        ls.volume        = 100;
+        ls.player_src[0] = g_config.enable_gamepad[0] ? 2 : 1;
+        ls.player_src[1] = g_config.enable_gamepad[1] ? 2 : 0;
+        ls.deadzone[0] = ls.deadzone[1] = 30;
+        ls.msu1_enabled  = 0;   /* MMX: no MSU-1 (panel hidden) */
+
+        char init_rom[512]; init_rom[0] = '\0';
+        {
+          FILE *rc = fopen("rom.cfg", "r");
+          if (rc) {
+            if (fgets(init_rom, sizeof(init_rom), rc)) {
+              size_t l = strlen(init_rom);
+              while (l && (init_rom[l-1] == '\n' || init_rom[l-1] == '\r')) init_rom[--l] = '\0';
+            }
+            fclose(rc);
+          }
+        }
+
+        SnesLauncherCGameInfo gi;
+        memset(&gi, 0, sizeof(gi));
+        gi.name = "Mega Man X";
+        gi.region = "(USA)";
+        gi.expected_crc = 0xDED53C64u;
+        gi.has_expected_crc = 1;
+        gi.known_sha256 = &kMmxUsaSha256;   /* single accepted digest */
+        gi.num_known_sha256 = 1;
+        gi.widescreen_supported = 0;   /* hide Widescreen panel */
+        gi.msu1_supported = 0;         /* hide MSU-1 panel */
+
+        int act = snes_launcher_run_window(
+            "Mega Man X \xE2\x80\x94 Launcher",
+            &ls, &gi, "launcher", init_rom, rom_path_buf, sizeof(rom_path_buf));
+        if (act == 1) return 0;   /* user closed the launcher */
+        if (act == 0) {
+          g_config.output_method       = (uint8)ls.output_method;
+          g_config.window_scale        = (uint8)ls.window_scale;
+          g_config.fullscreen          = (uint8)ls.fullscreen;
+          g_config.ignore_aspect_ratio = ls.ignore_aspect != 0;
+          g_config.linear_filtering    = ls.linear_filter != 0;
+          g_config.enable_audio        = true;   /* always on */
+          g_config.audio_freq          = (uint16)ls.audio_freq;
+          g_config.enable_gamepad[0]   = ls.player_src[0] == 2;
+          g_config.enable_gamepad[1]   = ls.player_src[1] == 2;
+          WriteConfigFile(config_file);
+          if (rom_path_buf[0]) {
+            FILE *rc = fopen("rom.cfg", "w");
+            if (rc) { fprintf(rc, "%s\n", rom_path_buf); fclose(rc); }
+            rom_resolved_by_launcher = 1;
+          }
+        }
+        /* act == 2 (unavailable) -> console resolver below */
+      }
+    }
+#endif
+
+    if (!rom_resolved_by_launcher) {
     char *la_argv[2] = {
       (char *)"mmx",
       (char *)((argc >= 1 && argv[0]) ? argv[0] : "")
@@ -656,6 +736,7 @@ int main(int argc, char** argv) {
                                                 sizeof(rom_path_buf), kMmxUsaSha256)) {
       /* User cancelled the picker or repeatedly chose a non-matching ROM. */
       return 1;
+    }
     }
   }
   static char *resolved_argv[2];
@@ -1019,7 +1100,10 @@ error_reading:;
     // if vsync isn't working, delay manually
     curTick = SDL_GetTicks();
 
-    if (!g_snes->disableRender && !g_config.disable_frame_delay) {
+    /* Frame-delay pacing is always on (locks ~60 fps so audio stays in sync).
+     * The old DisableFrameDelay option broke audio on non-60 Hz displays and was
+     * dropped. */
+    if (!g_snes->disableRender) {
       static const uint8 delays[3] = { 17, 17, 16 }; // 60 fps
       lastTick += delays[frameCtr % 3];
 
@@ -1342,10 +1426,6 @@ static const char kDefaultConfigIniContent[] =
   "[General]\n"
   "# Automatically save state on quit and reload on start\n"
   "Autosave = 0\n"
-  "\n"
-  "# Disable the SDL_Delay that happens each frame (slightly better\n"
-  "# perf if your display is set to exactly 60hz)\n"
-  "DisableFrameDelay = 0\n"
   "\n"
   "[Graphics]\n"
   "# Window size (Auto or WidthxHeight)\n"
