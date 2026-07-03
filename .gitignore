@@ -89,3 +89,4 @@ release-stage/
 variants/*/gen/
 build-jp/
 build-jp-dbg/
+build-release-jp/

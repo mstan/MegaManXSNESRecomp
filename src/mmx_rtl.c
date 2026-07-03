@@ -830,11 +830,25 @@ void RunOneFrameOfGame(void) {
    * (scheduler slot $0031, DMA bookkeeping $02EE/$02FA).
    *
    * Per-variant default via MMX_SCHED_LLE_DEFAULT (set by the build):
-   *   USA build  -> 0 (hand-written C-host HLE MmxSchedulerTick; validated ship default)
+   *   USA build  -> 0 (hand-written C-host HLE MmxSchedulerTick; the validated
+   *                    ship default TODAY, but see DEPRECATION below)
    *   JP build   -> 1 (LLE; JP has no hardcoded task table, LLE is the only path)
    * Runtime env SNESRECOMP_MMX_SCHED_LLE overrides either direction
-   * (set to 0 to force HLE, non-0 to force LLE) — used to prep the USA-on-LLE
-   * playtest build without a separate binary. */
+   * (set to 0 to force HLE, non-0 to force LLE).
+   *
+   * ── HLE IS DEPRECATED (2026-07-02) ───────────────────────────────────────
+   * The C-host HLE scheduler (MmxSchedulerTick + the hardcoded mmx_dispatch_
+   * task_pc task table) is DEPRECATED and slated for removal; LLE is the path
+   * forward. Rationale:
+   *   - LLE needs NO per-variant task table (HLE's table is hand-derived per
+   *     game/region — the maintenance burden that killed HLE-on-JP: JP's task
+   *     PCs shift ~2 bytes from USA, and even with a reverse-derived table the
+   *     fiber coroutine lifecycle broke + compiling the tasks garbled video).
+   *   - LLE's only cost is interpreting the tiny $8099 loop each frame (task
+   *     BODIES still run compiled via bounce) — a negligible perf delta.
+   * Support status: HLE is UNSUPPORTED on JP (LLE only). HLE remains USA's
+   * default for now (battle-tested) but is deprecated and will be removed once
+   * USA is validated on LLE. Do not invest further in the HLE path. */
 #ifndef MMX_SCHED_LLE_DEFAULT
 #define MMX_SCHED_LLE_DEFAULT 0
 #endif

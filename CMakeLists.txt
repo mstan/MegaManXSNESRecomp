@@ -127,4 +127,8 @@ add_mmx_variant(RockmanXSNESRecomp
     ${CMAKE_SOURCE_DIR}/variants/jp/gen
     ${CMAKE_SOURCE_DIR}/variants/jp/config
     MMX_VARIANT_JP=1
-    MMX_SCHED_LLE_DEFAULT=1)
+    MMX_SCHED_LLE_DEFAULT=1
+    # JP boots under the interp tier; the IPL upload handshake needs immediate
+    # APU port writes (the deferred SMW-missed-SFX scheduler stalls it). USA
+    # keeps the deferred default. See runner/src/common_rtl.c RtlApuWrite.
+    SNESRECOMP_APU_IMMEDIATE_PORTS_DEFAULT=1)
