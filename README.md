@@ -70,16 +70,37 @@ enable a second keyboard player.
 SDL_GameController (XInput on Windows). Plug it in before launching, or
 hot-plug after.
 
-System shortcuts (configured in `config.ini`'s `[KeyMap]` section):
+System shortcuts (all rebindable in `config.ini`'s `[KeyMap]` section;
+set a key to an empty value there to unbind it, e.g. `DisplayPerf =`):
 
 | Action               | Default |
 |----------------------|---------|
 | Save state 1-10      | Shift+F1..F10 |
 | Load state 1-10      | F1..F10 |
 | Toggle pause         | P |
+| Pause (dimmed)       | Shift+P |
 | Reset                | Ctrl+R |
 | Toggle fullscreen    | Alt+Enter |
 | Turbo (fast-forward) | Tab |
+| FPS / perf readout   | F |
+| Toggle PPU renderer  | R |
+| Volume up / down     | Shift+= / Shift+- |
+
+## Reporting crashes
+
+The game continuously records its own boot/run diagnostics. If it
+crashes (or exits with an error), it writes these files next to
+`mmx.exe` — attaching them to a GitHub issue usually lets the crash be
+diagnosed without a repro:
+
+- `crash_report_<timestamp>.json` and `crash_minidump_<timestamp>.dmp`
+  — written at the moment of a crash; never overwritten by later runs.
+- `last_run_report.json` — written at the end of **every** run
+  (crash or clean exit), so grab it right after the bad run if there
+  is no `crash_report_*` file.
+
+None of these contain personal data beyond your Windows version,
+hardware model, and the folder path the game runs from.
 
 ## Building from source
 

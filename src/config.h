@@ -106,6 +106,10 @@ enum {
 extern Config g_config;
 
 void ParseConfigFile(const char *filename);
+// Re-apply only the [KeyMap] section (launcher hotkey editor wrote it after
+// the initial parse). Keyboard command map is rebuilt; gamepad map and all
+// scalar settings are left alone.
+void ConfigReloadKeyMap(const char *filename);
 // Persist the launcher-editable settings back into `filename` (or config.ini)
 // with a surgical, comment-preserving in-place update. Called after the GUI
 // launcher returns PLAY.

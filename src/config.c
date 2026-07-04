@@ -456,6 +456,57 @@ void ParseConfigFile(const char *filename) {
   RegisterDefaultKeys();
 }
 
+/* Re-apply the [KeyMap] section from `filename` after the launcher's hotkey
+ * editor rewrote it. Resets ONLY the keyboard command map — the gamepad map
+ * and every scalar setting keep their live, launcher-edited values (a full
+ * ParseConfigFile here would clobber non-persisted fields like output_method
+ * back to the file's stale values). Keyboard defaults are then re-registered
+ * for entries the file doesn't mention, matching ParseConfigFile's order. */
+void ConfigReloadKeyMap(const char *filename) {
+  memset(keymap_hash_first, 0, sizeof(keymap_hash_first));
+  free(keymap_hash);
+  keymap_hash = NULL;
+  keymap_hash_size = 0;
+  memset(has_keynameid, 0, sizeof(has_keynameid));
+  g_config.has_keyboard_controls = 0;
+
+  if (filename == NULL)
+    filename = "config.ini";
+  char *filedata = (char *)ReadWholeFile(filename, NULL);
+  if (filedata) {
+    char *iter = filedata, *p;
+    int in_keymap = 0;
+    while ((p = NextLineStripComments(&iter)) != NULL) {
+      if (*p == 0)
+        continue;
+      if (*p == '[') {
+        in_keymap = StringEqualsNoCase(p, "[KeyMap]");
+        continue;
+      }
+      if (!in_keymap)
+        continue;
+      char *v = SplitKeyValue(p);
+      if (v)
+        HandleIniConfig(0, p, v);
+    }
+    /* Nothing from [KeyMap] outlives parsing (keys resolve to codes
+     * immediately), so the buffer can be freed — unlike ParseConfigFile's
+     * memory_buffer, which strings like `shader` point into. */
+    free(filedata);
+  }
+
+  /* Keyboard defaults for anything [KeyMap] didn't mention (the keyboard
+   * half of RegisterDefaultKeys; the joypad half is deliberately not
+   * re-run — the gamepad map was untouched above). */
+  for (int i = 1; i < countof(kKeyNameId); i++) {
+    if (!has_keynameid[i]) {
+      int size = kKeyNameId[i].size, k = kKeyNameId[i].id;
+      for (int j = 0; j < size; j++, k++)
+        KeyMapHash_Add(kDefaultKbdControls[k], k);
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * WriteConfigFile — persist the launcher-editable settings (surgical in-place
  * update preserving comments + [KeyMap]/[GamepadMap]). MMX has no widescreen

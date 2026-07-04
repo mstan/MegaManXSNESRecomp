@@ -76,6 +76,13 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <!-- Release version stamp: make_release.ps1 passes
+       /p:SnesRecompBuildVersion=<ver>; it lands in the post-mortem report's
+       "build" section via the SNESRECOMP_BUILD_VERSION define. Unset (IDE /
+       local builds) the define is omitted and main.c defaults to "dev". -->
+  <PropertyGroup>
+    <SnesRecompVersionDefine Condition="'$(SnesRecompBuildVersion)' != ''">SNESRECOMP_BUILD_VERSION="$(SnesRecompBuildVersion)";</SnesRecompVersionDefine>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)build\bin-$(Platform)-$(Configuration)\</OutDir>
@@ -188,7 +195,7 @@
            cpu_trace.h / debug_server.h #else blocks compile every call
            into a no-op static inline; debug_server.c and cpu_trace.c
            are ExcludedFromBuild below. -->
-      <PreprocessorDefinitions>NDEBUG;SMW_DISABLE_LM=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(SnesRecompVersionDefine)NDEBUG;SMW_DISABLE_LM=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -199,7 +206,10 @@
       <StringPooling>true</StringPooling>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <DebugInformationFormat>None</DebugInformationFormat>
+      <!-- PDB generation is free at runtime and makes user crash artifacts
+           (minidump + module+offset stacks) symbolizable offline. The .pdb
+           is archived by make_release.ps1 next to the zip, NEVER inside it. -->
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
     <Link>
@@ -210,7 +220,7 @@
            mainCRTStartup calls main() directly and allocates no console. -->
       <SubSystem>Windows</SubSystem>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
@@ -246,6 +256,7 @@
     <ClCompile Include="..\snesrecomp\runner\src\crc32.c" />
     <ClCompile Include="..\snesrecomp\runner\src\sha256.c" />
     <ClCompile Include="..\snesrecomp\runner\src\keybinds.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\host_report.c" />
     <ClCompile Include="..\snesrecomp\runner\src\cpu_state.c" />
     <ClCompile Include="..\snesrecomp\runner\src\audio_trace.c" />
     <ClCompile Include="..\snesrecomp\runner\src\ppu_dma_trace.c" />

@@ -3,7 +3,19 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 2ae1488ef808cdd87bd9c6fa8fa7d63a33beccc6
+sha = bd8494c1bb0239c58142bfe593f07b2aad17c251
+# 2026-07-04 bump (2ae1488 -> bd8494c): NOTE the pin had gone stale — the
+# v1.1.0-v1.1.4 zips were built from the live junction (audio root-cause
+# arc through the DSP envelope re-latch fix, LLE tier, cosim). This bump
+# re-syncs it and adds today's two runner-only commits:
+#  - 959b144 host_report: always-on field crash capture (breadcrumb ring,
+#    OS/module info, minidump, preserved crash_report_*.json,
+#    SNESRECOMP_CRASH_TEST drill) — companion MMX side wires main.c /
+#    post_mortem.c and turns Production PDBs on.
+#  - bd8494c launcher: in-UI keybind rebinding (player buttons +
+#    [KeyMap] hotkeys via new GameInfo.config_path / ConfigReloadKeyMap)
+#    + SAVES panel hidden for SRAM-less games (MMX).
+# Runner-only; src/gen untouched, no regen.
 # 2026-06-13 bump (26063a0 -> 2ae1488): add the shared RmlUi pre-boot
 # launcher module (runner/src/launcher/) + RmlUi/FreeType submodules.
 # Companion MMX side wires the launcher (mmx.vcxproj, main.c GameInfo,

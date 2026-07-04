@@ -46,6 +46,7 @@
 #include <time.h>
 
 #include "post_mortem.h"
+#include "host_report.h"
 #include "cpu_state.h"
 #include "cpu_trace.h"
 #include "common_cpu_infra.h"     /* g_rtl_game_info (manifest rom_title) */
@@ -606,6 +607,15 @@ static void dump_all_threads_json(FILE *f, void *fault_info_void) {
 void recomp_post_mortem_dump(const char *reason, void *fault_info) {
     dump_lock();
 
+    /* Crash paths get a minidump FIRST — it is the most robust artifact
+     * (dbghelp serializes the process from OS-side state), so write it
+     * before any of our own JSON serialization runs in a possibly
+     * corrupted process. */
+    int is_crash = reason && (strcmp(reason, "seh") == 0 ||
+                              strcmp(reason, "signal") == 0);
+    if (is_crash)
+        host_report_write_minidump(fault_info);
+
     FILE *f = fopen(kReportPath, "w");
     if (!f) { dump_unlock(); return; }
 
@@ -629,6 +639,7 @@ void recomp_post_mortem_dump(const char *reason, void *fault_info) {
         "  \"timestamp\": \"%s\",\n",
         esc_reason, timebuf);
 
+    host_report_dump_json(f);
     dump_seh_json(f, fault_info);
     dump_status_json(f);
     dump_hardware_state_json(f);
@@ -650,6 +661,16 @@ void recomp_post_mortem_dump(const char *reason, void *fault_info) {
     Tier2CoverageWriteManifest(
         "tier2_coverage.json",
         g_rtl_game_info ? g_rtl_game_info->title : "unknown");
+
+    /* last_run_report.json is overwritten by EVERY run (atexit included),
+     * so a crash report only survives until the user relaunches. Preserve
+     * crash-path dumps — and Die() exits, which arrive via atexit with a
+     * recorded fatal message — as timestamped copies no later run touches. */
+    if (is_crash || host_report_has_fatal()) {
+        const char *copy = host_report_preserve_crash_copy(kReportPath);
+        if (copy)
+            fprintf(stderr, "[post_mortem] crash report preserved: %s\n", copy);
+    }
 
     dump_unlock();
 }

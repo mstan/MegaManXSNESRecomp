@@ -24,7 +24,10 @@ $bin = Join-Path $root 'build\bin-x64-Production'
 $out = Join-Path $root 'release-stage'
 New-Item -ItemType Directory -Force $out | Out-Null
 
-& $MSBuild (Join-Path $root 'mmx.sln') /p:Configuration=Production /p:Platform=x64 /m /v:quiet /nologo
+# SnesRecompBuildVersion stamps SNESRECOMP_BUILD_VERSION into the exe so
+# user crash reports (last_run_report.json / crash_report_*.json) name the
+# release they came from.
+& $MSBuild (Join-Path $root 'mmx.sln') /p:Configuration=Production /p:Platform=x64 "/p:SnesRecompBuildVersion=$Version" /m /v:quiet /nologo
 if ($LASTEXITCODE -ne 0) { throw "MSBuild failed ($LASTEXITCODE)" }
 
 $stageName = "MegaManXSNESRecomp-windows-$Version"
@@ -47,6 +50,17 @@ Copy-Item $launcherSrc $stage -Recurse
 $zip = Join-Path $out "$stageName.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
+
+# Archive the PDB NEXT TO the zip (never inside it): it's what turns a
+# user's crash_minidump_*.dmp / module+offset stack into file:line. Keep
+# it with the release artifacts forever.
+$pdb = Join-Path $bin 'mmx.pdb'
+if (Test-Path $pdb) {
+  Copy-Item $pdb (Join-Path $out "mmx-$Version.pdb")
+  Write-Host "PDB archived: $out\mmx-$Version.pdb (do NOT ship; keep for symbolizing user crash dumps)"
+} else {
+  Write-Warning "mmx.pdb missing from $bin - crash minidumps from this release won't symbolize."
+}
 Write-Host "--- $stageName ---"
 Get-ChildItem $stage | Select-Object Name, Length | Out-Host
 Get-Item $zip | Select-Object Name, Length | Out-Host
