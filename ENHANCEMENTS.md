@@ -47,42 +47,29 @@ cursor RAM, and the gameplay gate used to decide when capture is safe.
 
 ---
 
-## LLE task-scheduler tier: production-readiness (deferred — infra built, not shippable yet)
+## LLE task scheduler: correctness ground truth
 
-**Status: swappable HLE/LLE built and validated as a dev/accuracy tier
-(`SNESRECOMP_MMX_SCHED_LLE=1`, default HLE). NOT yet production-shippable.**
+**Status: LLE is the default. The legacy HLE scheduler is an explicit,
+deprecated compatibility/performance override (`SNESRECOMP_EXECUTION_MODE=hle`),
+not an independent source of game semantics.**
 
 The MMX cooperative task scheduler at `$00:8099` can now run two ways (see
 `RunOneFrameOfGame` in `src/mmx_rtl.c`):
 
-- **HLE (default):** `MmxSchedulerTick` — a hand-written C-host scheduler with
-  per-slot Windows fibers for coroutine resume. Fast; ships today.
-- **LLE (`SNESRECOMP_MMX_SCHED_LLE=1`):** runs the *real* `$8099` scheduler under
+- **LLE (default):** runs the *real* `$8099` scheduler under
   interp816 via `interp_bridge_run_scheduler` (engine `interp_bridge.c`), yielding
   at the `$8080A1` vblank-spin. The interpreter handles the infinite loop,
   coroutine stack-switching, and `JMP ($0032,X)` dispatch faithfully.
+- **HLE (`SNESRECOMP_EXECUTION_MODE=hle`):** `MmxSchedulerTick` — the inherited
+  hand-written C-host scheduler with per-slot host fibers. It remains available
+  for comparison, but LLE behavior wins whenever the two paths disagree.
 
-Co-sim finding: the LLE stays aligned with the bsnes oracle noticeably longer
-than the HLE, confirming it is the more faithful path. But it is **not yet
-shippable**, for two reasons:
+The mixed-tier bridge keeps the small scheduler and coroutine machinery under
+the interpreter while eligible task bodies execute as compiled code. Stack
+continuations, interrupt-owned poll loops, and non-returning yield primitives
+are engine responsibilities; they must not be repaired with per-game decoder
+ownership hints or by changing ROM function boundaries to suit HLE.
 
-1. **Performance — no-bounce interpretation.** The scheduler LLE currently runs
-   in "no-bounce" mode (interpret *everything*, never bounce `JSR` targets to
-   compiled bodies), because the yield primitive `$808100` is a coroutine switch
-   that saves S and `BRA`s back into the loop without returning — bouncing it via
-   the paired ABI corrupts the stack. Pure interpretation is correct but
-   **slideshow-slow in gameplay** (attract/intro is watchable; live play crawls).
-   **TODO: selective bounce** — bounce leaf game routines (which return normally)
-   to their compiled bodies, and interpret ONLY the scheduler + coroutine
-   machinery (the `$8099` loop, `$80DA`/`$80E9` dispatch, and the `$808100`/`$810C`
-   yields). This needs a "don't-bounce" PC set (or a returns-normally predicate)
-   threaded into `interp_bridge_run_scheduler`.
-
-2. **Validation surface.** LLE has only been exercised on the attract/intro via
-   the headless co-sim. Shipping it requires full-gameplay validation (all game
-   modes, stages, bosses, pause/menu) plus a determinism + no-regression pass.
-
-Even fully optimized, LLE does not by itself converge to bsnes — the residual is
-frame-model interrupt *timing* (NMI/raster-IRQ/scheduler interleaving), tracked
-separately. So the LLE tier's value is accuracy investigation + validating/
-tightening the shipping HLE, not a guaranteed player-facing win over the HLE.
+The migration gate is an artifact-free, non-freezing, clean-audio attract-demo
+pass. Full gameplay validation (stages, bosses, pause/menu, save states, and
+determinism) remains a separate follow-up before a production release.

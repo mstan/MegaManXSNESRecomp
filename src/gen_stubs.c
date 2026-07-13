@@ -5,7 +5,7 @@
  * scheduler's next-slot loop. From the calling task's frame they
  * never return, so each stub picks one of two host models at runtime:
  *
- *   HLE scheduler (MmxSchedulerTick, USA's shipped default): suspend
+ *   HLE scheduler (MmxSchedulerTick, explicit legacy override): suspend
  *   the hosting fiber via mmx_host_yield (SwitchToFiber back to the
  *   C-host scheduler; the fiber resumes here on the next dispatch).
  *

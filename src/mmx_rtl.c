@@ -3,6 +3,7 @@
 #include "common_cpu_infra.h"
 #include "snes/snes.h"
 #include "cpu_state.h"
+#include "execution_mode.h"
 #include "funcs.h"
 #include "debug_server.h"
 #include "cpu_trace.h"
@@ -12,6 +13,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "fiber_compat.h"   /* Win32 Fibers on Windows, ucontext shim on POSIX */
+
+static SnesrecompExecutionMode mmx_execution_mode(void) {
+  /* LLE is the correctness floor. The C-host fiber scheduler remains an
+   * explicit optimization selected with SNESRECOMP_EXECUTION_MODE=hle. */
+  return snesrecomp_execution_mode(SNESRECOMP_EXECUTION_MODE_LLE);
+}
 
 /* C-host implementation of the MMX cooperative task scheduler at
  * $00:8099. Replaces the asm dispatch loop with a C function that:
@@ -39,12 +46,12 @@ static int mmx_rtl_diag_enabled(void);
 
 /* Dispatch a cooperative task by its 16-bit entry PC (from RAM $0032+slot).
  *
- * USA: a hardcoded PC->recompiled-body table (the validated ship default;
- *      the C-host HLE fiber scheduler is USA's default scheduler tier).
+ * USA: a hardcoded PC->recompiled-body table used only by the optional
+ *      C-host HLE fiber scheduler.
  *
  * JP:  NO hardcoded table. JP's default scheduler tier is the faithful LLE
  *      (interp_bridge_run_scheduler), which never calls this. This body only
- *      exists so a forced SNESRECOMP_MMX_SCHED_LLE=0 on JP still links and
+ *      exists so a forced SNESRECOMP_EXECUTION_MODE=hle on JP still links and
  *      dispatches — it routes the live task PC through the engine's general
  *      runtime dispatch (g_dispatch_table lookup + LoROM mirror; a miss falls
  *      to the interpreter tier rather than the old silent no-op). No
@@ -829,12 +836,8 @@ void RunOneFrameOfGame(void) {
    * co-sim: fixes NMI/IRQ-timing guest-state drift the HLE approximates
    * (scheduler slot $0031, DMA bookkeeping $02EE/$02FA).
    *
-   * Per-variant default via MMX_SCHED_LLE_DEFAULT (set by the build):
-   *   USA build  -> 0 (hand-written C-host HLE MmxSchedulerTick; the validated
-   *                    ship default TODAY, but see DEPRECATION below)
-   *   JP build   -> 1 (LLE; JP has no hardcoded task table, LLE is the only path)
-   * Runtime env SNESRECOMP_MMX_SCHED_LLE overrides either direction
-   * (set to 0 to force HLE, non-0 to force LLE).
+   * Both regions default to LLE through the shared execution-mode policy.
+   * SNESRECOMP_EXECUTION_MODE=hle explicitly selects the legacy C-host path.
    *
    * ── HLE IS DEPRECATED (2026-07-02) ───────────────────────────────────────
    * The C-host HLE scheduler (MmxSchedulerTick + the hardcoded mmx_dispatch_
@@ -846,17 +849,10 @@ void RunOneFrameOfGame(void) {
    *     fiber coroutine lifecycle broke + compiling the tasks garbled video).
    *   - LLE's only cost is interpreting the tiny $8099 loop each frame (task
    *     BODIES still run compiled via bounce) — a negligible perf delta.
-   * Support status: HLE is UNSUPPORTED on JP (LLE only). HLE remains USA's
-   * default for now (battle-tested) but is deprecated and will be removed once
-   * USA is validated on LLE. Do not invest further in the HLE path. */
-#ifndef MMX_SCHED_LLE_DEFAULT
-#define MMX_SCHED_LLE_DEFAULT 0
-#endif
-  { static int s_lle = -1;
-    if (s_lle < 0) { s_lle = MMX_SCHED_LLE_DEFAULT;
-                     const char *e = getenv("SNESRECOMP_MMX_SCHED_LLE");
-                     if (e && e[0]) s_lle = (e[0] != '0') ? 1 : 0; }
-    if (s_lle)
+   * Support status: HLE is deprecated and unsupported on JP. Do not invest
+   * further in the HLE path unless it becomes a checked LLE optimization. */
+  {
+    if (mmx_execution_mode() == SNESRECOMP_EXECUTION_MODE_LLE)
       interp_bridge_run_scheduler(&g_cpu, 0x808099, 0x8080A1, 0x0B9D);
     else
       MmxSchedulerTick();

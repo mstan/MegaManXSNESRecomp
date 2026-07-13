@@ -4,14 +4,13 @@ project(MegaManXSNESRecomp C)
 # Cross-platform (macOS/Linux) build for MegaManXSNESRecomp.
 #
 # One repo, two games (the RubySapphireRecomp pattern):
-#   MegaManXSNESRecomp   Mega Man X (USA v1.1)     gen=src/gen           HLE scheduler
+#   MegaManXSNESRecomp   Mega Man X (USA v1.1)     gen=src/gen           LLE scheduler
 #   RockmanXSNESRecomp   Rockman X (Japan v1.1)    gen=variants/jp/gen   LLE scheduler
 #
 # Both targets share the same runner + game glue (src/*.c); only the
-# recompiled banks, the game-identity compile-defs (MMX_VARIANT_JP), and the
-# scheduler-tier default (MMX_SCHED_LLE_DEFAULT) differ. JP defaults to the
-# faithful LLE task scheduler (interp_bridge_run_scheduler) so it needs no
-# hardcoded per-variant task-PC table; USA keeps its validated C-host HLE.
+# recompiled banks and game-identity compile-defs (MMX_VARIANT_JP) differ.
+# Both use the faithful LLE task scheduler by default; the legacy C-host HLE
+# is an explicit shared execution-mode override.
 #
 # The canonical Windows build is the MSVC solution (mmx.sln, USA only for now).
 # This CMake build mirrors the same source list (see snesrecomp/runner/
@@ -117,7 +116,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     endif()
 endfunction()
 
-# ── USA: Mega Man X (v1.1) — hand-written C-host HLE scheduler (default) ──
+# ── USA: Mega Man X (v1.1) — faithful LLE scheduler by default ──
 add_mmx_variant(MegaManXSNESRecomp
     ${CMAKE_SOURCE_DIR}/src/gen
     ${CMAKE_SOURCE_DIR}/recomp)
@@ -127,11 +126,6 @@ add_mmx_variant(RockmanXSNESRecomp
     ${CMAKE_SOURCE_DIR}/variants/jp/gen
     ${CMAKE_SOURCE_DIR}/variants/jp/config
     MMX_VARIANT_JP=1
-    MMX_SCHED_LLE_DEFAULT=1
-    # JP boots under the interp tier; the IPL upload handshake needs immediate
-    # APU port writes (the deferred SMW-missed-SFX scheduler stalls it). USA
-    # keeps the deferred default. See runner/src/common_rtl.c RtlApuWrite.
-    SNESRECOMP_APU_IMMEDIATE_PORTS_DEFAULT=1
     # 2026-07-03 status: after the first tier-2 enrichment round (131 promoted
     # funcs; the old 3-func cfg's bounced-vs-interp split at cp2 was the
     # unenriched gen mis-slicing), JP now PASSES bounced-vs-interpreted co-sim

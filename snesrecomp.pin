@@ -3,7 +3,16 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 93974d9b9e2e00485f795b489b823e13f4a3cec1
+sha = 8c14fc11eb5bea8730545a83ba1686de08463340
+# 2026-07-13 bump (11e11fe -> 8c14fc1): CPU-to-SPC port writes now use
+# hardware-immediate visibility by default. This removes the host wall-time
+# delay that stalled MMX's faithful runtime upload handshake at frame 156;
+# the legacy deferred scheduler is an explicit diagnostic override only.
+# Runner-only; generated banks remain unchanged.
+# 2026-07-13 bump (93974d9 -> 11e11fe): shared first-class LLE execution-mode
+# policy plus mixed interpreted/compiled stack continuations, interrupt-owned
+# memory/input poll yields, and return-PC guards validated by Super Metroid.
+# Runner/compiler only; MMX generated banks remain unchanged.
 # 2026-07-04 bump (2ae1488 -> 93974d9): NOTE the pin had gone stale — the
 # v1.1.0-v1.1.4 zips were built from the live junction (audio root-cause
 # arc through the DSP envelope re-latch fix, LLE tier, cosim). This bump
