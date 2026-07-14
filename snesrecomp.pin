@@ -3,7 +3,12 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 8c14fc11eb5bea8730545a83ba1686de08463340
+sha = 88c41ad77c5f4c99198d778f6318995d3d9d2c03
+# 2026-07-13 LLE-first redesign checkpoint (8c14fc1 -> 88c41ad):
+# deterministic atomic manifest emission, exact architectural AOT/LLE
+# boundaries, RTI-aware mixed-tier interrupts, safe profile roots, and HLE
+# overlays that cover every runtime M/X mode and consume inherited tail
+# metadata. Fixes MMX reset poisoning its first LLE scheduler AOT bounce.
 # 2026-07-13 bump (11e11fe -> 8c14fc1): CPU-to-SPC port writes now use
 # hardware-immediate visibility by default. This removes the host wall-time
 # delay that stalled MMX's faithful runtime upload handshake at frame 156;
