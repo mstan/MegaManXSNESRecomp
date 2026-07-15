@@ -15,6 +15,7 @@
 
 #include "macos_backend.h"
 #include "config.h"
+#include "host_report.h"
 #include "mmx_rtl.h"
 #include "util.h"
 
@@ -217,6 +218,14 @@ static OSStatus MacAudio_Render(void *refcon, AudioUnitRenderActionFlags *flags,
     return noErr;
 
   int16_t *output = data->mBuffers[0].mData;
+  static int callback_reported;
+  if (!callback_reported) {
+    callback_reported = 1;
+    host_report_breadcrumb("native audio callback: frames=%u buffers=%u bytes=%u block=%d",
+                           (unsigned)frames, (unsigned)data->mNumberBuffers,
+                           (unsigned)data->mBuffers[0].mDataByteSize,
+                           g_audio_buffer_frames);
+  }
   UInt32 remaining = frames;
   while (remaining != 0) {
     if (g_audio_buffer_cursor == g_audio_buffer_frames) {
@@ -264,13 +273,29 @@ bool MacAudio_Init(int requested_frequency, int requested_samples,
                            kAudioUnitScope_Input, 0, &callback, sizeof(callback)) != noErr)
     return false;
   if (AudioUnitInitialize(g_audio_unit) != noErr) return false;
-  *actual_frequency = (int)lrint(output_rate);
-  *actual_channels = 2;
+  AudioStreamBasicDescription negotiated = {0};
+  UInt32 negotiated_size = sizeof(negotiated);
+  AudioUnitGetProperty(g_audio_unit, kAudioUnitProperty_StreamFormat,
+                       kAudioUnitScope_Input, 0, &negotiated, &negotiated_size);
+  double client_rate = negotiated.mSampleRate > 0.0 ? negotiated.mSampleRate : output_rate;
+  int client_channels = negotiated.mChannelsPerFrame == 2 ? 2 : 0;
+  if (!client_channels) {
+    AudioUnitUninitialize(g_audio_unit);
+    AudioComponentInstanceDispose(g_audio_unit);
+    g_audio_unit = NULL;
+    return false;
+  }
+  *actual_frequency = (int)lrint(client_rate);
+  *actual_channels = client_channels;
   *frames_per_block = (534 * *actual_frequency + 32040 / 2) / 32040;
   g_audio_buffer_frames = *frames_per_block;
   g_audio_buffer = calloc((size_t)g_audio_buffer_frames * 2, sizeof(*g_audio_buffer));
   if (!g_audio_buffer) return false;
   g_audio_buffer_cursor = g_audio_buffer_frames;
+  host_report_breadcrumb("native audio format: device=%.2f negotiated=%.2f channels=%u block=%d",
+                         output_rate, negotiated.mSampleRate,
+                         (unsigned)negotiated.mChannelsPerFrame,
+                         g_audio_buffer_frames);
   if (AudioOutputUnitStart(g_audio_unit) != noErr) return false;
   (void)requested_samples;
   (void)requested_frequency;
