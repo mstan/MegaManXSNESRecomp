@@ -112,6 +112,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
             "-framework Metal"
             "-framework QuartzCore"
             "-framework GameController"
+            "-framework Foundation"
             "-framework AudioToolbox")
         target_compile_definitions(${TARGET} PRIVATE MMX_MACOS_NATIVE=1)
     else()
