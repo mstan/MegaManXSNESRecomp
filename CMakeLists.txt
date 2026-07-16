@@ -120,6 +120,10 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/glsl_shader.c
         src/main.c
         src/mmx_wide_preview.c
+        $<$<PLATFORM_ID:Linux>:src/linux_ui.cpp>
+        # launcher_ng supplies the single shared ImGui core, SDL2 backend, and
+        # OpenGL3 backend. Keep only the game UI's platform renderer here.
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp>
         src/post_mortem.c
         src/opengl.c
         src/mmx_00.c
@@ -144,6 +148,18 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
         ${SDL2_INCLUDE_DIRS}
     )
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_include_directories(${TARGET} PRIVATE
+            ${CMAKE_SOURCE_DIR}/third_party/imgui
+            ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
+    endif()
+
+    # host_report.c uses dl_phdr_info for Linux module diagnostics; glibc hides
+    # that declaration unless this feature-test macro is set before headers.
+    if(UNIX AND NOT APPLE)
+        target_compile_definitions(${TARGET} PRIVATE _GNU_SOURCE=1)
+    endif()
 
     target_compile_definitions(${TARGET} PRIVATE
         SMW_DISABLE_LM=1

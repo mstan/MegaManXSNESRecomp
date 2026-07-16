@@ -39,6 +39,9 @@
 #include "launcher.h"
 #include "keybinds.h"
 #include "host_report.h"
+#ifdef __linux__
+#include "linux_ui.h"
+#endif
 
 typedef struct GamepadInfo {
   uint32 modifiers;
@@ -572,6 +575,9 @@ static void SdlRenderer_EndDraw(void) {
   //  printf("%f ms\n", v * 1000);
   SDL_RenderClear(g_renderer);
   SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect, NULL);
+#ifdef __linux__
+  LinuxUi_RenderSdl(g_renderer);
+#endif
   SDL_RenderPresent(g_renderer); // vsyncs to 60 FPS?
 }
 
@@ -1170,6 +1176,14 @@ error_reading:;
                            g_config.output_method);
     return 1;
   }
+#ifdef __linux__
+  if (!LinuxUi_Init(window,
+                    g_config.output_method == kOutputMethod_OpenGL ? NULL : g_renderer,
+                    g_config.output_method == kOutputMethod_OpenGL)) {
+    host_report_breadcrumb("Linux ImGui initialization failed");
+    return 1;
+  }
+#endif
   host_report_breadcrumb("renderer initialized: %s",
       g_config.output_method == kOutputMethod_OpenGL ? "opengl" :
       g_config.output_method == kOutputMethod_SDLSoftware ? "sdl-software" : "sdl");
@@ -1272,6 +1286,15 @@ error_reading:;
     host_report_crash_test_tick();
 
     while (SDL_PollEvent(&event)) {
+#ifdef __linux__
+      LinuxUi_ProcessEvent(&event);
+      if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F1 && !event.key.repeat) {
+        LinuxUi_Toggle();
+        continue;
+      }
+      if (LinuxUi_CaptureInput() && event.type != SDL_QUIT)
+        continue;
+#endif
       switch (event.type) {
       case SDL_CONTROLLERDEVICEADDED:
         OpenOneGamepad(event.cdevice.which);
@@ -1358,6 +1381,11 @@ error_reading:;
      * A B X Y L R). HandleCommand is idempotent for set/clear, so calling
      * it every frame is safe. */
     {
+#ifdef __linux__
+      if (LinuxUi_IsOpen()) {
+        /* Dear ImGui owns keyboard focus while the settings menu is open. */
+      } else {
+#endif
       const uint8_t *keys = SDL_GetKeyboardState(NULL);
       uint16_t kb_p1 = keybinds_read_player(keys, 1);
       uint16_t kb_p2 = keybinds_read_player(keys, 2);
@@ -1366,6 +1394,9 @@ error_reading:;
         HandleCommand(kKeys_Controls   + i, (kb_p1 >> kKb2CtrlsIdx[i]) & 1);
         HandleCommand(kKeys_ControlsP2 + i, (kb_p2 >> kKb2CtrlsIdx[i]) & 1);
       }
+#ifdef __linux__
+      }
+#endif
     }
 
     uint32 inputs = g_input_state | g_pad_buttons | g_gamepad[0].axis_buttons | g_gamepad[1].axis_buttons << 12;
@@ -1466,6 +1497,9 @@ error_reading:;
   SDL_DestroyMutex(g_audio_mutex);
   free(g_audiobuffer);
 
+#ifdef __linux__
+  LinuxUi_Shutdown();
+#endif
   g_renderer_funcs.Destroy();
 
 #ifdef __SWITCH__
