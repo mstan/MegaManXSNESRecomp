@@ -42,10 +42,11 @@ $kb = Join-Path $bin 'keybinds.ini'
 if (Test-Path $kb) { Copy-Item $kb $stage }
 Copy-Item (Join-Path $root 'README.md') $stage
 
-# Launcher assets (RmlUi) - the GUI menu needs these next to the exe.
-$launcherSrc = Join-Path $bin 'launcher'
-if (-not (Test-Path $launcherSrc)) { throw "launcher/ assets missing at $launcherSrc - did the Production build run CopyLauncherAssets?" }
-Copy-Item $launcherSrc $stage -Recurse
+# Launcher assets (Dear ImGui launcher_ng) - fonts + images the GUI loads from
+# assets/ next to the exe (SDL_GetBasePath). Replaces the old RmlUi launcher/ dir.
+$assetsSrc = Join-Path $bin 'assets'
+if (-not (Test-Path $assetsSrc)) { throw "assets/ missing at $assetsSrc - did the Production build stage the launcher_ng assets?" }
+Copy-Item $assetsSrc $stage -Recurse
 
 $zip = Join-Path $out "$stageName.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
