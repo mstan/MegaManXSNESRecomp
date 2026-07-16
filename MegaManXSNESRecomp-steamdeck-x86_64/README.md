@@ -1,7 +1,7 @@
 # MegaManXSNESRecomp
 
 Static recompilation of *Mega Man X* (SNES) into native C, using the
-[snesrecomp](https://github.com/navjack/snesrecomp) framework. This repo
+[snesrecomp](https://github.com/mstan/snesrecomp) framework. This repo
 is the per-game side: the runtime, the recompiled C output, the
 per-game `.cfg`, and the build glue.
 
@@ -27,15 +27,7 @@ The game has been tested and is playable end to end.
 
 No known issues at this time on Windows builds. 
 
-macOS and Linux are supported. Linux on Steam Deck has been validated through
-full game completion with the true widescreen renderer enabled by
-tester [littlerobotfairy](https://www.twitch.tv/videos/2820912518).
-
-### Linux / Steam Deck validation
-
-Tester **littlerobotfairy** completed the game on Linux running on Steam Deck
-with true widescreen enabled. The complete playthrough is documented in the
-[Twitch VOD](https://www.twitch.tv/videos/2820912518).
+Mac OSX/Linux are supported, but have not been extensively tested.
 
 If you hit a reproducible lockup or visual regression, please open an
 issue with a savestate (`Shift+F1`) and the frame at which it
@@ -113,61 +105,41 @@ hardware model, and the folder path the game runs from.
 
 ## Building from source
 
-Clone the fork with all framework dependencies, then run the idempotent
-bootstrap check:
+Prerequisites: Windows 10+, Visual Studio 2022 (with C++ desktop
+workload), Python 3.9+ on PATH.
 
 ```bash
-git clone --recurse-submodules https://github.com/navjack/MegaManXSNESRecomp-macos-linux-wide.git
-cd MegaManXSNESRecomp-macos-linux-wide
-bash tools/bootstrap.sh
+git clone https://github.com/mstan/MegaManXSNESRecomp
+git clone https://github.com/mstan/snesrecomp
+cd MegaManXSNESRecomp
 ```
 
-The `snesrecomp/` directory is a pinned submodule from
-[navjack/snesrecomp](https://github.com/navjack/snesrecomp). If you cloned
-without `--recurse-submodules`, `tools/bootstrap.sh` initializes it and its
-nested dependencies. The gitlink in this repository is the dependency pin;
-there is no separate SHA to keep synchronized.
+The `snesrecomp/` directory is a [sibling repo](https://github.com/mstan/snesrecomp)
+accessed via a junction/symlink to the clone next to this repo.
 
-Generated game C is not redistributed. Before the first build, stage a legally
-obtained USA Rev 1 ROM as `mmx.sfc`, then run:
+Build:
 
 ```bash
-cp "/path/to/Mega Man X (USA Rev 1).sfc" mmx.sfc
-bash tools/regen.sh usa --no-tests
-```
-
-On Windows 10 or newer, install Visual Studio 2022 with the C++ desktop
-workload, Git, and Python 3.9 or newer. Run the bootstrap and regeneration steps
-from Git Bash, then build from a Developer Command Prompt:
-
-```powershell
-msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
+# From a Developer Command Prompt for VS 2022, or with MSBuild on PATH:
+msbuild mmx.sln /p:Configuration=Oracle /p:Platform=x64 /m
 ```
 
 ### macOS / Linux (CMake)
 
 Builds natively on macOS (Apple Silicon + Intel) and Linux with clang/gcc.
-On macOS, install dependencies with
-`brew install cmake sdl2 ninja python3`. On Ubuntu/Debian, install
-`build-essential cmake ninja-build libsdl2-dev libgl1-mesa-dev python3`.
+Prerequisites: CMake 3.16+, SDL2, Ninja, Python 3.9+
+(`brew install cmake sdl2 ninja python3`).
 
 ```bash
-cmake -S . -B build-dev -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build-dev --target MegaManXSNESRecomp
-ctest --test-dir build-dev --output-on-failure
+git clone https://github.com/mstan/snesrecomp.git ../snesrecomp
+ln -s ../snesrecomp snesrecomp
+cp "/path/to/Mega Man X (USA Rev 1).sfc" mmx.sfc
+bash tools/regen.sh usa --no-tests
+cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+cmake --build build-macos --target MegaManXSNESRecomp
+open build-macos/MegaManXSNESRecomp.app
 ```
-
-On macOS, add `-DCMAKE_PREFIX_PATH="$(brew --prefix)"` if CMake does not find
-Homebrew's SDL2. Apple Silicon contributors running an x86_64-translated shell
-must also configure with `-DCMAKE_OSX_ARCHITECTURES=arm64`. Packaging helpers
-detect the native hardware architecture and are documented by
-`bash tools/build-macos.sh --help` and `bash tools/build-linux.sh --help`.
-The cross-platform Windows release can be built with MinGW using
-`SDL2_MINGW_ROOT=/path/to/SDL2 bash tools/build-windows-mingw.sh VERSION`.
-All release packages are ROM-free; place your legally obtained ROM beside the
-executable or AppImage after extraction.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for dependency development, validation,
-and pull-request guidance.
 
 On macOS, the runtime uses Metal for presentation, `GameController.framework`
 for Xbox/PlayStation/Switch-compatible controllers, and a Core Audio output
@@ -196,9 +168,8 @@ directly without opening the menu.
 
 Set `Widescreen = 1` in `[Graphics]`, enable it from the launcher, or press
 `Alt+W` (all rebindable through `[KeyMap]`) to render genuine additional PPU
-columns. The internal width preserves the SNES 7:6 horizontal pixel aspect:
-256 pixels at 4:3, about 342 at 16:9, and a safe 446-pixel ultrawide cap.
-Presentation keeps the authentic center image at 4:3. This changes only host
+columns. The active frame width follows the display aspect ratio, from the
+authentic 256 pixels through a safe 446-pixel maximum. This changes only host
 rendering: Mega Man X's camera, collision, AI, scrolling, and save-state data
 remain untouched. Background layers use the PPU tilemap data already prepared
 by the game. Foreground geometry in the margins is resolved from MMX's prepared
@@ -258,7 +229,7 @@ compiler cannot prove remain on the authoritative interpreter fallback.
 | `src/gen/` | Recompiler output (gitignored; regenerated from ROM). |
 | `recomp/bank*.cfg` | Per-bank function declarations + hardware hints the framework cannot derive from the ROM alone. |
 | `recomp/funcs.h` | Auto-regenerated by `tools/regen.sh`; never hand-edit. |
-| `snesrecomp/` | Pinned submodule containing the [snesrecomp framework](https://github.com/navjack/snesrecomp). |
+| `snesrecomp/` | Symlink to a sibling clone of the [snesrecomp framework](https://github.com/mstan/snesrecomp). |
 | `third_party/` | Vendored deps (gl_core, stb_image) with their own licenses. |
 | `mmx.sln` + `src/mmx.vcxproj` | Visual Studio build glue. |
 | `config.ini` | The config. Generated next to the exe on first run if missing. |
