@@ -29,9 +29,30 @@ jobs:
           cmake --build build-ci --target mmx_display_test
           ctest --test-dir build-ci --output-on-failure
 
+  artifact-config:
+    name: Artifact prerequisites
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    outputs:
+      enabled: ${{ steps.rom.outputs.enabled }}
+    steps:
+      - name: Check private ROM secret
+        id: rom
+        env:
+          MMX_ROM_BASE64: ${{ secrets.MMX_ROM_BASE64 }}
+        run: |
+          if [ -n "$MMX_ROM_BASE64" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Private ROM secret is configured; artifact jobs are enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "MMX_ROM_BASE64 is not configured; artifact jobs will be skipped."
+          fi
+
   windows-x64:
     name: Windows x64
-    if: github.event_name != 'pull_request'
+    needs: artifact-config
+    if: needs.artifact-config.outputs.enabled == 'true'
     runs-on: windows-2022
     steps:
       - name: Check out game and pinned dependencies
@@ -57,7 +78,8 @@ jobs:
 
   macos-arm64:
     name: macOS arm64 (macOS 26+)
-    if: github.event_name != 'pull_request'
+    needs: artifact-config
+    if: needs.artifact-config.outputs.enabled == 'true'
     runs-on: macos-26
     steps:
       - name: Check out game and pinned dependencies
@@ -83,7 +105,8 @@ jobs:
 
   linux-x64:
     name: Linux x86-64 (Steam Deck)
-    if: github.event_name != 'pull_request'
+    needs: artifact-config
+    if: needs.artifact-config.outputs.enabled == 'true'
     runs-on: ubuntu-22.04
     steps:
       - name: Check out game and pinned dependencies

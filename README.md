@@ -168,11 +168,13 @@ and pull-request guidance.
 ### GitHub Actions builds
 
 `.github/workflows/build-artifacts.yml` runs ROM-free source checks for every
-pull request. Pushes to `main` and manual runs also build production artifacts
-for Windows x64, macOS arm64 (macOS 26), and Linux x86-64/Steam Deck. Artifact
-jobs require a repository Actions secret named `MMX_ROM_BASE64` containing the
-base64-encoded, legally obtained USA Rev 1 ROM. The workflow uses it only on the
-runner to regenerate `src/gen/`; it is not included in any artifact.
+pull request and push. Pushes to `main` and manual runs also build production
+artifacts for Windows x64, macOS arm64 (macOS 26), and Linux x86-64/Steam Deck
+when the repository has an Actions secret named `MMX_ROM_BASE64`. Without that
+secret, the private-ROM artifact jobs skip cleanly while source checks still
+run. The secret must contain the base64-encoded, legally obtained USA Rev 1
+ROM; it is used only on the runner to regenerate `src/gen/` and is not included
+in any artifact.
 
 On macOS, the runtime uses Metal for presentation, `GameController.framework`
 for Xbox/PlayStation/Switch-compatible controllers, and a Core Audio output
