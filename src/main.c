@@ -24,8 +24,17 @@
 #include "config.h"
 #include "util.h"
 #include "mmx_spc_player.h"
-#if defined(SNES_LAUNCHER)
-#include "launcher_capi.h"   /* shared RmlUi pre-boot launcher (snes_launcher_run_window) */
+#if defined(SNES_LAUNCHER) || defined(RECOMP_LAUNCHER)
+#if defined(RECOMP_LAUNCHER)
+/* Shared recomp-ui launcher (F:\Projects\recomp-ui) — the console-agnostic
+ * extraction of launcher_ng, consumed as a junction/submodule. Built with
+ * -DMMX_RECOMP_UI=ON; its recomp_ui.cmake defines RECOMP_LAUNCHER. MMX drives
+ * it as the SNES profile (launcher_profile_apply("snes", ...)). */
+#include "recomp_launcher.h"   /* recomp_launcher_run_window() */
+#include "launcher_profile.h"  /* launcher_profile_apply("snes", &gi) — SNES identity */
+#elif defined(SNES_LAUNCHER)
+#include "launcher_capi.h"     /* in-tree launcher_ng (snes_launcher_run_window) */
+#endif
 #endif
 
 #include "snes/snes.h"
@@ -772,7 +781,7 @@ int main(int argc, char** argv) {
 #endif
     int rom_resolved_by_launcher = 0;
 
-#if defined(SNES_LAUNCHER)
+#if defined(SNES_LAUNCHER) || defined(RECOMP_LAUNCHER)
     /* GUI launcher: pick/verify ROM + tune settings before boot. MMX has no
      * widescreen and no MSU-1, so both of those panels are hidden (per-game
      * GameInfo flags). Skipped for headless paths / positional ROM / env. */
@@ -808,7 +817,11 @@ int main(int argc, char** argv) {
 
       if (want_launcher) {
         host_report_breadcrumb("launcher: opening GUI");
+#if defined(RECOMP_LAUNCHER)
+        RecompLauncherCSettings ls;   /* recomp-ui ABI: same base fields as SnesLauncher, plus additive */
+#else
         SnesLauncherCSettings ls;
+#endif
         memset(&ls, 0, sizeof(ls));
         ls.output_method = g_config.output_method;
         ls.window_scale  = g_config.window_scale ? g_config.window_scale : 2;
@@ -839,8 +852,18 @@ int main(int argc, char** argv) {
           }
         }
 
+#if defined(RECOMP_LAUNCHER)
+        RecompLauncherCGameInfo gi;
+        memset(&gi, 0, sizeof(gi));
+        /* SNES system identity (theme=CRT, platform="SUPER NINTENDO", rom_noun
+         * "ROM", widescreen_supported=1); MMX overrides the per-game specifics
+         * below (it hides widescreen). One profile call keeps the identity from
+         * drifting across SNES titles, exactly as the PSX host does for its. */
+        launcher_profile_apply("snes", &gi);
+#else
         SnesLauncherCGameInfo gi;
         memset(&gi, 0, sizeof(gi));
+#endif
         gi.name = MMX_GAME_NAME;
         gi.region = MMX_GAME_REGION;
         gi.sram_path = NULL;           /* hide SAVES panel — MMX has no battery SRAM
@@ -856,9 +879,18 @@ int main(int argc, char** argv) {
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */
 
+#if defined(RECOMP_LAUNCHER)
+        /* cwd is anchored to the exe dir (snesrecomp_anchor_to_exe_dir above),
+         * and recomp_ui.cmake stages assets to <exe>/assets, so "." resolves
+         * assets correctly. */
+        int act = recomp_launcher_run_window(
+            MMX_LAUNCHER_TITLE,
+            &ls, &gi, ".", init_rom, rom_path_buf, sizeof(rom_path_buf));
+#else
         int act = snes_launcher_run_window(
             MMX_LAUNCHER_TITLE,
             &ls, &gi, "launcher", init_rom, rom_path_buf, sizeof(rom_path_buf));
+#endif
         host_report_breadcrumb("launcher: action=%d rom=%s", act,
                                rom_path_buf[0] ? rom_path_buf : "(none)");
         if (act == 1) return 0;   /* user closed the launcher */
