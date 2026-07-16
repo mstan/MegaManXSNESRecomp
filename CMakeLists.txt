@@ -24,6 +24,14 @@ project(MegaManXSNESRecomp C)
 set(CMAKE_C_STANDARD 11)
 
 set(SNESRECOMP_ROOT ${CMAKE_SOURCE_DIR}/snesrecomp)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(mmx_display_test tests/mmx_display_test.c src/mmx_display.c)
+    target_include_directories(mmx_display_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    add_test(NAME mmx_display_geometry COMMAND mmx_display_test)
+endif()
+
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
 include(${SNESRECOMP_ROOT}/runner/src/launcher_ng/launcher_ng.cmake)
 
@@ -57,8 +65,10 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_SOURCES}
         # game-specific runtime (shared across both variants)
         src/config.c
+        src/mmx_display.c
         src/glsl_shader.c
         src/main.c
+        src/mmx_wide_preview.c
         src/post_mortem.c
         src/opengl.c
         src/mmx_00.c

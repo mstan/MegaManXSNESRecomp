@@ -16,12 +16,15 @@
 #endif
 
 #include "snes/ppu.h"
+#include "widescreen.h"
+#include "mmx_wide_preview.h"
 
 #include "types.h"
 #include "mmx_rtl.h"
 #include "common_cpu_infra.h"
 #include "framedump.h"
 #include "config.h"
+#include "mmx_display.h"
 #include "util.h"
 #include "mmx_spc_player.h"
 #if defined(SNES_LAUNCHER)
@@ -64,7 +67,7 @@ bool g_new_ppu = true;
 
 struct SpcPlayer *g_spc_player;
 
-static uint8_t g_my_pixels[256 * 4 * 240];
+static uint8_t g_my_pixels[(256 + 2 * kWsExtraMax) * 4 * 240];
 
 
 enum {
@@ -121,12 +124,61 @@ static bool g_display_perf;
 static int g_curr_fps;
 static int g_ppu_render_flags = 0;
 static int g_snes_width, g_snes_height;
+static int g_last_drawable_width, g_last_drawable_height;
+/* Required by the shared PPU widescreen runtime; host-only, never serialized. */
+bool g_ws_active;
+int g_ws_extra;
+static const char *g_active_config_file;
 static int g_sdl_audio_mixer_volume = SDL_MIX_MAXVOLUME;
 static struct RendererFuncs g_renderer_funcs;
 
 static GamepadInfo g_gamepad[2];
 
 extern Snes *g_snes;
+
+static void MmxDisplay_PreparePpuFrame(void) {
+  int drawable_width = 0, drawable_height = 0;
+  if (g_renderer_funcs.GetOutputSize)
+    g_renderer_funcs.GetOutputSize(&drawable_width, &drawable_height);
+  if (drawable_width <= 0 || drawable_height <= 0)
+    SDL_GetWindowSize(g_window, &drawable_width, &drawable_height);
+  if (drawable_width > 0 && drawable_height > 0) {
+    g_last_drawable_width = drawable_width;
+    g_last_drawable_height = drawable_height;
+  } else {
+    drawable_width = g_last_drawable_width;
+    drawable_height = g_last_drawable_height;
+  }
+
+  int width = MmxDisplay_ComputeFrameWidth(drawable_width, drawable_height,
+                                           g_config.widescreen);
+  g_snes_width = width;
+  g_ws_extra = (width - 256) / 2;
+  g_ws_active = g_ws_extra != 0;
+  /* The legacy pixel-at-a-time PPU has a hard-coded 256-column loop. Keep the
+   * user's renderer selection, but use the priority-buffer PPU while a real
+   * widescreen frame is active; disabling widescreen restores that selection. */
+  g_new_ppu = g_ws_active ||
+              (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
+  PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)width * 4, 0);
+  PpuSetExtraSpace(g_ppu, (uint8)g_ws_extra);
+  PpuSetWidescreenLineEnhancer(
+      g_ppu, (g_ws_active && MmxWidePreview_IsMarginEnhancerReady())
+                 ? MmxWidePreview_EnhancePpuLine : NULL,
+      NULL);
+}
+
+void MmxDisplay_SetWidescreenEnabled(bool enabled) {
+  if (g_config.widescreen == enabled)
+    return;
+  g_config.widescreen = enabled;
+  WriteConfigFile(g_active_config_file);
+  printf("Widescreen renderer = %s\n", enabled ? "on" : "off");
+}
+
+bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
+bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active; }
+int MmxDisplay_GetCurrentFrameWidth(void) { return g_snes_width > 0 ? g_snes_width : 256; }
 
 // --- Scripted input ---
 typedef struct {
@@ -283,14 +335,16 @@ void ChangeWindowScale(int scale_step) {
       bt = 31;
     }
     // Allow a scale level slightly above the max that fits on screen
-    int mw = (bounds.w - bl - br + g_snes_width / 4) / g_snes_width;
-    int mh = (bounds.h - bt - bb + g_snes_height / 4) / g_snes_height;
+    int logical_width = MmxDisplay_GetWindowBaseWidth(g_snes_width);
+    int logical_height = MmxDisplay_GetWindowBaseHeight();
+    int mw = (bounds.w - bl - br + logical_width / 4) / logical_width;
+    int mh = (bounds.h - bt - bb + logical_height / 4) / logical_height;
     max_scale = IntMin(mw, mh);
   }
   int new_scale = IntMax(IntMin(g_current_window_scale + scale_step, max_scale), 1);
   g_current_window_scale = new_scale;
-  int w = new_scale * g_snes_width;
-  int h = new_scale * g_snes_height;
+  int w = new_scale * MmxDisplay_GetWindowBaseWidth(g_snes_width);
+  int h = new_scale * MmxDisplay_GetWindowBaseHeight();
 
   //SDL_RenderSetLogicalSize(g_renderer, w, h);
   SDL_SetWindowSize(g_window, w, h);
@@ -336,8 +390,9 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
 
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
   g_rtl_game_info->draw_ppu_frame();
-  for (size_t y = 0, y_end = g_snes_height; y < y_end; y++)
-    memcpy((uint8 *)pixel_buffer + y * pitch, g_my_pixels + y * 256 * 4, 256 * 4);
+  if (g_ws_active)
+    MmxWidePreview_Draw(g_my_pixels, g_snes_width, g_snes_height, g_ws_extra);
+  RtlWidescreenPresent(pixel_buffer, pitch, g_my_pixels, g_snes_width, g_snes_height);
 }
 
 #ifdef ENABLE_ORACLE_BACKEND
@@ -363,6 +418,8 @@ static uint16_t mmx_runner_to_snes_joypad(uint16_t r) {
 #endif
 
 static void DrawPpuFrameWithPerf(void) {
+  /* Geometry must be fixed before the presenter allocates/locks its surface. */
+  MmxDisplay_PreparePpuFrame();
   int render_scale = PpuGetCurrentRenderScale(g_ppu, g_ppu_render_flags);
   uint8 *pixel_buffer = 0;
   int pitch = 0;
@@ -457,8 +514,6 @@ static bool SdlRenderer_Init(SDL_Window *window) {
     printf("\n");
   }
   g_renderer = renderer;
-  if (!g_config.ignore_aspect_ratio)
-    SDL_RenderSetLogicalSize(renderer, g_snes_width, g_snes_height);
   if (g_config.linear_filtering)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "best");
 
@@ -477,7 +532,30 @@ static void SdlRenderer_Destroy(void) {
   SDL_DestroyRenderer(g_renderer);
 }
 
+static void SdlRenderer_GetOutputSize(int *width, int *height) {
+  if (SDL_GetRendererOutputSize(g_renderer, width, height) != 0) {
+    *width = 0;
+    *height = 0;
+  }
+}
+
 static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pitch) {
+  int texture_width, texture_height;
+  SDL_QueryTexture(g_texture, NULL, NULL, &texture_width, &texture_height);
+  if (texture_width != width || texture_height != height) {
+    SDL_DestroyTexture(g_texture);
+    g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ARGB8888,
+                                  SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (!g_texture) Die("SDL widescreen texture allocation failed");
+  }
+  if (g_config.ignore_aspect_ratio) {
+    SDL_RenderSetLogicalSize(g_renderer, 0, 0);
+  } else {
+    int logical_width, logical_height;
+    MmxDisplay_ComputePresentationSize(width, height,
+                                       &logical_width, &logical_height);
+    SDL_RenderSetLogicalSize(g_renderer, logical_width, logical_height);
+  }
   g_sdl_renderer_rect.w = width;
   g_sdl_renderer_rect.h = height;
   if (SDL_LockTexture(g_texture, &g_sdl_renderer_rect, (void **)pixels, pitch) != 0) {
@@ -500,6 +578,7 @@ static void SdlRenderer_EndDraw(void) {
 static const struct RendererFuncs kSdlRendererFuncs = {
   &SdlRenderer_Init,
   &SdlRenderer_Destroy,
+  &SdlRenderer_GetOutputSize,
   &SdlRenderer_BeginDraw,
   &SdlRenderer_EndDraw,
 };
@@ -725,6 +804,7 @@ int main(int argc, char** argv) {
       snesrecomp_exe_dir_path("config.ini", config_exe_path, sizeof(config_exe_path)))
     config_file = config_exe_path;
   ParseConfigFile(config_file);
+  g_active_config_file = config_file;
   // Apply local overrides if present (gitignored). Lets a developer
   // mute audio etc. without touching the checked-in config.ini. Last
   // parser to set a key wins, so local overrides take precedence.
@@ -773,9 +853,9 @@ int main(int argc, char** argv) {
     int rom_resolved_by_launcher = 0;
 
 #if defined(SNES_LAUNCHER)
-    /* GUI launcher: pick/verify ROM + tune settings before boot. MMX has no
-     * widescreen and no MSU-1, so both of those panels are hidden (per-game
-     * GameInfo flags). Skipped for headless paths / positional ROM / env. */
+    /* GUI launcher: pick/verify ROM + tune settings before boot. MMX exposes
+     * the PPU widescreen option but has no MSU-1. Skipped for headless paths,
+     * positional ROM, or explicit environment override. */
     {
       int headless = start_paused || (script_file != NULL) || (framedump_dir != NULL);
       int have_positional = (argc >= 1 && argv[0] && argv[0][0] != '-' && argv[0][0] != '\0');
@@ -815,7 +895,7 @@ int main(int argc, char** argv) {
         ls.fullscreen    = g_config.fullscreen;
         ls.ignore_aspect = g_config.ignore_aspect_ratio;
         ls.linear_filter = g_config.linear_filtering;
-        ls.widescreen    = 0;   /* MMX: no widescreen path (panel hidden) */
+        ls.widescreen    = g_config.widescreen;
         ls.enable_audio  = g_config.enable_audio;
         ls.audio_freq    = g_config.audio_freq;
         ls.volume        = 100;
@@ -851,7 +931,7 @@ int main(int argc, char** argv) {
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */
         gi.num_known_sha256 = 1;
-        gi.widescreen_supported = 0;   /* hide Widescreen panel */
+        gi.widescreen_supported = 1;   /* expose the runtime widescreen control */
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */
@@ -868,6 +948,7 @@ int main(int argc, char** argv) {
           g_config.fullscreen          = (uint8)ls.fullscreen;
           g_config.ignore_aspect_ratio = ls.ignore_aspect != 0;
           g_config.linear_filtering    = ls.linear_filter != 0;
+          g_config.widescreen          = ls.widescreen != 0;
           g_config.enable_audio        = true;   /* always on */
           g_config.audio_freq          = (uint16)ls.audio_freq;
           g_config.enable_gamepad[0]   = ls.player_src[0] == 2;
@@ -938,7 +1019,10 @@ int main(int argc, char** argv) {
   }
 
   g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
-  g_snes_width = 256;
+  /* A persisted widescreen launch opens a useful 16:9 window before the first
+   * display-derived frame is calculated. Custom WindowSize remains authoritative. */
+  g_snes_width = g_config.widescreen
+      ? MmxDisplay_ComputeFrameWidth(16, 9, true) : 256;
   g_snes_height = 224;// (g_config.extend_y ? 240 : 224);
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
     g_config.extend_y * kPpuRenderFlags_Height240 |
@@ -981,8 +1065,10 @@ int main(int argc, char** argv) {
   keybinds_init(NULL);
 
   bool custom_size = g_config.window_width != 0 && g_config.window_height != 0;
-  int window_width = custom_size ? g_config.window_width : g_current_window_scale * g_snes_width;
-  int window_height = custom_size ? g_config.window_height : g_current_window_scale * g_snes_height;
+  int window_width = custom_size ? g_config.window_width :
+      g_current_window_scale * MmxDisplay_GetWindowBaseWidth(g_snes_width);
+  int window_height = custom_size ? g_config.window_height :
+      g_current_window_scale * MmxDisplay_GetWindowBaseHeight();
 
   if (g_config.output_method == kOutputMethod_OpenGL) {
     g_win_flags |= SDL_WINDOW_OPENGL;
@@ -1135,7 +1221,7 @@ error_reading:;
     host_report_breadcrumb("audio disabled in config");
   }
 
-  PpuBeginDrawing(g_ppu, g_my_pixels, 256 * 4, 0);
+  MmxDisplay_PreparePpuFrame();
 
   MkDir("saves");
     
@@ -1339,6 +1425,7 @@ error_reading:;
        * garble/freeze"). So we still run the guest-state simulation every
        * frame here — we just skip the host present (BeginDraw/memcpy/EndDraw,
        * the GPU-bound part turbo exists to elide). */
+      MmxDisplay_PreparePpuFrame();
       g_rtl_game_info->draw_ppu_frame();
     }
 
@@ -1496,6 +1583,9 @@ static void HandleCommand(uint32 j, bool pressed) {
       g_ppu_render_flags ^= kPpuRenderFlags_NewRenderer;
       printf("New renderer = %x\n", g_ppu_render_flags & kPpuRenderFlags_NewRenderer);
       g_new_ppu = (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
+      break;
+    case kKeys_ToggleWidescreen:
+      MmxDisplay_SetWidescreenEnabled(!g_config.widescreen);
       break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
@@ -1694,6 +1784,12 @@ static const char kDefaultConfigIniContent[] =
   "# Don't keep the aspect ratio\n"
   "IgnoreAspectRatio = 0\n"
   "\n"
+  "# Render real extra PPU columns to match a widescreen display.\n"
+  "# Foreground geometry is rendered farther from MMX's prepared level data;\n"
+  "# enemies remain static until the authentic activation window reaches them.\n"
+  "# Camera, collision, AI, and save-state data are unchanged.\n"
+  "Widescreen = 0\n"
+  "\n"
   "# Remove the sprite limits per scan line\n"
   "NoSpriteLimits = 1\n"
   "\n"
@@ -1714,6 +1810,8 @@ static const char kDefaultConfigIniContent[] =
   "Turbo = Tab\n"
   "WindowBigger = Ctrl+Up\n"
   "WindowSmaller = Ctrl+Down\n"
+  "# Toggle true PPU widescreen rendering at runtime.\n"
+  "ToggleWidescreen = Alt+w\n"
   "VolumeUp = Shift+=\n"
   "VolumeDown = Shift+-\n"
   "Load =      F1,     F2,     F3,     F4,     F5,     F6,     F7,     F8,     F9,     F10\n"

@@ -3,7 +3,14 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 279d7877a0e9d23b9df2fbf7c3e9b04a4842a161
+sha = 2b9ec8b12e946fb86628662dc89ee13f42533701
+# 2026-07-16 bump for MMX true widescreen (PR #10 split, engine branch
+# pr10/ws-margin-enhancer, recreated after engine repo re-clone): adds the host-only PPU widescreen line-enhancer
+# API (PpuSetWidescreenLineEnhancer), RendererFuncs.GetOutputSize, and the
+# scoped 256-wide debug screenshot capture. NOTE: local engine branch —
+# cherry-pick of navjack dcb7abd (fork); merge to engine main before release.
+# NOTE: RendererFuncs gains a middle member; other games' positional
+# initializers need the same update before this engine commit rolls out.
 # 2026-07-14 DerrickGold candidate integration validated in MMX at authentic
 # 4:3: SimpleHDMA bounds, bank sharding, opt-in widescreen policies,
 # no-sprite-limits support, and the filtered interpreter policy hook.

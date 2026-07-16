@@ -6,6 +6,7 @@
 #include "util.h"
 #include "glsl_shader.h"
 #include "config.h"
+#include "mmx_display.h"
 
 #define CODE(...) #__VA_ARGS__
 
@@ -141,6 +142,10 @@ static bool OpenGLRenderer_Init(SDL_Window *window) {
   return true;
 }
 
+static void OpenGLRenderer_GetOutputSize(int *width, int *height) {
+  SDL_GL_GetDrawableSize(g_window, width, height);
+}
+
 static void OpenGLRenderer_Destroy(void) {
 }
 
@@ -164,17 +169,14 @@ static void OpenGLRenderer_EndDraw(void) {
 
   SDL_GL_GetDrawableSize(g_window, &drawable_width, &drawable_height);
   
-  int viewport_width = drawable_width, viewport_height = drawable_height;
-
-  if (!g_config.ignore_aspect_ratio) {
-    if (viewport_width * g_draw_height < viewport_height * g_draw_width)
-      viewport_height = viewport_width * g_draw_height / g_draw_width;  // limit height
-    else
-      viewport_width = viewport_height * g_draw_width / g_draw_height;  // limit width
-  }
-
-  int viewport_x = (drawable_width - viewport_width) >> 1;
-  int viewport_y = (viewport_height - viewport_height) >> 1;
+  MmxDisplayViewport viewport;
+  MmxDisplay_ComputeViewport(g_draw_width, g_draw_height,
+                             drawable_width, drawable_height,
+                             g_config.ignore_aspect_ratio, false,
+                             &viewport);
+  int viewport_width = viewport.width, viewport_height = viewport.height;
+  int viewport_x = viewport.x;
+  int viewport_y = viewport.y;
 
   glBindTexture(GL_TEXTURE_2D, g_texture.gl_texture);
   if (g_draw_width == g_texture.width && g_draw_height == g_texture.height) {
@@ -207,6 +209,7 @@ static void OpenGLRenderer_EndDraw(void) {
 static const struct RendererFuncs kOpenGLRendererFuncs = {
   &OpenGLRenderer_Init,
   &OpenGLRenderer_Destroy,
+  &OpenGLRenderer_GetOutputSize,
   &OpenGLRenderer_BeginDraw,
   &OpenGLRenderer_EndDraw,
 };
