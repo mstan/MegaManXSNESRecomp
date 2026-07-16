@@ -21,6 +21,7 @@ extern "C" {
 #include "config.h"
 #include "host_report.h"
 #include "mmx_rtl.h"
+#include "mmx_display.h"
 #include "util.h"
 
 #define CRT_SYSTEM CRT_SYSTEM_SNES
@@ -140,6 +141,17 @@ static void MacMetal_Destroy(void) {
   memset(&g_metal, 0, sizeof(g_metal));
 }
 
+static void MacMetal_GetOutputSize(int *width, int *height) {
+  if (!g_metal.layer) {
+    *width = 0;
+    *height = 0;
+    return;
+  }
+  CGSize size = g_metal.layer.drawableSize;
+  *width = (int)size.width;
+  *height = (int)size.height;
+}
+
 static void MacMetal_BeginDraw(int width, int height, uint8 **pixels, int *pitch) {
   size_t size = (size_t)width * (size_t)height * 4;
   if (size > g_metal.pixels_size) {
@@ -229,15 +241,15 @@ static void MacMetal_EndDraw(void) {
 
   float viewport_w = (float)g_metal.layer.drawableSize.width;
   float viewport_h = (float)g_metal.layer.drawableSize.height;
-  int integer_scale = (int)fminf(viewport_w / (float)frame_width,
-                                  viewport_h / (float)frame_height);
-  if (integer_scale < 1) integer_scale = 1;
-  float target_w = (float)frame_width * (float)integer_scale;
-  float target_h = (float)frame_height * (float)integer_scale;
-  float left = (viewport_w - target_w) * 0.5f;
-  float top = (viewport_h - target_h) * 0.5f;
-  float right = left + target_w;
-  float bottom = top + target_h;
+  MmxDisplayViewport viewport;
+  MmxDisplay_ComputeViewport(frame_width, frame_height,
+                             (int)viewport_w, (int)viewport_h,
+                             g_config.ignore_aspect_ratio, true,
+                             &viewport);
+  float left = (float)viewport.x;
+  float top = (float)viewport.y;
+  float right = left + (float)viewport.width;
+  float bottom = top + (float)viewport.height;
   float ndc_left = left * 2.0f / viewport_w - 1.0f;
   float ndc_right = right * 2.0f / viewport_w - 1.0f;
   float ndc_top = 1.0f - top * 2.0f / viewport_h;
@@ -260,7 +272,8 @@ static void MacMetal_EndDraw(void) {
 }
 
 static const struct RendererFuncs kMacMetalRendererFuncs = {
-  MacMetal_Init, MacMetal_Destroy, MacMetal_BeginDraw, MacMetal_EndDraw
+  MacMetal_Init, MacMetal_Destroy, MacMetal_GetOutputSize,
+  MacMetal_BeginDraw, MacMetal_EndDraw
 };
 
 void MacMetalRenderer_Create(struct RendererFuncs *funcs) {

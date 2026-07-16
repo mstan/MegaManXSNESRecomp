@@ -26,7 +26,10 @@ static void RenderMenu(void) {
   bool widescreen = MmxDisplay_IsWidescreenEnabled();
   if (ImGui::Checkbox("True widescreen renderer", &widescreen))
     MmxDisplay_SetWidescreenEnabled(widescreen);
-  ImGui::TextWrapped("Shows additional PPU-rendered scene columns; gameplay stays unchanged.");
+  ImGui::Text("Status: %s, %s (%dx224)", widescreen ? "enabled" : "disabled",
+              MmxDisplay_IsWidescreenActive() ? "active" : "inactive",
+              MmxDisplay_GetCurrentFrameWidth());
+  ImGui::TextWrapped("Adds host-only PPU scene columns; gameplay stays unchanged.");
 
   ImGui::Separator();
   ImGui::TextUnformatted("Save states");

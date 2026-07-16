@@ -83,7 +83,10 @@ extern "C" void MacUi_Render(void *pass_descriptor, void *command_buffer, void *
   bool widescreen = MmxDisplay_IsWidescreenEnabled();
   if (ImGui::Checkbox("True widescreen renderer", &widescreen))
     MmxDisplay_SetWidescreenEnabled(widescreen);
-  ImGui::TextUnformatted("Shows additional PPU-rendered scene columns; gameplay stays unchanged.");
+  ImGui::Text("Status: %s, %s (%dx224)", widescreen ? "enabled" : "disabled",
+              MmxDisplay_IsWidescreenActive() ? "active" : "inactive",
+              MmxDisplay_GetCurrentFrameWidth());
+  ImGui::TextUnformatted("Adds host-only PPU scene columns; gameplay stays unchanged.");
 
   ImGui::Separator();
   ImGui::TextUnformatted("Save states");

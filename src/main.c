@@ -134,6 +134,7 @@ static bool g_display_perf;
 static int g_curr_fps;
 static int g_ppu_render_flags = 0;
 static int g_snes_width, g_snes_height;
+static int g_last_drawable_width, g_last_drawable_height;
 /* Required by the shared PPU widescreen runtime; host-only, never serialized. */
 bool g_ws_active;
 int g_ws_extra;
@@ -146,16 +147,21 @@ static GamepadInfo g_gamepad[2];
 extern Snes *g_snes;
 
 static void MmxDisplay_PreparePpuFrame(void) {
-  int window_width = 0, window_height = 0;
-  int width = 256;
-  if (g_config.widescreen) {
-    SDL_GetWindowSize(g_window, &window_width, &window_height);
-    if (window_width > 0 && window_height > 0) {
-      width = (224 * window_width + window_height / 2) / window_height;
-      width &= ~1;  /* symmetric PPU side borders */
-      width = IntMax(256, IntMin(256 + 2 * kWsExtraMax, width));
-    }
+  int drawable_width = 0, drawable_height = 0;
+  if (g_renderer_funcs.GetOutputSize)
+    g_renderer_funcs.GetOutputSize(&drawable_width, &drawable_height);
+  if (drawable_width <= 0 || drawable_height <= 0)
+    SDL_GetWindowSize(g_window, &drawable_width, &drawable_height);
+  if (drawable_width > 0 && drawable_height > 0) {
+    g_last_drawable_width = drawable_width;
+    g_last_drawable_height = drawable_height;
+  } else {
+    drawable_width = g_last_drawable_width;
+    drawable_height = g_last_drawable_height;
   }
+
+  int width = MmxDisplay_ComputeFrameWidth(drawable_width, drawable_height,
+                                           g_config.widescreen);
   g_snes_width = width;
   g_ws_extra = (width - 256) / 2;
   g_ws_active = g_ws_extra != 0;
@@ -166,6 +172,10 @@ static void MmxDisplay_PreparePpuFrame(void) {
               (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
   PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)width * 4, 0);
   PpuSetExtraSpace(g_ppu, (uint8)g_ws_extra);
+  PpuSetWidescreenLineEnhancer(
+      g_ppu, (g_ws_active && MmxWidePreview_IsMarginEnhancerReady())
+                 ? MmxWidePreview_EnhancePpuLine : NULL,
+      NULL);
 }
 
 void MmxDisplay_SetWidescreenEnabled(bool enabled) {
@@ -177,6 +187,8 @@ void MmxDisplay_SetWidescreenEnabled(bool enabled) {
 }
 
 bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
+bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active; }
+int MmxDisplay_GetCurrentFrameWidth(void) { return g_snes_width > 0 ? g_snes_width : 256; }
 
 // --- Scripted input ---
 typedef struct {
@@ -333,16 +345,16 @@ void ChangeWindowScale(int scale_step) {
       bt = 31;
     }
     // Allow a scale level slightly above the max that fits on screen
-    int logical_width = g_snes_width;
-    int logical_height = g_snes_height;
+    int logical_width = MmxDisplay_GetWindowBaseWidth(g_snes_width);
+    int logical_height = MmxDisplay_GetWindowBaseHeight();
     int mw = (bounds.w - bl - br + logical_width / 4) / logical_width;
     int mh = (bounds.h - bt - bb + logical_height / 4) / logical_height;
     max_scale = IntMin(mw, mh);
   }
   int new_scale = IntMax(IntMin(g_current_window_scale + scale_step, max_scale), 1);
   g_current_window_scale = new_scale;
-  int w = new_scale * g_snes_width;
-  int h = new_scale * g_snes_height;
+  int w = new_scale * MmxDisplay_GetWindowBaseWidth(g_snes_width);
+  int h = new_scale * MmxDisplay_GetWindowBaseHeight();
 
   //SDL_RenderSetLogicalSize(g_renderer, w, h);
   SDL_SetWindowSize(g_window, w, h);
@@ -536,6 +548,13 @@ static void SdlRenderer_Destroy(void) {
   SDL_DestroyRenderer(g_renderer);
 }
 
+static void SdlRenderer_GetOutputSize(int *width, int *height) {
+  if (SDL_GetRendererOutputSize(g_renderer, width, height) != 0) {
+    *width = 0;
+    *height = 0;
+  }
+}
+
 static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pitch) {
   int texture_width, texture_height;
   SDL_QueryTexture(g_texture, NULL, NULL, &texture_width, &texture_height);
@@ -545,8 +564,14 @@ static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pi
                                   SDL_TEXTUREACCESS_STREAMING, width, height);
     if (!g_texture) Die("SDL widescreen texture allocation failed");
   }
-  if (!g_config.ignore_aspect_ratio)
-    SDL_RenderSetLogicalSize(g_renderer, width, height);
+  if (g_config.ignore_aspect_ratio) {
+    SDL_RenderSetLogicalSize(g_renderer, 0, 0);
+  } else {
+    int logical_width, logical_height;
+    MmxDisplay_ComputePresentationSize(width, height,
+                                       &logical_width, &logical_height);
+    SDL_RenderSetLogicalSize(g_renderer, logical_width, logical_height);
+  }
   g_sdl_renderer_rect.w = width;
   g_sdl_renderer_rect.h = height;
   if (SDL_LockTexture(g_texture, &g_sdl_renderer_rect, (void **)pixels, pitch) != 0) {
@@ -572,6 +597,7 @@ static void SdlRenderer_EndDraw(void) {
 static const struct RendererFuncs kSdlRendererFuncs = {
   &SdlRenderer_Init,
   &SdlRenderer_Destroy,
+  &SdlRenderer_GetOutputSize,
   &SdlRenderer_BeginDraw,
   &SdlRenderer_EndDraw,
 };
@@ -1014,7 +1040,8 @@ int main(int argc, char** argv) {
   g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
   /* A persisted widescreen launch opens a useful 16:9 window before the first
    * display-derived frame is calculated. Custom WindowSize remains authoritative. */
-  g_snes_width = g_config.widescreen ? 400 : 256;
+  g_snes_width = g_config.widescreen
+    ? MmxDisplay_ComputeFrameWidth(16, 9, true) : 256;
   g_snes_height = 224;// (g_config.extend_y ? 240 : 224);
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
     g_config.extend_y * kPpuRenderFlags_Height240 |
@@ -1065,8 +1092,10 @@ int main(int argc, char** argv) {
   keybinds_init(NULL);
 
   bool custom_size = g_config.window_width != 0 && g_config.window_height != 0;
-  int window_width = custom_size ? g_config.window_width : g_current_window_scale * g_snes_width;
-  int window_height = custom_size ? g_config.window_height : g_current_window_scale * g_snes_height;
+  int window_width = custom_size ? g_config.window_width :
+    g_current_window_scale * MmxDisplay_GetWindowBaseWidth(g_snes_width);
+  int window_height = custom_size ? g_config.window_height :
+    g_current_window_scale * MmxDisplay_GetWindowBaseHeight();
 
  #ifdef __APPLE__
   g_win_flags |= SDL_WINDOW_METAL;

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(MegaManXSNESRecomp C CXX)
 
+include(CTest)
+
 if(APPLE)
     enable_language(OBJCXX)
 endif()
@@ -29,8 +31,83 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SNESRECOMP_ROOT "${CMAKE_SOURCE_DIR}/snesrecomp" CACHE PATH
+set(_MMX_SNESRECOMP_SUBMODULE "${CMAKE_SOURCE_DIR}/snesrecomp")
+set(SNESRECOMP_ROOT "${_MMX_SNESRECOMP_SUBMODULE}" CACHE PATH
     "Path to the snesrecomp dependency checkout")
+option(MMX_ALLOW_UNPINNED_SNESRECOMP
+       "Allow building against a different or dirty snesrecomp checkout" OFF)
+
+if(NOT EXISTS "${SNESRECOMP_ROOT}/runner/runner.cmake")
+    message(FATAL_ERROR
+      "snesrecomp is not initialized at ${SNESRECOMP_ROOT}. "
+      "Run `bash tools/bootstrap.sh` from the repository root, then configure again.")
+endif()
+
+if(NOT MMX_ALLOW_UNPINNED_SNESRECOMP)
+    get_filename_component(_MMX_SNESRECOMP_ROOT_REAL "${SNESRECOMP_ROOT}" REALPATH)
+    get_filename_component(_MMX_SNESRECOMP_SUBMODULE_REAL
+                           "${_MMX_SNESRECOMP_SUBMODULE}" REALPATH)
+    if(NOT _MMX_SNESRECOMP_ROOT_REAL STREQUAL _MMX_SNESRECOMP_SUBMODULE_REAL)
+        message(FATAL_ERROR
+          "SNESRECOMP_ROOT points outside the pinned submodule. "
+          "Use -DMMX_ALLOW_UNPINNED_SNESRECOMP=ON when intentionally developing "
+          "against another checkout.")
+    endif()
+
+    find_package(Git QUIET)
+    if(NOT GIT_EXECUTABLE)
+        message(FATAL_ERROR
+          "Git is required to verify the pinned snesrecomp submodule. "
+          "Install Git or explicitly configure with "
+          "-DMMX_ALLOW_UNPINNED_SNESRECOMP=ON for a source archive.")
+    endif()
+
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}"
+                ls-files --stage -- snesrecomp
+        OUTPUT_VARIABLE _MMX_SNESRECOMP_GITLINK
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _MMX_SNESRECOMP_GITLINK_RC
+        ERROR_QUIET)
+    if(NOT _MMX_SNESRECOMP_GITLINK_RC EQUAL 0 OR
+       NOT _MMX_SNESRECOMP_GITLINK MATCHES
+           "^160000 +([0-9a-fA-F]+) +0")
+        message(FATAL_ERROR
+          "Could not read the pinned snesrecomp gitlink. "
+          "Use a Git clone of this repository or explicitly configure with "
+          "-DMMX_ALLOW_UNPINNED_SNESRECOMP=ON for a source archive.")
+    endif()
+    set(_MMX_PIN_SHA "${CMAKE_MATCH_1}")
+
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SNESRECOMP_ROOT}"
+                            rev-parse HEAD
+                    OUTPUT_VARIABLE _MMX_RUNNER_SHA
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    RESULT_VARIABLE _MMX_RUNNER_SHA_RC)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${SNESRECOMP_ROOT}"
+                status --porcelain=v1 --untracked-files=no --ignore-submodules=none
+        OUTPUT_VARIABLE _MMX_RUNNER_STATUS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _MMX_RUNNER_STATUS_RC)
+    if(NOT _MMX_RUNNER_SHA_RC EQUAL 0 OR
+       NOT _MMX_RUNNER_STATUS_RC EQUAL 0 OR
+       NOT _MMX_RUNNER_SHA STREQUAL _MMX_PIN_SHA OR
+       NOT _MMX_RUNNER_STATUS STREQUAL "")
+        message(FATAL_ERROR
+          "snesrecomp is not the clean pinned revision ${_MMX_PIN_SHA}. "
+          "Run `git submodule update --init --recursive` to restore it, or "
+          "explicitly configure with -DMMX_ALLOW_UNPINNED_SNESRECOMP=ON while "
+          "developing framework changes.")
+    endif()
+endif()
+
+if(BUILD_TESTING)
+    add_executable(mmx_display_test tests/mmx_display_test.c src/mmx_display.c)
+    target_include_directories(mmx_display_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    add_test(NAME mmx_display_geometry COMMAND mmx_display_test)
+endif()
+
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
 
 # The runner launcher supplies the game-agnostic C pieces. The fork owns the
@@ -115,6 +192,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_SOURCES}
         # game-specific runtime (shared across both variants)
         src/config.c
+        src/mmx_display.c
         $<$<NOT:$<PLATFORM_ID:Darwin>>:src/glsl_shader.c>
         src/main.c
         src/mmx_wide_preview.c

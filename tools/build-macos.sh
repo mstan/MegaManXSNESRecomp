@@ -4,8 +4,8 @@
 # macOS counterpart to tools/build-linux.sh and tools/make_release.ps1, with the
 # same prod-vs-debug discipline (prod strips the TCP debug server + rings).
 #
-# Run this ON a Mac (it cannot be built on Linux/Windows). See F:/Recomp/Mac/
-# BUILD-ON-MAC.md for prerequisites. It configures + builds with clang, then
+# Run this on a Mac (it cannot be built on Linux/Windows). It configures and
+# builds with clang, then
 # bundles a relocatable <APP_NAME>.app (dylibbundler copies SDL2 in and rewrites
 # the install names) and a <APP_NAME>.dmg for distribution.
 #
@@ -14,6 +14,7 @@
 #   bash tools/build-macos.sh --config debug   # debug build (TCP server + rings)
 #   bash tools/build-macos.sh --rom path --regen # regen src/gen first
 #   bash tools/build-macos.sh --no-dmg         # .app only
+#   bash tools/build-macos.sh --nopin          # allow local snesrecomp changes
 #   bash tools/build-macos.sh --arch arm64|x86_64|universal   # default: host arch
 #
 # Prereqs (Homebrew): cmake, sdl2, dylibbundler, create-dmg (optional).
@@ -25,7 +26,6 @@ APP_NAME="MegaManX"
 CMAKE_TARGET="MegaManXSNESRecomp"
 ROM_EXTS="sfc smc"
 EXTRA_ARGS=""
-REGEN_CMD=""
 PREBUILD_CMD=""
 POSTBUILD_CMD=""
 PROD_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=OFF )
@@ -33,9 +33,15 @@ DEBUG_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=ON )
 BUNDLE_ID="com.mstan.megamanxrecomp"
 # ============================================================================
 
-CONFIG="prod"; DO_REGEN=0; DO_DMG=1
+CONFIG="prod"; DO_REGEN=0; DO_DMG=1; NOPIN=0
 ROM_PATH=""
-ARCH="$(uname -m)"   # arm64 on Apple Silicon, x86_64 on Intel
+ARCH="$(uname -m)"
+# A translated x86_64 shell on Apple Silicon still needs an arm64 default so it
+# links against the normal /opt/homebrew dependency set.
+if [ "$(uname -s)" = "Darwin" ] &&
+   [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = "1" ]; then
+  ARCH="arm64"
+fi
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO/release-macos"
 
@@ -47,6 +53,7 @@ while [ $# -gt 0 ]; do
     --regen) DO_REGEN=1; shift;;
     --rom) ROM_PATH="$2"; shift 2;;
     --no-dmg) DO_DMG=0; shift;;
+    --nopin) NOPIN=1; shift;;
     --arch) ARCH="$2"; shift 2;;
     --out) OUT="$2"; shift 2;;
     -h|--help) sed -n '2,30p' "$0"; exit 0;;
@@ -55,6 +62,11 @@ while [ $# -gt 0 ]; do
 done
 case "$CONFIG" in prod) FLAGS=( "${PROD_CMAKE_FLAGS[@]}" );; debug) FLAGS=( "${DEBUG_CMAKE_FLAGS[@]}" );;
   *) echo "--config must be prod or debug" >&2; exit 2;; esac
+if [ "$NOPIN" = "1" ]; then
+  FLAGS+=( -DMMX_ALLOW_UNPINNED_SNESRECOMP=ON )
+else
+  FLAGS+=( -DMMX_ALLOW_UNPINNED_SNESRECOMP=OFF )
+fi
 [ "$(uname -s)" = "Darwin" ] || { echo "ERROR: run this on macOS." >&2; exit 1; }
 
 case "$ARCH" in
@@ -66,6 +78,11 @@ esac
 BUILD="$REPO/build-macos-$CONFIG"
 echo "==================== $APP_NAME ($CONFIG, $ARCH) ===================="
 cd "$REPO"
+
+[ -f "$REPO/snesrecomp/runner/runner.cmake" ] || {
+  echo "ERROR: snesrecomp is not initialized; run 'bash tools/bootstrap.sh' first." >&2
+  exit 1
+}
 
 if [ -z "$ROM_PATH" ]; then
   for candidate in "$REPO"/mmx.sfc "$REPO"/mmx.smc "$REPO"/roms/*.sfc "$REPO"/roms/*.smc; do

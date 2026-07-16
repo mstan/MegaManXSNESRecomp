@@ -8,6 +8,9 @@
 
 #include "common_rtl.h"
 #include "snes/ppu.h"
+#include "snes/snes.h"
+
+extern Snes *g_snes;
 
 #ifndef MMX_VARIANT_JP
 #define MMX_VARIANT_JP 0
@@ -81,18 +84,39 @@ typedef struct CachedIcon {
 
 static CachedIcon s_icons[256];
 
+static size_t RomSize(void) {
+  return (g_snes && g_snes->cart) ? g_snes->cart->romSize : 0;
+}
+
+static bool RomRange(size_t off, size_t size) {
+  size_t total = RomSize();
+  return off <= total && size <= total - off;
+}
+
+static const uint8_t *SafeRomPtr(size_t off, size_t size) {
+  return RomRange(off, size) ? g_rom + off : NULL;
+}
+
+static uint8_t Rom8(size_t off) {
+  const uint8_t *p = SafeRomPtr(off, 1);
+  return p ? *p : 0;
+}
+
 static uint16_t Read16(size_t off) {
-  return (uint16_t)(g_rom[off] | ((uint16_t)g_rom[off + 1] << 8));
+  const uint8_t *p = SafeRomPtr(off, 2);
+  return p ? (uint16_t)(p[0] | ((uint16_t)p[1] << 8)) : 0;
 }
 
 static uint32_t Read24(size_t off) {
-  return (uint32_t)g_rom[off] | ((uint32_t)g_rom[off + 1] << 8) |
-         ((uint32_t)g_rom[off + 2] << 16);
+  const uint8_t *p = SafeRomPtr(off, 3);
+  return p ? (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                 ((uint32_t)p[2] << 16) : 0;
 }
 
 static size_t LoRomOffset(uint32_t address) {
-  return (size_t)(((address >> 16) & 0x7f) * 0x8000u) +
-         (size_t)(address & 0x7fffu);
+  size_t off = (size_t)(((address >> 16) & 0x7f) * 0x8000u) +
+               (size_t)(address & 0x7fffu);
+  return RomRange(off, 1) ? off : SIZE_MAX;
 }
 
 static bool LoadStageBounds(uint8_t stage) {
@@ -101,8 +125,9 @@ static bool LoadStageBounds(uint8_t stage) {
   bounds->attempted = true;
 
   size_t src = LoRomOffset(Read24(kLayoutPointerOffset + (size_t)stage * 3));
-  bounds->width = g_rom[src++];
-  bounds->height = g_rom[src++];
+  if (src == SIZE_MAX || !RomRange(src, 2)) return false;
+  bounds->width = Rom8(src++);
+  bounds->height = Rom8(src++);
   if (bounds->width == 0 || bounds->width > 32 ||
       bounds->height == 0 || bounds->height > 32)
     return false;
@@ -137,7 +162,9 @@ static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
   int quadrant8 = ((local_y >> 3) & 1) * 2 + ((local_x >> 3) & 1);
   uint16_t table_addr = (uint16_t)(tile16_table + tile16 * 8 + quadrant8 * 2);
   if (table_addr < 0x8000) return false;
-  *word = Read16(LoRomOffset((tile16_table & 0xff0000) | table_addr));
+  size_t table = LoRomOffset((tile16_table & 0xff0000) | table_addr);
+  if (table == SIZE_MAX || !RomRange(table, 2)) return false;
+  *word = Read16(table);
   return true;
 }
 
@@ -155,7 +182,15 @@ static uint8_t BackgroundTilePixel(const Ppu *ppu, uint16_t tile_word,
                    (((hi >> (bit + 8)) & 1) << 3));
 }
 
-void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub) {
+bool MmxWidePreview_IsMarginEnhancerReady(void) {
+  if (!g_rom || !g_snes || !g_snes->cart || !g_ram) return false;
+  uint8_t stage = g_ram[0x1f7a];
+  return stage < kPlayableStages && LoadStageBounds(stage);
+}
+
+void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
+                                   void *context) {
+  (void)context;
   if (!ppu || y == 0 || (ppu->bgmode & 7) != 1 ||
       !(ppu->screenEnabled[sub] & 1))
     return;
@@ -201,19 +236,26 @@ static const EnemyIconSpec *FindSpec(uint8_t id) {
 static bool DecompressTiles(uint8_t compressed_id, uint8_t *dst,
                             size_t capacity, size_t *size_out) {
   size_t info = kCompressedInfoOffset + (size_t)compressed_id * 5;
+  if (!RomRange(info, 5)) return false;
   size_t output_size = Read16(info);
   size_t src = LoRomOffset(Read24(info + 2));
-  if (output_size == 0 || output_size > capacity)
+  if (src == SIZE_MAX || output_size == 0 || output_size > capacity)
     return false;
 
   size_t out = 0;
   size_t groups = (output_size + 7) >> 3;
   while (groups--) {
-    uint16_t control = g_rom[src++];
-    uint8_t repeated = g_rom[src++];
+    if (!RomRange(src, 2)) return false;
+    uint16_t control = Rom8(src++);
+    uint8_t repeated = Rom8(src++);
     for (int bit = 0; bit < 8 && out < output_size; bit++) {
       control <<= 1;
-      dst[out++] = (control & 0x100) ? g_rom[src++] : repeated;
+      if (control & 0x100) {
+        if (!RomRange(src, 1)) return false;
+        dst[out++] = Rom8(src++);
+      } else {
+        dst[out++] = repeated;
+      }
     }
   }
   *size_out = output_size;
@@ -235,10 +277,13 @@ static bool BuildTilePage(const EnemyIconSpec *spec, uint8_t compressed_id,
     return true;
   }
 
-  size_t spec_pos = kTileSpecOffset + Read16(kTileSpecOffset + compressed_id * 2);
+  size_t spec_ref = kTileSpecOffset + (size_t)compressed_id * 2;
+  if (!RomRange(spec_ref, 2)) return false;
+  size_t spec_pos = kTileSpecOffset + Read16(spec_ref);
   size_t src = 0;
   for (int guard = 0; guard < 128; guard++) {
-    uint8_t length_units = g_rom[spec_pos];
+    if (!RomRange(spec_pos, 2)) return false;
+    uint8_t length_units = Rom8(spec_pos);
     if (length_units == 0)
       break;
     if (length_units == 0xff) {
@@ -246,7 +291,7 @@ static bool BuildTilePage(const EnemyIconSpec *spec, uint8_t compressed_id,
       continue;
     }
     size_t length = (size_t)length_units * 16;
-    uint8_t vram_high = g_rom[spec_pos + 1];
+    uint8_t vram_high = Rom8(spec_pos + 1);
     int page = (vram_high & 0x7f) - 0x60;
     if (page >= 0) {
       size_t dst = (size_t)page * 0x200;
@@ -267,11 +312,15 @@ static bool BuildTilePage(const EnemyIconSpec *spec, uint8_t compressed_id,
 
 static void LoadPalette(uint16_t palette_id, uint32_t palette[16]) {
   memset(palette, 0, sizeof(uint32_t) * 16);
-  size_t info = kPaletteBankOffset + (Read16(kPaletteInfoOffset + palette_id) & 0x7fff);
-  for (int guard = 0; guard < 32 && g_rom[info] != 0; guard++, info += 4) {
-    int count = g_rom[info];
+  size_t info_ref = kPaletteInfoOffset + palette_id;
+  if (!RomRange(info_ref, 2)) return;
+  size_t info = kPaletteBankOffset + (Read16(info_ref) & 0x7fff);
+  for (int guard = 0; guard < 32 && RomRange(info, 4) && Rom8(info) != 0;
+       guard++, info += 4) {
+    int count = Rom8(info);
     size_t colors = kPaletteColorBankOffset + (Read16(info + 1) & 0x7fff);
-    int first = (int)g_rom[info + 3] - 0x80;
+    int first = (int)Rom8(info + 3) - 0x80;
+    if (count > 16 || !RomRange(colors, (size_t)count * 2)) return;
     for (int i = 0; i < count; i++) {
       int index = first + i;
       if ((unsigned)index >= 16) continue;
@@ -318,16 +367,22 @@ static bool BuildIcon(uint8_t id) {
   const EnemyIconSpec *spec = FindSpec(id);
   if (!spec || id == 0) return false;
   size_t object_info = kObjectSpriteInfoOffset + (size_t)(id - 1) * 2;
-  uint8_t sprite_id = g_rom[object_info];
-  uint8_t compressed_id = g_rom[object_info + 1];
+  if (!RomRange(object_info, 2)) return false;
+  uint8_t sprite_id = Rom8(object_info);
+  uint8_t compressed_id = Rom8(object_info + 1);
   size_t frames = LoRomOffset(Read24(kSpritePointerOffset + sprite_id * 3));
+  if (frames == SIZE_MAX || !RomRange(frames + (size_t)spec->frame * 3, 3))
+    return false;
   size_t arrangement = LoRomOffset(Read24(frames + (size_t)spec->frame * 3));
-  int count = g_rom[arrangement];
-  if (count <= 0 || count > 64) return false;
+  if (arrangement == SIZE_MAX || !RomRange(arrangement, 1)) return false;
+  int count = Rom8(arrangement);
+  if (count <= 0 || count > 64 || !RomRange(arrangement + 1, (size_t)count * 4))
+    return false;
 
   int left = 0, top = 0, right = 0, bottom = 0;
   for (int i = 0; i < count; i++) {
-    const uint8_t *part = g_rom + arrangement + 1 + i * 4;
+    const uint8_t *part = SafeRomPtr(arrangement + 1 + i * 4, 4);
+    if (!part) return false;
     int x = (int8_t)part[0], y = (int8_t)part[1];
     int size = (part[3] & 0x20) ? 16 : 8;
     if (x < left) left = x;
@@ -350,7 +405,8 @@ static bool BuildIcon(uint8_t id) {
   memset(icon->pixels, 0, sizeof(icon->pixels));
 
   for (int i = count - 1; i >= 0; i--) {
-    const uint8_t *part = g_rom + arrangement + 1 + i * 4;
+    const uint8_t *part = SafeRomPtr(arrangement + 1 + i * 4, 4);
+    if (!part) return false;
     int x = (int8_t)part[0] - left;
     int y = (int8_t)part[1] - top;
     int tile = (int)part[2] + spec->tile_base;
@@ -372,8 +428,17 @@ static bool BuildIcon(uint8_t id) {
   return true;
 }
 
+static uint32_t ApplyBrightness(uint32_t color, int brightness) {
+  if (brightness >= 15) return color;
+  uint32_t r = ((color >> 16) & 0xff) * (uint32_t)brightness / 15;
+  uint32_t g = ((color >> 8) & 0xff) * (uint32_t)brightness / 15;
+  uint32_t b = (color & 0xff) * (uint32_t)brightness / 15;
+  return 0xff000000u | r << 16 | g << 8 | b;
+}
+
 static void CompositeIcon(uint8_t *pixels, int width, int height,
-                          const CachedIcon *icon, int center_x, int center_y) {
+                          const CachedIcon *icon, int center_x, int center_y,
+                          int min_x, int max_x, int brightness) {
   int x0 = center_x + icon->left;
   int y0 = center_y + icon->top;
   uint32_t *dst = (uint32_t *)pixels;
@@ -383,42 +448,49 @@ static void CompositeIcon(uint8_t *pixels, int width, int height,
     for (int x = 0; x < icon->width; x++) {
       int dx = x0 + x;
       uint32_t c = icon->pixels[y * icon->width + x];
-      if (c && (unsigned)dx < (unsigned)width)
-        dst[dy * width + dx] = c;
+      if (c && dx >= min_x && dx < max_x && (unsigned)dx < (unsigned)width)
+        dst[dy * width + dx] = ApplyBrightness(c, brightness);
     }
   }
 }
 
 void MmxWidePreview_Draw(uint8_t *pixels, int width, int height, int extra) {
-  if (!pixels || extra <= 0 || !g_rom) return;
+  if (!pixels || extra <= 0 || !g_rom || !g_ppu ||
+      PPU_forcedBlank(g_ppu) || PPU_brightness(g_ppu) == 0)
+    return;
   uint8_t stage = g_ram[0x1f7a];
-  if (stage >= kPlayableStages) return;
+  if (stage >= kPlayableStages || !LoadStageBounds(stage)) return;
 
   uint16_t camera_x = (uint16_t)(g_ram[0x1e4d] | (g_ram[0x1e4e] << 8));
   uint16_t camera_y = (uint16_t)(g_ram[0x1e50] | (g_ram[0x1e51] << 8));
-  size_t pos = kEnemyDataBankOffset + (Read16(kEnemyPointerOffset + stage * 2) & 0x7fff);
-  uint8_t column = g_rom[pos++];
+  size_t pos = kEnemyDataBankOffset +
+               (Read16(kEnemyPointerOffset + (size_t)stage * 2) & 0x7fff);
+  if (!RomRange(pos, 1)) return;
+  uint8_t column = Rom8(pos++);
   if (column == 0xff) return;
 
   /* Preview only future (right-side) type-3 enemy events. Backtracking stays
    * authoritative: defeated enemies behind the camera are never resurrected
    * visually. The original event parser remains untouched. */
   for (int guard = 0; guard < 0x200; guard++) {
-    uint8_t type = g_rom[pos];
+    if (!RomRange(pos, 7)) break;
+    uint8_t type = Rom8(pos);
     uint16_t world_y = Read16(pos + 1) & 0x7fff;
-    uint8_t id = g_rom[pos + 3];
+    uint8_t id = Rom8(pos + 3);
     uint16_t world_x_word = Read16(pos + 5);
     uint16_t world_x = world_x_word & 0x7fff;
     int sx = (int)world_x - (int)camera_x;
     int sy = (int)world_y - (int)camera_y;
     if (type == 3 && sx >= 256 && sx < 256 + extra &&
         sy > -128 && sy < height + 128 && BuildIcon(id))
-      CompositeIcon(pixels, width, height, &s_icons[id], sx + extra, sy);
+      CompositeIcon(pixels, width, height, &s_icons[id], sx + extra, sy,
+                    extra + 256, width, PPU_brightness(g_ppu));
 
     pos += 7;
     if (world_x_word & 0x8000) {
-      if (g_rom[pos] == column) break;
-      column = g_rom[pos++];
+      if (!RomRange(pos, 1)) break;
+      if (Rom8(pos) == column) break;
+      column = Rom8(pos++);
     }
   }
 }

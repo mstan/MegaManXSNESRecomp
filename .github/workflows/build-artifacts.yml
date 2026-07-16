@@ -1,0 +1,114 @@
+name: Build platform artifacts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    name: Source and submodule checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out game and pinned dependencies
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libsdl2-dev libgl1-mesa-dev
+      - name: Verify submodules
+        run: bash tools/bootstrap.sh
+      - name: Configure ROM-free tests
+        run: cmake -S . -B build-ci -G Ninja -DBUILD_TESTING=ON
+      - name: Build and run tests
+        run: |
+          cmake --build build-ci --target mmx_display_test
+          ctest --test-dir build-ci --output-on-failure
+
+  windows-x64:
+    name: Windows x64
+    if: github.event_name != 'pull_request'
+    runs-on: windows-2022
+    steps:
+      - name: Check out game and pinned dependencies
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Restore ROM from repository secret
+        shell: pwsh
+        env:
+          MMX_ROM_BASE64: ${{ secrets.MMX_ROM_BASE64 }}
+        run: |
+          if (-not $env:MMX_ROM_BASE64) { throw "MMX_ROM_BASE64 is required to regenerate the private ROM-derived sources" }
+          [IO.File]::WriteAllBytes("mmx.sfc", [Convert]::FromBase64String($env:MMX_ROM_BASE64))
+          bash tools/regen.sh usa --no-tests
+      - name: Build and package
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools/make_release.ps1 -Version ci-${{ github.sha }}
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MegaManX-windows-x64
+          path: release-stage/MegaManXSNESRecomp-windows-*.zip
+
+  macos-arm64:
+    name: macOS arm64 (macOS 26+)
+    if: github.event_name != 'pull_request'
+    runs-on: macos-26
+    steps:
+      - name: Check out game and pinned dependencies
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: brew install cmake ninja sdl2 dylibbundler
+      - name: Restore ROM and regenerate sources
+        env:
+          MMX_ROM_BASE64: ${{ secrets.MMX_ROM_BASE64 }}
+        run: |
+          test -n "$MMX_ROM_BASE64" || { echo "MMX_ROM_BASE64 is required to regenerate the private ROM-derived sources" >&2; exit 1; }
+          python3 -c 'import base64, os; open("mmx.sfc", "wb").write(base64.b64decode(os.environ["MMX_ROM_BASE64"], validate=True))'
+          bash tools/regen.sh usa --no-tests
+      - name: Build arm64 app
+        run: bash tools/build-macos.sh --prod --arch arm64 --no-dmg --out "$PWD/dist"
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MegaManX-macos-arm64-macos26
+          path: dist/MegaManX.app
+
+  linux-x64:
+    name: Linux x86-64 (Steam Deck)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out game and pinned dependencies
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libsdl2-dev libgl1-mesa-dev file python3
+      - name: Install AppImage tools
+        run: |
+          mkdir -p "$HOME/recomp-tools"
+          curl -L --fail --retry 3 -o "$HOME/recomp-tools/linuxdeploy" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L --fail --retry 3 -o "$HOME/recomp-tools/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$HOME/recomp-tools/linuxdeploy" "$HOME/recomp-tools/appimagetool"
+      - name: Restore ROM and regenerate sources
+        env:
+          MMX_ROM_BASE64: ${{ secrets.MMX_ROM_BASE64 }}
+        run: |
+          test -n "$MMX_ROM_BASE64" || { echo "MMX_ROM_BASE64 is required to regenerate the private ROM-derived sources" >&2; exit 1; }
+          python3 -c 'import base64, os; open("mmx.sfc", "wb").write(base64.b64decode(os.environ["MMX_ROM_BASE64"], validate=True))'
+          bash tools/regen.sh usa --no-tests
+      - name: Build x86-64 AppImage
+        run: bash tools/build-linux.sh --prod --out "$PWD/dist" --jobs "$(nproc)"
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MegaManX-linux-x86_64-steamdeck
+          path: dist/MegaManX-x86_64.AppImage

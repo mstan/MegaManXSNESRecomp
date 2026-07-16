@@ -1,48 +1,50 @@
-# Universal true-widescreen renderer
+# Widescreen Hardening and Polish
 
 ## Summary
 
-Add an engine-level, display-derived widescreen mode for both USA and JP builds on Windows, Linux, and macOS. It will widen the PPU render surface and render real additional background/sprite columns; it will not alter emulated camera, collision, AI, scrolling, or other gameplay state.
+Harden true widescreen across the shared PPU, MMX renderer, predictive-enemy overlay, presentation backends, build reproducibility, and validation. Preserve authentic 4:3 pixel geometry, seamless opaque enemy previews, host-only rendering state, and macOS/Linux parity.
 
-## Implementation changes
+## Implementation Changes
 
-- Add a persisted `[Graphics] Widescreen` boolean, defaulting off; expose it in the shared launcher, macOS F1 display menu, and a rebindable `ToggleWidescreen` system command (default `Alt+W`).
-  - Runtime changes update the active config file immediately, including `--config` overrides.
-  - Enable launcher support for MMX instead of hiding its existing widescreen panel.
+- Create an isolated `snesrecomp` worktree from the currently pinned revision on `codex/mmx-widescreen-hardening`; leave the existing detached checkout and all unrelated dirty changes untouched.
+- Add a shared host-only PPU line-enhancer API with callback context. When registered, suppress stale BG1 margin tiles, invoke the game producer before final composition on main/sub screens, and exclude callback state from savestates.
+- Consolidate the two debug screenshot paths behind one scoped 256-wide capture helper that saves and restores render buffer, pitch, margins, and enhancer state. Disable widescreen during capture to eliminate the current buffer-overflow risk.
+- Commit and push the focused dependency branch, update the game repository's `snesrecomp` gitlink to its reachable SHA, and restore MMX’s per-frame enhancer registration.
+- Enforce the submodule gitlink during CMake configuration, including a clean runner tree. Expose `MMX_ALLOW_UNPINNED_SNESRECOMP=ON` through the explicit `--nopin` escape hatch on macOS and Linux, and keep release builds strict by default.
 
-- Centralize frame geometry in a small MMX display/widescreen module:
-  - Query the current SDL drawable/window aspect before each PPU frame.
-  - When enabled, calculate `frameWidth = clamp_even(round(224 * displayAspect), 256, 448)` and `extraPerSide = (frameWidth - 256) / 2`.
-  - When disabled, always use the authentic 256×224 frame.
-  - Allocate the host framebuffer for the PPU maximum (448×240), but use the current width and pitch for each frame so toggling, resize, fullscreen, and display changes take effect without restart.
+- Move width and viewport policy into a cohesive MMX display module. Extend the renderer interface with an output-size query implemented by SDL, OpenGL, and Metal so geometry uses drawable pixels.
+- Preserve the SNES 7:6 pixel aspect ratio: calculate internal width as `round_even(192 × drawable_width / drawable_height)`, clamped to 256–446. Expected results are 256 at 4:3, 308 at 16:10, approximately 342 at 16:9, and 446 at the ultrawide cap.
+- Present frames using the same 7:6 correction so the center 256×224 image remains 4:3. Window scaling uses a 320×240 authentic baseline and expands width proportionally in widescreen.
+- Retain the last valid geometry while minimized or during zero-sized drawable transitions; only resize host textures when the computed even width changes.
+- Preserve the selected legacy/new PPU setting while forcing the priority-buffer renderer only during active widened frames.
+- Fix OpenGL vertical centering, honor aspect/stretch policy consistently across backends, and let Metal fractionally downscale when a 1× integer image does not fit.
 
-- Wire the existing runner PPU widescreen path into MMX’s real render loop:
-  - Define the runner’s widescreen state symbols and set `PpuSetExtraSpace` immediately before every PPU frame, including turbo frames that skip presentation.
-  - Rebind `PpuBeginDrawing` with the active width/pitch each frame, then use `RtlWidescreenPresent` to copy the expanded rendered image.
-  - Keep all changes strictly in host presentation/PPU rendering; do not inject generated-game-code overrides or modify any emulated RAM/register/camera state.
-  - Preserve savestate compatibility: widescreen mode is host configuration, not serialized game state.
+- Keep predictive enemies as seamless opaque host overlays, restricted to the added right margin. Clamp every preview pixel so it can never enter the authentic center viewport.
+- Replace unchecked ROM reads with a bounded ROM-view API sourced from the loaded cartridge size. Validate LoROM translations, tables, decompression streams, palettes, arrangements, and enemy-event records before caching or drawing.
+- Register the BG1 enhancer only when the current playable-stage data validates; otherwise retain the generic PPU path rather than suppressing margins.
+- Suppress previews during forced blank, invalid stages, and zero brightness; apply the current PPU brightness/fade to cached source colors while leaving guest RAM, OAM, CGRAM, object slots, AI, collision, and spawn state untouched.
+- Update macOS and Linux UI text to report enabled versus currently active status and the active internal dimensions. Patch only the widescreen documentation section, preserving the existing unrelated README and `.github` work.
 
-- Make every presenter consume dynamic frame dimensions correctly:
-  - SDL renderer recreates its streaming texture and logical presentation size when the frame width changes.
-  - OpenGL continues its dynamic texture allocation path and receives the active frame dimensions for correct aspect-preserving viewport/shader input.
-  - Metal replaces its fixed 320×240 presentation assumptions with current source dimensions, including its integer-fit geometry and NTSC-CRT intermediate/output sizing, so widescreen is neither squashed nor cropped.
-  - Keep black bars only when the safe 448-pixel PPU limit prevents filling an ultrawide display.
+## Interfaces
 
-- Document the option in generated `config.ini` and README: it shows genuine offscreen scene data, may reveal objects outside the original camera view, is capped by safe SNES OAM/PPU limits, and deliberately does not change gameplay logic.
+- Extend `RendererFuncs` with a read-only drawable/output-size callback.
+- Add `PpuSetWidescreenLineEnhancer(ppu, callback, context)`; callback and context are host-only and reset to null with PPU initialization/reset.
+- Add pure MMX geometry functions for internal width, presentation aspect, and fitted viewport calculations so they can be tested without SDL or a running game.
+- Treat the `snesrecomp` gitlink as the single dependency pin. Add `MMX_ALLOW_UNPINNED_SNESRECOMP`, defaulting off; `--nopin` is the only supported opt-out in build scripts.
 
-## Test plan
+## Test and Validation Plan
 
-- Build the USA and JP CMake targets; build the Windows MSVC target to verify the shared runtime source list and launcher path.
-- Verify disabled mode produces the existing 256×224 output unchanged.
-- For SDL accelerated, SDL software, OpenGL, and macOS Metal:
-  - toggle repeatedly in gameplay and at menus;
-  - resize/window/fullscreen across 4:3, 16:9, and ultrawide displays;
-  - confirm the visible scene expands horizontally, with no stretch/crop or texture/pitch corruption.
-- On macOS, repeat with NTSC-CRT enabled and disabled.
-- Exercise save/load, reset, pause, turbo, transitions, and a representative level in each ROM variant; confirm player movement, collision, enemy behavior, scrolling, and state loading remain unaffected.
+- Add CTest coverage for 4:3, 16:10, 16:9, ultrawide, cap, portrait, zero-size, and nearest-even geometry; verify authentic presentation remains 4:3.
+- Add shared PPU tests proving enhancer-off output is byte-identical, callback writes stay inside margin buffers, callback state is not serialized, and 256-wide debug captures retain red-zone guards while widescreen is active.
+- Add preview tests using valid and truncated synthetic ROM views: malformed pointers must fail closed, previews must remain outside the center viewport, forced blank/zero brightness must produce none, and rendering must not change guest-state hashes.
+- Run AddressSanitizer and UndefinedBehaviorSanitizer over geometry, preview parsing, maximum-width PPU rendering, runtime toggling, and debug screenshots.
+- With the verified local ROM/save state, compare widescreen-off output against the authentic baseline and prove the center 256 columns remain pixel-identical while reconstructed margins contain stage geometry.
+- Build USA and Japanese targets on macOS and Linux/Steam Deck paths; smoke-test SDL, OpenGL, and Metal resizing, fullscreen transitions, `Alt+W`, F1 UI state, CRT mode, and repeated toggling.
+- Rebuild the canonical root `MegaManX.app` and Steam Deck package only after source validation passes, then report automated coverage separately from any remaining human gameplay checks.
 
 ## Assumptions
 
-- “Display-derived” means the PPU render width tracks `224 × current display aspect`, rounded to an even width and capped at 448 pixels.
-- The mode persists after runtime changes and is off by default.
-- Seeing off-camera entities or level content is accepted; any behavior that changes emulated game logic is out of scope and must be treated as a defect.
+- Predictive enemies intentionally remain authored-pose previews and visually opaque, but never affect emulated state.
+- Authentic 4:3 geometry takes precedence over the previous square-pixel width formula.
+- Only the focused `snesrecomp` dependency branch is committed and pushed; the game repository is not committed or pushed unless separately requested.
+- Existing unrelated dirty changes in both repositories are preserved and excluded from dependency commits and packaging scope.

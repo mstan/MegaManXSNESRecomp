@@ -312,6 +312,7 @@
     <ClCompile Include="glsl_shader.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="mmx_wide_preview.c" />
+    <ClCompile Include="mmx_display.c" />
     <ClCompile Include="post_mortem.c" />
 
     <ClCompile Include="opengl.c" />
