@@ -1,0 +1,16 @@
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+# Folder the .app sits in (writable, user-facing).
+APPDIR="$(cd "$DIR/../../.." && pwd)"
+export SDL_JOYSTICK_HIDAPI_STEAM=1
+cd "$APPDIR" 2>/dev/null || true
+ROM=""
+for ext in sfc smc; do
+    [ "$ext" = "none" ] && break
+    for f in "$APPDIR"/*."$ext"; do [ -e "$f" ] && ROM="$f" && break 2; done
+done
+if [ "$#" -eq 0 ]; then
+    [ -n "$ROM" ] && exec "$DIR/MegaManXSNESRecomp" "$ROM"
+    exec "$DIR/MegaManXSNESRecomp" 
+fi
+exec "$DIR/MegaManXSNESRecomp" "$@"

@@ -1,6 +1,7 @@
 #import <Metal/Metal.h>
 
 #include "macos_backend.h"
+#include "mmx_display.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -78,6 +79,11 @@ extern "C" void MacUi_Render(void *pass_descriptor, void *command_buffer, void *
   changed |= ImGui::SliderInt("Hue", &hue, -30, 30);
   if (changed)
     MacMetal_SetRetroOptions(scanlines_value, blend_value, noise, hue);
+
+  bool widescreen = MmxDisplay_IsWidescreenEnabled();
+  if (ImGui::Checkbox("True widescreen renderer", &widescreen))
+    MmxDisplay_SetWidescreenEnabled(widescreen);
+  ImGui::TextUnformatted("Shows additional PPU-rendered scene columns; gameplay stays unchanged.");
 
   ImGui::Separator();
   ImGui::TextUnformatted("Save states");

@@ -23,6 +23,7 @@ enum {
   kKeys_WindowSmaller,
   kKeys_DisplayPerf,
   kKeys_ToggleRenderer,
+  kKeys_ToggleWidescreen,
   kKeys_VolumeUp,
   kKeys_VolumeDown,
   kKeys_Total,
@@ -53,6 +54,9 @@ typedef struct Config {
   bool autosave;
   bool extend_y;
   bool no_sprite_limits;
+  // Render genuine extra PPU columns to match the current display aspect.
+  // This is host presentation state, not emulated game state.
+  bool widescreen;
   bool display_perf_title;
 
   // Skip the per-frame SDL_Delay pacing. Off by default (pacing on) so audio

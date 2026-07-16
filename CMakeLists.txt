@@ -67,6 +67,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/config.c
         $<$<NOT:$<PLATFORM_ID:Darwin>>:src/glsl_shader.c>
         src/main.c
+        src/mmx_wide_preview.c
+        $<$<PLATFORM_ID:Linux>:src/linux_ui.cpp>
         src/post_mortem.c
         $<$<NOT:$<PLATFORM_ID:Darwin>>:src/opengl.c>
         src/mmx_00.c
@@ -86,6 +88,13 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         $<$<PLATFORM_ID:Darwin>:third_party/imgui/imgui_widgets.cpp>
         $<$<PLATFORM_ID:Darwin>:third_party/imgui/backends/imgui_impl_sdl2.cpp>
         $<$<PLATFORM_ID:Darwin>:third_party/imgui/backends/imgui_impl_metal.mm>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/imgui.cpp>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/imgui_draw.cpp>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/imgui_tables.cpp>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/imgui_widgets.cpp>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/backends/imgui_impl_sdl2.cpp>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp>
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/backends/imgui_impl_opengl3.cpp>
         $<$<PLATFORM_ID:Darwin>:third_party/ntsc-crt/crt_core.c>
         $<$<PLATFORM_ID:Darwin>:third_party/ntsc-crt/crt_snes.c>
 
@@ -105,10 +114,13 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SDL2_INCLUDE_DIRS}
     )
 
-    if(APPLE)
+    if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_include_directories(${TARGET} PRIVATE
             ${CMAKE_SOURCE_DIR}/third_party/imgui
-            ${CMAKE_SOURCE_DIR}/third_party/imgui/backends
+            ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
+    endif()
+    if(APPLE)
+        target_include_directories(${TARGET} PRIVATE
             ${CMAKE_SOURCE_DIR}/third_party/ntsc-crt)
     endif()
 
@@ -119,6 +131,12 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         SNESRECOMP_REVERSE_DEBUG=0        # raw WRAM stores; matches non-debug generated C
         ${ARGN}
     )
+
+    # host_report.c uses dl_phdr_info for Linux module diagnostics; glibc hides
+    # that declaration unless this feature-test macro is set before headers.
+    if(UNIX AND NOT APPLE)
+        target_compile_definitions(${TARGET} PRIVATE _GNU_SOURCE=1)
+    endif()
 
     if(APPLE)
         target_compile_definitions(${TARGET} PRIVATE CRT_SYSTEM=3)

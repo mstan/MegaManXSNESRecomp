@@ -6,6 +6,9 @@
 #include "util.h"
 #include "glsl_shader.h"
 #include "config.h"
+#ifdef __linux__
+#include "linux_ui.h"
+#endif
 
 #define CODE(...) #__VA_ARGS__
 
@@ -199,6 +202,10 @@ static void OpenGLRenderer_EndDraw(void) {
   } else {
     GlslShader_Render(g_glsl_shader, &g_texture, viewport_x, viewport_y, viewport_width, viewport_height);
   }
+
+#ifdef __linux__
+  LinuxUi_RenderOpenGL();
+#endif
 
   SDL_GL_SwapWindow(g_window);
 }

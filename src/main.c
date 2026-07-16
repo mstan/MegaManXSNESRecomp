@@ -16,12 +16,15 @@
 #endif
 
 #include "snes/ppu.h"
+#include "widescreen.h"
+#include "mmx_wide_preview.h"
 
 #include "types.h"
 #include "mmx_rtl.h"
 #include "common_cpu_infra.h"
 #include "framedump.h"
 #include "config.h"
+#include "mmx_display.h"
 #include "util.h"
 #include "mmx_spc_player.h"
 #if defined(SNES_LAUNCHER)
@@ -38,11 +41,15 @@
 #include "host_report.h"
 #ifdef __APPLE__
 #include "macos_backend.h"
+#elif defined(__linux__)
+#include "linux_ui.h"
 #endif
 
 typedef struct GamepadInfo {
   uint32 modifiers;
   SDL_JoystickID joystick_id;
+  SDL_Joystick *joystick;
+  bool raw_joystick;
   uint8 index;
   uint8 axis_buttons;
   uint16 last_cmd[kGamepadBtn_Count];
@@ -56,6 +63,7 @@ static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len);
 static void EnsureConfigIni(void);
 static void RenderNumber(uint8 *dst, size_t pitch, int n, uint8 big);
 static void OpenOneGamepad(int i);
+static void OpenOneJoystick(int i);
 static uint32 GetActiveControllers(void);
 static void HandleVolumeAdjustment(int volume_adjustment);
 static void HandleGamepadAxisInput(GamepadInfo *gi, int axis, Sint16 value);
@@ -69,14 +77,12 @@ bool g_new_ppu = true;
 
 struct SpcPlayer *g_spc_player;
 
-static uint8_t g_my_pixels[256 * 4 * 240];
+static uint8_t g_my_pixels[(256 + 2 * kWsExtraMax) * 4 * 240];
 
 
 enum {
   kDefaultFullscreen = 0,
   kMaxWindowScale = 10,
-  kMacDisplayWidth = 320,
-  kMacDisplayHeight = 240,
   kDefaultFreq = 44100,
   kDefaultChannels = 2,
   kDefaultSamples = 2048,
@@ -128,12 +134,50 @@ static bool g_display_perf;
 static int g_curr_fps;
 static int g_ppu_render_flags = 0;
 static int g_snes_width, g_snes_height;
+/* Required by the shared PPU widescreen runtime; host-only, never serialized. */
+bool g_ws_active;
+int g_ws_extra;
+static const char *g_active_config_file;
 static int g_sdl_audio_mixer_volume = SDL_MIX_MAXVOLUME;
 static struct RendererFuncs g_renderer_funcs;
 
 static GamepadInfo g_gamepad[2];
 
 extern Snes *g_snes;
+
+static void MmxDisplay_PreparePpuFrame(void) {
+  int window_width = 0, window_height = 0;
+  int width = 256;
+  if (g_config.widescreen) {
+    SDL_GetWindowSize(g_window, &window_width, &window_height);
+    if (window_width > 0 && window_height > 0) {
+      width = (224 * window_width + window_height / 2) / window_height;
+      width &= ~1;  /* symmetric PPU side borders */
+      width = IntMax(256, IntMin(256 + 2 * kWsExtraMax, width));
+    }
+  }
+  g_snes_width = width;
+  g_ws_extra = (width - 256) / 2;
+  g_ws_active = g_ws_extra != 0;
+  /* The legacy pixel-at-a-time PPU has a hard-coded 256-column loop. Keep the
+   * user's renderer selection, but use the priority-buffer PPU while a real
+   * widescreen frame is active; disabling widescreen restores that selection. */
+  g_new_ppu = g_ws_active ||
+              (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
+  PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)width * 4, 0);
+  PpuSetExtraSpace(g_ppu, (uint8)g_ws_extra);
+  PpuSetWidescreenLineEnhancer(g_ppu, MmxWidePreview_EnhancePpuLine);
+}
+
+void MmxDisplay_SetWidescreenEnabled(bool enabled) {
+  if (g_config.widescreen == enabled)
+    return;
+  g_config.widescreen = enabled;
+  WriteConfigFile(g_active_config_file);
+  printf("Widescreen renderer = %s\n", enabled ? "on" : "off");
+}
+
+bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
 
 // --- Scripted input ---
 typedef struct {
@@ -292,10 +336,6 @@ void ChangeWindowScale(int scale_step) {
     // Allow a scale level slightly above the max that fits on screen
     int logical_width = g_snes_width;
     int logical_height = g_snes_height;
-#ifdef __APPLE__
-    logical_width = kMacDisplayWidth;
-    logical_height = kMacDisplayHeight;
-#endif
     int mw = (bounds.w - bl - br + logical_width / 4) / logical_width;
     int mh = (bounds.h - bt - bb + logical_height / 4) / logical_height;
     max_scale = IntMin(mw, mh);
@@ -304,10 +344,6 @@ void ChangeWindowScale(int scale_step) {
   g_current_window_scale = new_scale;
   int w = new_scale * g_snes_width;
   int h = new_scale * g_snes_height;
-#ifdef __APPLE__
-  w = new_scale * kMacDisplayWidth;
-  h = new_scale * kMacDisplayHeight;
-#endif
 
   //SDL_RenderSetLogicalSize(g_renderer, w, h);
   SDL_SetWindowSize(g_window, w, h);
@@ -353,8 +389,9 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
 
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
   g_rtl_game_info->draw_ppu_frame();
-  for (size_t y = 0, y_end = g_snes_height; y < y_end; y++)
-    memcpy((uint8 *)pixel_buffer + y * pitch, g_my_pixels + y * 256 * 4, 256 * 4);
+  if (g_ws_active)
+    MmxWidePreview_Draw(g_my_pixels, g_snes_width, g_snes_height, g_ws_extra);
+  RtlWidescreenPresent(pixel_buffer, pitch, g_my_pixels, g_snes_width, g_snes_height);
 }
 
 #ifdef ENABLE_ORACLE_BACKEND
@@ -380,6 +417,8 @@ static uint16_t mmx_runner_to_snes_joypad(uint16_t r) {
 #endif
 
 static void DrawPpuFrameWithPerf(void) {
+  /* Geometry must be fixed before the presenter allocates/locks its surface. */
+  MmxDisplay_PreparePpuFrame();
   int render_scale = PpuGetCurrentRenderScale(g_ppu, g_ppu_render_flags);
   uint8 *pixel_buffer = 0;
   int pitch = 0;
@@ -480,8 +519,6 @@ static bool SdlRenderer_Init(SDL_Window *window) {
     printf("\n");
   }
   g_renderer = renderer;
-  if (!g_config.ignore_aspect_ratio)
-    SDL_RenderSetLogicalSize(renderer, g_snes_width, g_snes_height);
   if (g_config.linear_filtering)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "best");
 
@@ -501,6 +538,16 @@ static void SdlRenderer_Destroy(void) {
 }
 
 static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pitch) {
+  int texture_width, texture_height;
+  SDL_QueryTexture(g_texture, NULL, NULL, &texture_width, &texture_height);
+  if (texture_width != width || texture_height != height) {
+    SDL_DestroyTexture(g_texture);
+    g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ARGB8888,
+                                  SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (!g_texture) Die("SDL widescreen texture allocation failed");
+  }
+  if (!g_config.ignore_aspect_ratio)
+    SDL_RenderSetLogicalSize(g_renderer, width, height);
   g_sdl_renderer_rect.w = width;
   g_sdl_renderer_rect.h = height;
   if (SDL_LockTexture(g_texture, &g_sdl_renderer_rect, (void **)pixels, pitch) != 0) {
@@ -517,6 +564,9 @@ static void SdlRenderer_EndDraw(void) {
   //  printf("%f ms\n", v * 1000);
   SDL_RenderClear(g_renderer);
   SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect, NULL);
+#ifdef __linux__
+  LinuxUi_RenderSdl(g_renderer);
+#endif
   SDL_RenderPresent(g_renderer); // vsyncs to 60 FPS?
 }
 
@@ -748,6 +798,7 @@ int main(int argc, char** argv) {
       snesrecomp_exe_dir_path("config.ini", config_exe_path, sizeof(config_exe_path)))
     config_file = config_exe_path;
   ParseConfigFile(config_file);
+  g_active_config_file = config_file;
   // Apply local overrides if present (gitignored). Lets a developer
   // mute audio etc. without touching the checked-in config.ini. Last
   // parser to set a key wins, so local overrides take precedence.
@@ -796,9 +847,9 @@ int main(int argc, char** argv) {
     int rom_resolved_by_launcher = 0;
 
 #if defined(SNES_LAUNCHER)
-    /* GUI launcher: pick/verify ROM + tune settings before boot. MMX has no
-     * widescreen and no MSU-1, so both of those panels are hidden (per-game
-     * GameInfo flags). Skipped for headless paths / positional ROM / env. */
+    /* GUI launcher: pick/verify ROM + tune settings before boot. MMX exposes
+     * the PPU widescreen option but has no MSU-1. Skipped for headless paths,
+     * positional ROM, or explicit environment override. */
     {
       int headless = start_paused || (script_file != NULL) || (framedump_dir != NULL);
       int have_positional = (argc >= 1 && argv[0] && argv[0][0] != '-' && argv[0][0] != '\0');
@@ -838,7 +889,7 @@ int main(int argc, char** argv) {
         ls.fullscreen    = g_config.fullscreen;
         ls.ignore_aspect = g_config.ignore_aspect_ratio;
         ls.linear_filter = g_config.linear_filtering;
-        ls.widescreen    = 0;   /* MMX: no widescreen path (panel hidden) */
+        ls.widescreen    = g_config.widescreen;
         ls.enable_audio  = g_config.enable_audio;
         ls.audio_freq    = g_config.audio_freq;
         ls.volume        = 100;
@@ -874,7 +925,7 @@ int main(int argc, char** argv) {
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */
         gi.num_known_sha256 = 1;
-        gi.widescreen_supported = 0;   /* hide Widescreen panel */
+        gi.widescreen_supported = 1;   /* expose the runtime widescreen control */
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */
@@ -891,6 +942,7 @@ int main(int argc, char** argv) {
           g_config.fullscreen          = (uint8)ls.fullscreen;
           g_config.ignore_aspect_ratio = ls.ignore_aspect != 0;
           g_config.linear_filtering    = ls.linear_filter != 0;
+          g_config.widescreen          = ls.widescreen != 0;
           g_config.enable_audio        = true;   /* always on */
           g_config.audio_freq          = (uint16)ls.audio_freq;
           g_config.enable_gamepad[0]   = ls.player_src[0] == 2;
@@ -961,7 +1013,9 @@ int main(int argc, char** argv) {
   }
 
   g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
-  g_snes_width = 256;
+  /* A persisted widescreen launch opens a useful 16:9 window before the first
+   * display-derived frame is calculated. Custom WindowSize remains authoritative. */
+  g_snes_width = g_config.widescreen ? 400 : 256;
   g_snes_height = 224;// (g_config.extend_y ? 240 : 224);
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
     g_config.extend_y * kPpuRenderFlags_Height240 |
@@ -1012,18 +1066,8 @@ int main(int argc, char** argv) {
   keybinds_init(NULL);
 
   bool custom_size = g_config.window_width != 0 && g_config.window_height != 0;
-#ifdef __APPLE__
-  /* macOS presentation is a 4:3 integer-scale surface. Custom dimensions
-   * would create fractional display scaling, so the config dimensions are
-   * intentionally ignored on this backend. */
-  custom_size = false;
-#endif
   int window_width = custom_size ? g_config.window_width : g_current_window_scale * g_snes_width;
   int window_height = custom_size ? g_config.window_height : g_current_window_scale * g_snes_height;
-#ifdef __APPLE__
-  window_width = g_current_window_scale * kMacDisplayWidth;
-  window_height = g_current_window_scale * kMacDisplayHeight;
-#endif
 
  #ifdef __APPLE__
   g_win_flags |= SDL_WINDOW_METAL;
@@ -1130,6 +1174,14 @@ error_reading:;
                            g_config.output_method);
     return 1;
   }
+#ifdef __linux__
+  if (!LinuxUi_Init(window,
+                    g_config.output_method == kOutputMethod_OpenGL ? NULL : g_renderer,
+                    g_config.output_method == kOutputMethod_OpenGL)) {
+    host_report_breadcrumb("Linux ImGui initialization failed");
+    return 1;
+  }
+#endif
   host_report_breadcrumb("renderer initialized: %s",
 #ifdef __APPLE__
       "metal"
@@ -1200,7 +1252,7 @@ error_reading:;
     host_report_breadcrumb("audio disabled in config");
   }
 
-  PpuBeginDrawing(g_ppu, g_my_pixels, 256 * 4, 0);
+  MmxDisplay_PreparePpuFrame();
 
   MkDir("saves");
     
@@ -1263,6 +1315,14 @@ error_reading:;
       }
       if (MacUi_CaptureKeyboard() && event.type != SDL_QUIT)
         continue;
+#elif defined(__linux__)
+      LinuxUi_ProcessEvent(&event);
+      if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F1 && !event.key.repeat) {
+        LinuxUi_Toggle();
+        continue;
+      }
+      if (LinuxUi_CaptureInput() && event.type != SDL_QUIT)
+        continue;
 #endif
       switch (event.type) {
 #ifndef __APPLE__
@@ -1291,6 +1351,40 @@ error_reading:;
         }
         break;
       }
+      case SDL_JOYDEVICEADDED:
+        OpenOneJoystick(event.jdevice.which);
+        break;
+      case SDL_JOYDEVICEREMOVED:
+        gi = GetGamepadInfo(event.jdevice.which);
+        if (gi) {
+          if (gi->joystick) SDL_JoystickClose(gi->joystick);
+          memset(gi, 0, sizeof(GamepadInfo));
+          gi->joystick_id = -1;
+        }
+        break;
+      case SDL_JOYAXISMOTION:
+        gi = GetGamepadInfo(event.jaxis.which);
+        if (gi && gi->raw_joystick)
+          HandleGamepadAxisInput(gi, event.jaxis.axis, event.jaxis.value);
+        break;
+      case SDL_JOYBUTTONDOWN:
+      case SDL_JOYBUTTONUP:
+        gi = GetGamepadInfo(event.jbutton.which);
+        if (gi && gi->raw_joystick && event.jbutton.button < 16) {
+          /* SDL's raw Steam virtual gamepad layout is the standard Xbox
+           * button order: A, B, X, Y, back, guide, start, L3, R3, L1, R1,
+           * d-pad up/down/left/right. */
+          static const uint8 raw_buttons[] = {
+            kGamepadBtn_A, kGamepadBtn_B, kGamepadBtn_X, kGamepadBtn_Y,
+            kGamepadBtn_Back, kGamepadBtn_Guide, kGamepadBtn_Start,
+            kGamepadBtn_L3, kGamepadBtn_R3, kGamepadBtn_L1, kGamepadBtn_R1,
+            kGamepadBtn_DpadUp, kGamepadBtn_DpadDown,
+            kGamepadBtn_DpadLeft, kGamepadBtn_DpadRight
+          };
+          HandleGamepadInput(gi, raw_buttons[event.jbutton.button],
+                             event.type == SDL_JOYBUTTONDOWN);
+        }
+        break;
 #endif
       case SDL_MOUSEWHEEL:
         if (SDL_GetModState() & KMOD_CTRL && event.wheel.y != 0)
@@ -1356,8 +1450,14 @@ error_reading:;
      * A B X Y L R). HandleCommand is idempotent for set/clear, so calling
      * it every frame is safe. */
     {
+#if defined(__APPLE__) || defined(__linux__)
+      if (
 #ifdef __APPLE__
-      if (MacUi_IsOpen()) {
+          MacUi_IsOpen()
+#else
+          LinuxUi_IsOpen()
+#endif
+      ) {
         /* Dear ImGui owns keyboard focus while the settings menu is open. */
       } else {
 #endif
@@ -1369,7 +1469,7 @@ error_reading:;
         HandleCommand(kKeys_Controls   + i, (kb_p1 >> kKb2CtrlsIdx[i]) & 1);
         HandleCommand(kKeys_ControlsP2 + i, (kb_p2 >> kKb2CtrlsIdx[i]) & 1);
       }
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__linux__)
       }
 #endif
     }
@@ -1442,6 +1542,7 @@ error_reading:;
        * garble/freeze"). So we still run the guest-state simulation every
        * frame here — we just skip the host present (BeginDraw/memcpy/EndDraw,
        * the GPU-bound part turbo exists to elide). */
+      MmxDisplay_PreparePpuFrame();
       g_rtl_game_info->draw_ppu_frame();
     }
 
@@ -1486,6 +1587,9 @@ error_reading:;
 #endif
   SDL_DestroyMutex(g_audio_mutex);
 
+#ifdef __linux__
+  LinuxUi_Shutdown();
+#endif
   g_renderer_funcs.Destroy();
 
 #ifdef __SWITCH__
@@ -1604,6 +1708,9 @@ static void HandleCommand(uint32 j, bool pressed) {
       printf("New renderer = %x\n", g_ppu_render_flags & kPpuRenderFlags_NewRenderer);
       g_new_ppu = (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
       break;
+    case kKeys_ToggleWidescreen:
+      MmxDisplay_SetWidescreenEnabled(!g_config.widescreen);
+      break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
     default: assert(0);
@@ -1625,7 +1732,11 @@ static uint32 GetActiveControllers() {
 }
 
 static void OpenOneGamepad(int i) {
-  if (SDL_IsGameController(i)) {
+  if (!SDL_IsGameController(i)) {
+    OpenOneJoystick(i);
+    return;
+  }
+  {
     SDL_GameController *controller = SDL_GameControllerOpen(i);
     if (!controller) {
       fprintf(stderr, "Could not open gamepad %d: %s\n", i, SDL_GetError());
@@ -1633,8 +1744,10 @@ static void OpenOneGamepad(int i) {
     }
 
     uint32 joystick_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller));
-    if (GetGamepadInfo(joystick_id))
+    if (GetGamepadInfo(joystick_id)) {
+      SDL_GameControllerClose(controller);
       return;
+    }
 
     uint8 scan_order[3] = { SDL_GameControllerGetPlayerIndex(controller), 0, 1 };
 
@@ -1726,6 +1839,32 @@ static void HandleVolumeAdjustment(int volume_adjustment) {
 #endif
 }
 
+static void OpenOneJoystick(int i) {
+  if (SDL_IsGameController(i)) return;
+  SDL_Joystick *joystick = SDL_JoystickOpen(i);
+  if (!joystick) {
+    fprintf(stderr, "Could not open raw joystick %d: %s\n", i, SDL_GetError());
+    return;
+  }
+  SDL_JoystickID id = SDL_JoystickInstanceID(joystick);
+  if (GetGamepadInfo(id)) { SDL_JoystickClose(joystick); return; }
+  int slot = -1;
+  for (int j = 0; j < 2; ++j) {
+    if (g_config.enable_gamepad[j] && g_gamepad[j].joystick_id == -1) {
+      slot = j; break;
+    }
+  }
+  if (slot < 0) { SDL_JoystickClose(joystick); return; }
+  GamepadInfo *gi = &g_gamepad[slot];
+  memset(gi, 0, sizeof(*gi));
+  gi->joystick = joystick;
+  gi->raw_joystick = true;
+  gi->index = slot;
+  gi->joystick_id = id;
+  printf("Found unmapped raw joystick '%s' assigning to player %d\n",
+         SDL_JoystickName(joystick), slot + 1);
+}
+
 // Approximates atan2(y, x) normalized to the [0,4) range
 // with a maximum error of 0.1620 degrees
 // normalized_atan(x) ~ (b x + x^2) / (1 + 2 b x + x^2)
@@ -1806,6 +1945,12 @@ static const char kDefaultConfigIniContent[] =
   "# Don't keep the aspect ratio\n"
   "IgnoreAspectRatio = 0\n"
   "\n"
+  "# Render real extra PPU columns to match a widescreen display.\n"
+  "# Foreground geometry is rendered farther from MMX's prepared level data;\n"
+  "# enemies remain static until the authentic activation window reaches them.\n"
+  "# Camera, collision, AI, and save-state data are unchanged.\n"
+  "Widescreen = 0\n"
+  "\n"
   "# Remove the sprite limits per scan line\n"
   "NoSpriteLimits = 1\n"
   "\n"
@@ -1826,6 +1971,8 @@ static const char kDefaultConfigIniContent[] =
   "Turbo = Tab\n"
   "WindowBigger = Ctrl+Up\n"
   "WindowSmaller = Ctrl+Down\n"
+  "# Toggle true PPU widescreen rendering at runtime.\n"
+  "ToggleWidescreen = Alt+w\n"
   "VolumeUp = Shift+=\n"
   "VolumeDown = Shift+-\n"
   "Load =      F1,     F2,     F3,     F4,     F5,     F6,     F7,     F8,     F9,     F10\n"

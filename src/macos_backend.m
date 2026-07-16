@@ -29,9 +29,6 @@ extern "C" {
 }
 #endif
 
-#define CRT_OUTPUT_WIDTH 320
-#define CRT_OUTPUT_HEIGHT 240
-
 typedef struct MetalRenderer {
   SDL_MetalView view;
   CAMetalLayer *layer;
@@ -151,7 +148,7 @@ static void MacMetal_BeginDraw(int width, int height, uint8 **pixels, int *pitch
     g_metal.pixels = new_pixels;
     g_metal.pixels_size = size;
   }
-  size_t retro_size = (size_t)CRT_OUTPUT_WIDTH * (size_t)CRT_OUTPUT_HEIGHT * 4;
+  size_t retro_size = size;
   if (retro_size > g_metal.retro_pixels_size || !g_metal.retro_pixels) {
     uint8_t *new_retro_pixels = (uint8_t *)realloc(g_metal.retro_pixels, retro_size);
     if (!new_retro_pixels) Die("CRT framebuffer allocation failed");
@@ -160,10 +157,10 @@ static void MacMetal_BeginDraw(int width, int height, uint8 **pixels, int *pitch
   }
   if (!g_metal.crt_initialized || g_metal.crt.outw != width || g_metal.crt.outh != height) {
     if (!g_metal.crt_initialized)
-      crt_init(&g_metal.crt, CRT_OUTPUT_WIDTH, CRT_OUTPUT_HEIGHT,
+      crt_init(&g_metal.crt, width, height,
                CRT_PIX_FORMAT_BGRA, g_metal.retro_pixels);
     else
-      crt_resize(&g_metal.crt, CRT_OUTPUT_WIDTH, CRT_OUTPUT_HEIGHT,
+      crt_resize(&g_metal.crt, width, height,
                  CRT_PIX_FORMAT_BGRA, g_metal.retro_pixels);
     g_metal.crt_initialized = true;
     g_metal.crt.scanlines = g_metal.retro_scanlines;
@@ -203,14 +200,14 @@ static void MacMetal_EndDraw(void) {
     g_metal.ntsc.dot_crawl_offset = g_metal.retro_frame % CRT_CC_VPER;
     crt_modulate(&g_metal.crt, &g_metal.ntsc);
     crt_demodulate(&g_metal.crt, g_metal.retro_noise);
-    for (int y = 0; y < CRT_OUTPUT_HEIGHT; ++y)
-      for (int x = 0; x < CRT_OUTPUT_WIDTH; ++x)
-        g_metal.retro_pixels[(y * CRT_OUTPUT_WIDTH + x) * 4 + 3] = 255;
+    for (int y = 0; y < g_metal.height; ++y)
+      for (int x = 0; x < g_metal.width; ++x)
+        g_metal.retro_pixels[(y * g_metal.width + x) * 4 + 3] = 255;
     g_metal.retro_field ^= 1;
     if (g_metal.retro_field == 0) g_metal.retro_frame ^= 1;
     frame_pixels = g_metal.retro_pixels;
-    frame_width = CRT_OUTPUT_WIDTH;
-    frame_height = CRT_OUTPUT_HEIGHT;
+    frame_width = g_metal.width;
+    frame_height = g_metal.height;
   }
   if (!g_metal.textures[0] || g_metal.texture_width != frame_width ||
       g_metal.texture_height != frame_height) {
@@ -232,10 +229,11 @@ static void MacMetal_EndDraw(void) {
 
   float viewport_w = (float)g_metal.layer.drawableSize.width;
   float viewport_h = (float)g_metal.layer.drawableSize.height;
-  int integer_scale = (int)fminf(viewport_w / 320.0f, viewport_h / 240.0f);
+  int integer_scale = (int)fminf(viewport_w / (float)frame_width,
+                                  viewport_h / (float)frame_height);
   if (integer_scale < 1) integer_scale = 1;
-  float target_w = 320.0f * (float)integer_scale;
-  float target_h = 240.0f * (float)integer_scale;
+  float target_w = (float)frame_width * (float)integer_scale;
+  float target_h = (float)frame_height * (float)integer_scale;
   float left = (viewport_w - target_w) * 0.5f;
   float top = (viewport_h - target_h) * 0.5f;
   float right = left + target_w;
