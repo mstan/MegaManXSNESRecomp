@@ -40,6 +40,8 @@
 typedef struct GamepadInfo {
   uint32 modifiers;
   SDL_JoystickID joystick_id;
+  SDL_Joystick *joystick;
+  bool raw_joystick;
   uint8 index;
   uint8 axis_buttons;
   uint16 last_cmd[kGamepadBtn_Count];
@@ -51,6 +53,7 @@ static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len);
 static void EnsureConfigIni(void);
 static void RenderNumber(uint8 *dst, size_t pitch, int n, uint8 big);
 static void OpenOneGamepad(int i);
+static void OpenOneJoystick(int i);
 static uint32 GetActiveControllers(void);
 static void HandleVolumeAdjustment(int volume_adjustment);
 static void HandleGamepadAxisInput(GamepadInfo *gi, int axis, Sint16 value);
@@ -1212,6 +1215,40 @@ error_reading:;
         }
         break;
       }
+      case SDL_JOYDEVICEADDED:
+        OpenOneJoystick(event.jdevice.which);
+        break;
+      case SDL_JOYDEVICEREMOVED:
+        gi = GetGamepadInfo(event.jdevice.which);
+        if (gi) {
+          if (gi->joystick) SDL_JoystickClose(gi->joystick);
+          memset(gi, 0, sizeof(GamepadInfo));
+          gi->joystick_id = -1;
+        }
+        break;
+      case SDL_JOYAXISMOTION:
+        gi = GetGamepadInfo(event.jaxis.which);
+        if (gi && gi->raw_joystick)
+          HandleGamepadAxisInput(gi, event.jaxis.axis, event.jaxis.value);
+        break;
+      case SDL_JOYBUTTONDOWN:
+      case SDL_JOYBUTTONUP:
+        gi = GetGamepadInfo(event.jbutton.which);
+        if (gi && gi->raw_joystick && event.jbutton.button < 16) {
+          /* SDL's raw Steam virtual gamepad layout is the standard Xbox
+           * button order: A, B, X, Y, back, guide, start, L3, R3, L1, R1,
+           * d-pad up/down/left/right. */
+          static const uint8 raw_buttons[] = {
+            kGamepadBtn_A, kGamepadBtn_B, kGamepadBtn_X, kGamepadBtn_Y,
+            kGamepadBtn_Back, kGamepadBtn_Guide, kGamepadBtn_Start,
+            kGamepadBtn_L3, kGamepadBtn_R3, kGamepadBtn_L1, kGamepadBtn_R1,
+            kGamepadBtn_DpadUp, kGamepadBtn_DpadDown,
+            kGamepadBtn_DpadLeft, kGamepadBtn_DpadRight
+          };
+          HandleGamepadInput(gi, raw_buttons[event.jbutton.button],
+                             event.type == SDL_JOYBUTTONDOWN);
+        }
+        break;
       case SDL_MOUSEWHEEL:
         if (SDL_GetModState() & KMOD_CTRL && event.wheel.y != 0)
           ChangeWindowScale(event.wheel.y > 0 ? 1 : -1);
@@ -1518,7 +1555,11 @@ static uint32 GetActiveControllers() {
 }
 
 static void OpenOneGamepad(int i) {
-  if (SDL_IsGameController(i)) {
+  if (!SDL_IsGameController(i)) {
+    OpenOneJoystick(i);
+    return;
+  }
+  {
     SDL_GameController *controller = SDL_GameControllerOpen(i);
     if (!controller) {
       fprintf(stderr, "Could not open gamepad %d: %s\n", i, SDL_GetError());
@@ -1526,8 +1567,10 @@ static void OpenOneGamepad(int i) {
     }
 
     uint32 joystick_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller));
-    if (GetGamepadInfo(joystick_id))
+    if (GetGamepadInfo(joystick_id)) {
+      SDL_GameControllerClose(controller);
       return;
+    }
 
     uint8 scan_order[3] = { SDL_GameControllerGetPlayerIndex(controller), 0, 1 };
 
@@ -1548,6 +1591,32 @@ static void OpenOneGamepad(int i) {
       gi->joystick_id = joystick_id;
     }
   }
+}
+
+static void OpenOneJoystick(int i) {
+  if (SDL_IsGameController(i)) return;
+  SDL_Joystick *joystick = SDL_JoystickOpen(i);
+  if (!joystick) {
+    fprintf(stderr, "Could not open raw joystick %d: %s\n", i, SDL_GetError());
+    return;
+  }
+  SDL_JoystickID id = SDL_JoystickInstanceID(joystick);
+  if (GetGamepadInfo(id)) { SDL_JoystickClose(joystick); return; }
+  int slot = -1;
+  for (int j = 0; j < 2; ++j) {
+    if (g_config.enable_gamepad[j] && g_gamepad[j].joystick_id == -1) {
+      slot = j; break;
+    }
+  }
+  if (slot < 0) { SDL_JoystickClose(joystick); return; }
+  GamepadInfo *gi = &g_gamepad[slot];
+  memset(gi, 0, sizeof(*gi));
+  gi->joystick = joystick;
+  gi->raw_joystick = true;
+  gi->index = slot;
+  gi->joystick_id = id;
+  printf("Found unmapped raw joystick '%s' assigning to player %d\n",
+         SDL_JoystickName(joystick), slot + 1);
 }
 
 static int RemapSdlButton(int button) {
