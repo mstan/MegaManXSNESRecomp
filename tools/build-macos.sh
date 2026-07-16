@@ -79,6 +79,15 @@ BUILD="$REPO/build-macos-$CONFIG"
 echo "==================== $APP_NAME ($CONFIG, $ARCH) ===================="
 cd "$REPO"
 
+# Homebrew maintains separate prefixes on Apple Silicon Macs. Select the
+# dependency tree that matches the requested slice instead of silently linking
+# the host SDL2 into an x86_64 or universal build.
+if [ "$ARCH" = "x86_64" ] && [ -d /usr/local/lib/cmake/SDL2 ]; then
+  FLAGS+=( -DSDL2_DIR=/usr/local/lib/cmake/SDL2 )
+elif [ "$ARCH" = "arm64" ] && [ -d /opt/homebrew/lib/cmake/SDL2 ]; then
+  FLAGS+=( -DSDL2_DIR=/opt/homebrew/lib/cmake/SDL2 )
+fi
+
 [ -f "$REPO/snesrecomp/runner/runner.cmake" ] || {
   echo "ERROR: snesrecomp is not initialized; run 'bash tools/bootstrap.sh' first." >&2
   exit 1

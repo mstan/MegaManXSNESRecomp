@@ -161,6 +161,14 @@ function(mmx_target_launcher_ng TGT)
 endfunction()
 
 find_package(SDL2 REQUIRED)
+if(WIN32 AND NOT MSVC)
+    # The Windows cross-build may use MSYS2, Homebrew MinGW, or another
+    # toolchain. Do not bake one developer's absolute MSYS2 path into the
+    # target; callers can provide the import library explicitly, while the
+    # SDL2 package remains the default when it exposes a usable target.
+    set(MMX_MINGW_SDL2_LIBRARY "" CACHE FILEPATH
+        "SDL2 import library for the non-MSVC Windows build")
+endif()
 if(NOT APPLE)
     find_package(OpenGL REQUIRED)
 endif()
@@ -212,8 +220,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         $<$<PLATFORM_ID:Darwin>:src/macos_ui.mm>
         # launcher_ng supplies the single shared ImGui core, SDL2 backend, and
         # OpenGL3 backend. Keep only the game UI's platform renderer here.
+        $<$<PLATFORM_ID:Linux>:third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp>
         $<$<PLATFORM_ID:Darwin>:third_party/imgui/backends/imgui_impl_metal.mm>
-        $<$<PLATFORM_ID:Linux>:${SNESRECOMP_ROOT}/runner/src/launcher_ng/third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp>
         $<$<PLATFORM_ID:Darwin>:third_party/ntsc-crt/crt_core.c>
         $<$<PLATFORM_ID:Darwin>:third_party/ntsc-crt/crt_snes.c>
 
@@ -290,9 +298,15 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # real main() is the entry point — link SDL2 WITHOUT SDL2main (SDL2main's
         # WinMain would demand an SDL_main that doesn't exist). Plus DbgHelp for
         # post_mortem.c's StackWalk64 backtrace.
-        target_link_libraries(${TARGET} PRIVATE
-            C:/msys64/mingw64/lib/libSDL2.dll.a
-            dbghelp)
+        if(MMX_MINGW_SDL2_LIBRARY)
+            target_link_libraries(${TARGET} PRIVATE
+                ${MMX_MINGW_SDL2_LIBRARY} dbghelp)
+        elseif(TARGET SDL2::SDL2)
+            target_link_libraries(${TARGET} PRIVATE SDL2::SDL2 dbghelp)
+        else()
+            message(FATAL_ERROR
+                "Non-MSVC Windows builds require MMX_MINGW_SDL2_LIBRARY or SDL2::SDL2")
+        endif()
     else()
         target_link_libraries(${TARGET} PRIVATE ${SDL2_LIBRARIES})
     endif()
