@@ -25,7 +25,17 @@ set(CMAKE_C_STANDARD 11)
 
 set(SNESRECOMP_ROOT ${CMAKE_SOURCE_DIR}/snesrecomp)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
-include(${SNESRECOMP_ROOT}/runner/src/launcher_ng/launcher_ng.cmake)
+
+# Launcher UI backend. Default = the in-tree launcher_ng. -DMMX_RECOMP_UI=ON
+# swaps in the SHARED recomp-ui launcher (F:\Projects\recomp-ui, vendored via
+# the ./recomp-ui junction) so MMX and Ape Escape drive ONE launcher repo.
+# Mutually exclusive: both bundle Dear ImGui, so exactly one is compiled in.
+option(MMX_RECOMP_UI "Consume the shared recomp-ui launcher instead of in-tree launcher_ng" OFF)
+if(MMX_RECOMP_UI)
+    include(${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake)
+else()
+    include(${SNESRECOMP_ROOT}/runner/src/launcher_ng/launcher_ng.cmake)
+endif()
 
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -117,9 +127,16 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     endif()
 
     # Dear ImGui pre-boot launcher (GUI). One call wires sources/includes/
-    # SNES_LAUNCHER/CXX/asset-staging; see launcher_ng/launcher_ng.cmake.
-    snesrecomp_target_launcher_ng(${TARGET}
-        BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
+    # launcher define/CXX/asset-staging. MMX_RECOMP_UI swaps the in-tree
+    # launcher_ng for the shared recomp-ui launcher (same MMX boxart; recomp-ui's
+    # default pad.tga is already the SNES pad).
+    if(MMX_RECOMP_UI)
+        recomp_target_launcher_ui(${TARGET}
+            BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
+    else()
+        snesrecomp_target_launcher_ng(${TARGET}
+            BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
+    endif()
 endfunction()
 
 # ── USA: Mega Man X (v1.1) — faithful LLE scheduler by default ──
