@@ -343,7 +343,11 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "OutputMethod")) {
       g_config.output_method = StringEqualsNoCase(value, "SDL-Software") ? kOutputMethod_SDLSoftware :
-                               StringEqualsNoCase(value, "OpenGL") ? kOutputMethod_OpenGL : kOutputMethod_SDL;
+                               StringEqualsNoCase(value, "OpenGL") ? kOutputMethod_OpenGL :
+#if defined(__APPLE__)
+                               StringEqualsNoCase(value, "Metal") ? kOutputMethod_Metal :
+#endif
+                               kOutputMethod_SDL;
       return true;
     } else if (StringEqualsNoCase(key, "LinearFiltering")) {
       return ParseBool(value, &g_config.linear_filtering);
@@ -424,6 +428,11 @@ static bool ParseOneConfigFile(const char *filename, int depth) {
 
 void ParseConfigFile(const char *filename) {
   g_config.enable_audio = true;
+#if defined(__APPLE__)
+  g_config.output_method = kOutputMethod_Metal;
+#else
+  g_config.output_method = kOutputMethod_OpenGL;
+#endif
   /* Audio defaults match the values shipped in config.ini's [Sound]
    * section. Without these a release with no config.ini next to the
    * exe leaves audio_freq/audio_channels/audio_samples at 0, which

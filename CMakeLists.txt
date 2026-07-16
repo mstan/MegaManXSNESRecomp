@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(MegaManXSNESRecomp C CXX)
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 # Cross-platform (macOS/Linux) build for MegaManXSNESRecomp.
 #
 # One repo, two games (the RubySapphireRecomp pattern):
@@ -87,7 +91,9 @@ function(mmx_target_launcher_ng TGT)
 endfunction()
 
 find_package(SDL2 REQUIRED)
-find_package(OpenGL REQUIRED)
+if(NOT APPLE)
+    find_package(OpenGL REQUIRED)
+endif()
 
 # prod-vs-debug via the single SNESRECOMP_ENABLE_TRACE switch (runner.cmake,
 # default OFF). Prod: no debug_server.c / TCP server / rings. Debug:
@@ -117,7 +123,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # game-specific runtime (shared across both variants)
         src/config.c
         src/mmx_display.c
-        src/glsl_shader.c
+        $<$<NOT:$<PLATFORM_ID:Darwin>>:src/glsl_shader.c>
         src/main.c
         src/mmx_wide_preview.c
         $<$<PLATFORM_ID:Linux>:src/linux_ui.cpp>
@@ -125,7 +131,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # OpenGL3 backend. Keep only the game UI's platform renderer here.
         $<$<PLATFORM_ID:Linux>:third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp>
         src/post_mortem.c
-        src/opengl.c
+        $<$<NOT:$<PLATFORM_ID:Darwin>>:src/opengl.c>
         src/mmx_00.c
         src/gen_stubs.c
         src/mmx_cpu_infra.c
@@ -133,8 +139,16 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_spc_player.c
         src/fiber_compat.c    # Win32 Fiber API shim (ucontext) for non-Windows
 
+        $<$<PLATFORM_ID:Darwin>:src/macos_backend.m>
+
+        # Native macOS UI and optional NTSC CRT display filter.
+        $<$<PLATFORM_ID:Darwin>:src/macos_ui.mm>
+        $<$<PLATFORM_ID:Darwin>:third_party/imgui/backends/imgui_impl_metal.mm>
+        $<$<PLATFORM_ID:Darwin>:third_party/ntsc-crt/crt_core.c>
+        $<$<PLATFORM_ID:Darwin>:third_party/ntsc-crt/crt_snes.c>
+
         # OpenGL function loader
-        third_party/gl_core/gl_core_3_1.c
+        $<$<NOT:$<PLATFORM_ID:Darwin>>:third_party/gl_core/gl_core_3_1.c>
         # recompiled banks (generated, per-variant)
         ${_MMX_GEN}
     )
@@ -149,10 +163,15 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SDL2_INCLUDE_DIRS}
     )
 
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_include_directories(${TARGET} PRIVATE
             ${CMAKE_SOURCE_DIR}/third_party/imgui
             ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
+    endif()
+    if(APPLE)
+        target_include_directories(${TARGET} PRIVATE
+            ${CMAKE_SOURCE_DIR}/third_party/ntsc-crt)
+        target_compile_definitions(${TARGET} PRIVATE CRT_SYSTEM=3)
     endif()
 
     # host_report.c uses dl_phdr_info for Linux module diagnostics; glibc hides
@@ -177,10 +196,22 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     endif()
 
     target_link_libraries(${TARGET} PRIVATE
-        OpenGL::GL
-        m                                 # libm: glsl_shader.c uses pow() (implicit on macOS)
+        m                                 # libm: runtime math
         ${SNESRECOMP_RUNNER_LIBRARIES}    # ws2_32 when trace/cosim builds add the TCP servers
     )
+    if(APPLE)
+        target_link_libraries(${TARGET} PRIVATE
+            "-framework Metal"
+            "-framework QuartzCore"
+            "-framework GameController"
+            "-framework Foundation"
+            "-framework CoreAudio"
+            "-framework AudioToolbox"
+            "-framework OpenGL")
+        target_compile_definitions(${TARGET} PRIVATE MMX_MACOS_NATIVE=1)
+    else()
+        target_link_libraries(${TARGET} PRIVATE OpenGL::GL)
+    endif()
     if(WIN32 AND NOT MSVC)
         # mingw/msys2: this SDL2 does not auto-rename main()->SDL_main, so main.c's
         # real main() is the entry point — link SDL2 WITHOUT SDL2main (SDL2main's
@@ -197,6 +228,19 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     # SNES_LAUNCHER/CXX/asset-staging; see launcher_ng/launcher_ng.cmake.
     mmx_target_launcher_ng(${TARGET}
         BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
+    if(APPLE)
+        set(_MMX_ICON ${CMAKE_SOURCE_DIR}/assets/MegaManX.icns)
+        target_sources(${TARGET} PRIVATE ${_MMX_ICON})
+        set_source_files_properties(${_MMX_ICON} PROPERTIES
+            MACOSX_PACKAGE_LOCATION Resources)
+        set_target_properties(${TARGET} PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/resources/Info.plist
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.mstan.megamanxrecomp"
+            MACOSX_BUNDLE_BUNDLE_NAME "Mega Man X Recomp"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0")
+    endif()
 endfunction()
 
 # ── USA: Mega Man X (v1.1) — faithful LLE scheduler by default ──

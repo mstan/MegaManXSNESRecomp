@@ -39,7 +39,9 @@
 #include "launcher.h"
 #include "keybinds.h"
 #include "host_report.h"
-#ifdef __linux__
+#ifdef __APPLE__
+#include "macos_backend.h"
+#elif defined(__linux__)
 #include "linux_ui.h"
 #endif
 
@@ -53,7 +55,9 @@ typedef struct GamepadInfo {
 } GamepadInfo;
 
 
+#ifndef __APPLE__
 static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len);
+#endif
 static void EnsureConfigIni(void);
 static void RenderNumber(uint8 *dst, size_t pitch, int n, uint8 big);
 static void OpenOneGamepad(int i);
@@ -451,10 +455,14 @@ static void DrawPpuFrameWithPerf(void) {
 }
 
 static SDL_mutex *g_audio_mutex;
+#ifndef __APPLE__
 static uint8 *g_audiobuffer, *g_audiobuffer_cur, *g_audiobuffer_end;
+#endif
 static int g_frames_per_block;
 static uint8 g_audio_channels;
+#ifndef __APPLE__
 static SDL_AudioDeviceID g_audio_device;
+#endif
 
 void RtlApuLock(void) {
   SDL_LockMutex(g_audio_mutex);
@@ -464,6 +472,7 @@ void RtlApuUnlock(void) {
   SDL_UnlockMutex(g_audio_mutex);
 }
 
+#ifndef __APPLE__
 static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len) {
   /* Boot-stage marker: proves the audio thread reached the mixer at
    * least once (the "crashed before the first sound" class of report). */
@@ -490,6 +499,7 @@ static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len) {
   }
   SDL_UnlockMutex(g_audio_mutex);
 }
+#endif
 
 
 // State for sdl renderer
@@ -1054,10 +1064,18 @@ int main(int argc, char** argv) {
   if (g_config.audio_samples <= 0 || ((g_config.audio_samples & (g_config.audio_samples - 1)) != 0))
     g_config.audio_samples = kDefaultSamples;
 
+#ifndef __APPLE__
   SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+#endif
 
   // set up SDL
-  if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
+  if(SDL_Init(
+#ifdef __APPLE__
+      SDL_INIT_VIDEO
+#else
+      SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER
+#endif
+      ) != 0) {
     host_report_breadcrumb("SDL_Init FAILED: %s", SDL_GetError());
     printf("Failed to init SDL: %s\n", SDL_GetError());
     return 1;
@@ -1076,12 +1094,17 @@ int main(int argc, char** argv) {
   int window_height = custom_size ? g_config.window_height :
       g_current_window_scale * MmxDisplay_GetWindowBaseHeight();
 
+#ifdef __APPLE__
+  g_win_flags |= SDL_WINDOW_METAL;
+  MacMetalRenderer_Create(&g_renderer_funcs);
+#else
   if (g_config.output_method == kOutputMethod_OpenGL) {
     g_win_flags |= SDL_WINDOW_OPENGL;
     OpenGLRenderer_Create(&g_renderer_funcs);
   } else {
     g_renderer_funcs = kSdlRendererFuncs;
   }
+#endif
 
   /* Load the SNES ROM. argv[0] is the launcher-resolved path (always
    * non-NULL after snesrecomp_launcher_resolve_rom returned success). */
@@ -1185,8 +1208,13 @@ error_reading:;
   }
 #endif
   host_report_breadcrumb("renderer initialized: %s",
+#ifdef __APPLE__
+      "metal"
+#else
       g_config.output_method == kOutputMethod_OpenGL ? "opengl" :
-      g_config.output_method == kOutputMethod_SDLSoftware ? "sdl-software" : "sdl");
+      g_config.output_method == kOutputMethod_SDLSoftware ? "sdl-software" : "sdl"
+#endif
+      );
 
   g_audio_mutex = SDL_CreateMutex();
   if (!g_audio_mutex) Die("No mutex");
@@ -1197,6 +1225,19 @@ error_reading:;
   host_report_breadcrumb("SPC player initialized");
 
   if (g_config.enable_audio) {
+#ifdef __APPLE__
+    int actual_frequency, actual_channels;
+    if (!MacAudio_Init(g_config.audio_freq, g_config.audio_samples,
+                       &actual_frequency, &actual_channels,
+                       &g_frames_per_block)) {
+      host_report_breadcrumb("native Core Audio initialization failed");
+      printf("Failed to initialize native Core Audio output\n");
+      return 1;
+    }
+    g_audio_channels = (uint8)actual_channels;
+    host_report_breadcrumb("native audio opened: freq=%d ch=%d frames_per_block=%d",
+                           actual_frequency, actual_channels, g_frames_per_block);
+#else
     /* Enumerate output devices into the breadcrumb ring: which device
      * SDL picks (and what else was available) is exactly the per-machine
      * variable a non-reproducible audio/boot crash report needs. */
@@ -1231,6 +1272,7 @@ error_reading:;
     host_report_breadcrumb(
         "audio device opened: freq=%d (want %d) ch=%d samples=%d frames_per_block=%d",
         have.freq, want.freq, have.channels, have.samples, g_frames_per_block);
+#endif
   } else {
     host_report_breadcrumb("audio disabled in config");
   }
@@ -1242,6 +1284,9 @@ error_reading:;
   RtlReadSram();
 
   {
+#ifdef __APPLE__
+    printf("[Gamepad] using Apple GameController.framework\n");
+#else
     int njs = SDL_NumJoysticks();
     printf("[Gamepad] SDL reports %d joystick(s) at startup. "
            "enable_gamepad=[%d,%d]\n",
@@ -1258,6 +1303,7 @@ error_reading:;
              "On Windows, plug controller in BEFORE launching, "
              "or check that XInput drivers are installed.\n");
     }
+#endif
   }
 
   if (g_config.autosave)
@@ -1286,7 +1332,15 @@ error_reading:;
     host_report_crash_test_tick();
 
     while (SDL_PollEvent(&event)) {
-#ifdef __linux__
+#ifdef __APPLE__
+      MacUi_ProcessEvent(&event);
+      if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F1 && !event.key.repeat) {
+        MacUi_Toggle();
+        continue;
+      }
+      if (MacUi_CaptureKeyboard() && event.type != SDL_QUIT)
+        continue;
+#elif defined(__linux__)
       LinuxUi_ProcessEvent(&event);
       if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F1 && !event.key.repeat) {
         LinuxUi_Toggle();
@@ -1296,6 +1350,7 @@ error_reading:;
         continue;
 #endif
       switch (event.type) {
+#ifndef __APPLE__
       case SDL_CONTROLLERDEVICEADDED:
         OpenOneGamepad(event.cdevice.which);
         break;
@@ -1321,6 +1376,7 @@ error_reading:;
         }
         break;
       }
+#endif
       case SDL_MOUSEWHEEL:
         if (SDL_GetModState() & KMOD_CTRL && event.wheel.y != 0)
           ChangeWindowScale(event.wheel.y > 0 ? 1 : -1);
@@ -1347,8 +1403,12 @@ error_reading:;
 
     if (g_paused != audiopaused) {
       audiopaused = g_paused;
+#ifdef __APPLE__
+      MacAudio_SetPaused(audiopaused != 0);
+#else
       if (g_audio_device)
         SDL_PauseAudioDevice(g_audio_device, audiopaused);
+#endif
     }
 
     if (g_paused) {
@@ -1381,8 +1441,14 @@ error_reading:;
      * A B X Y L R). HandleCommand is idempotent for set/clear, so calling
      * it every frame is safe. */
     {
-#ifdef __linux__
-      if (LinuxUi_IsOpen()) {
+#if defined(__APPLE__) || defined(__linux__)
+      if (
+#ifdef __APPLE__
+          MacUi_IsOpen()
+#else
+          LinuxUi_IsOpen()
+#endif
+      ) {
         /* Dear ImGui owns keyboard focus while the settings menu is open. */
       } else {
 #endif
@@ -1394,10 +1460,21 @@ error_reading:;
         HandleCommand(kKeys_Controls   + i, (kb_p1 >> kKb2CtrlsIdx[i]) & 1);
         HandleCommand(kKeys_ControlsP2 + i, (kb_p2 >> kKb2CtrlsIdx[i]) & 1);
       }
-#ifdef __linux__
+#if defined(__APPLE__) || defined(__linux__)
       }
 #endif
     }
+
+#ifdef __APPLE__
+    {
+      uint32_t player1, player2, active;
+      MacGamepad_Poll(g_config.enable_gamepad[0], g_config.enable_gamepad[1],
+                      g_config.gamepad_deadzone, &player1, &player2, &active);
+      g_pad_buttons = player1 | (player2 << 12);
+      g_gamepad[0].joystick_id = (active & 1) ? 1 : -1;
+      g_gamepad[1].joystick_id = (active & 2) ? 1 : -1;
+    }
+#endif
 
     uint32 inputs = g_input_state | g_pad_buttons | g_gamepad[0].axis_buttons | g_gamepad[1].axis_buttons << 12;
     inputs |= TickScript();
@@ -1491,11 +1568,15 @@ error_reading:;
 
   RtlWriteSram();
 
-  // clean sdl
+  // clean audio
+#ifdef __APPLE__
+  MacAudio_Shutdown();
+#else
   SDL_PauseAudioDevice(g_audio_device, 1);
   SDL_CloseAudioDevice(g_audio_device);
-  SDL_DestroyMutex(g_audio_mutex);
   free(g_audiobuffer);
+#endif
+  SDL_DestroyMutex(g_audio_mutex);
 
 #ifdef __linux__
   LinuxUi_Shutdown();
@@ -1734,7 +1815,12 @@ static void HandleVolumeAdjustment(int volume_adjustment) {
   printf("[System Volume]=%i\n", new_volume);
 #else
   g_sdl_audio_mixer_volume = IntMin(IntMax(0, g_sdl_audio_mixer_volume + volume_adjustment * (SDL_MIX_MAXVOLUME >> 4)), SDL_MIX_MAXVOLUME);
+#ifdef __APPLE__
+  MacAudio_SetVolume((float)g_sdl_audio_mixer_volume / SDL_MIX_MAXVOLUME);
+  printf("[Core Audio volume]=%i\n", g_sdl_audio_mixer_volume);
+#else
   printf("[SDL mixer volume]=%i\n", g_sdl_audio_mixer_volume);
+#endif
 #endif
 }
 
