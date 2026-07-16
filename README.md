@@ -162,6 +162,10 @@ Homebrew's SDL2. Apple Silicon contributors running an x86_64-translated shell
 must also configure with `-DCMAKE_OSX_ARCHITECTURES=arm64`. Packaging helpers
 detect the native hardware architecture and are documented by
 `bash tools/build-macos.sh --help` and `bash tools/build-linux.sh --help`.
+The cross-platform Windows release can be built with MinGW using
+`SDL2_MINGW_ROOT=/path/to/SDL2 bash tools/build-windows-mingw.sh VERSION`.
+All release packages are ROM-free; place your legally obtained ROM beside the
+executable or AppImage after extraction.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for dependency development, validation,
 and pull-request guidance.
 
