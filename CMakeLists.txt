@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(MegaManXSNESRecomp C)
+project(MegaManXSNESRecomp C CXX)
 
 # Cross-platform (macOS/Linux) build for MegaManXSNESRecomp.
 #
@@ -22,10 +22,61 @@ project(MegaManXSNESRecomp C)
 # ROM staged); SDL2 (e.g. `brew install sdl2`).
 
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SNESRECOMP_ROOT ${CMAKE_SOURCE_DIR}/snesrecomp)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
-include(${SNESRECOMP_ROOT}/runner/src/launcher_ng/launcher_ng.cmake)
+
+# The runner launcher supplies the game-agnostic C pieces. This repo owns the
+# ImGui copy used by both the launcher and native platform UI; using the
+# launcher's older bundled ImGui would create duplicate symbols and an API
+# mismatch with platform backends vendored here.
+function(mmx_target_launcher_ng TGT)
+    cmake_parse_arguments(LNG "" "BOXART" "" ${ARGN})
+    set(LNG_ROOT ${SNESRECOMP_ROOT}/runner/src/launcher_ng)
+    set(LNG_IMGUI ${CMAKE_SOURCE_DIR}/third_party/imgui)
+    target_sources(${TGT} PRIVATE
+        ${LNG_ROOT}/launcher_model.c
+        ${LNG_ROOT}/launcher_platform_sdl2.c
+        ${LNG_ROOT}/launcher_gl.c
+        ${LNG_ROOT}/launcher_input.c
+        ${LNG_ROOT}/launcher_files.c
+        ${LNG_ROOT}/launcher_debug.c
+        ${LNG_ROOT}/launcher_binds.c
+        ${LNG_ROOT}/launcher_ng_capi.c
+        ${LNG_ROOT}/third_party/tinyfiledialogs.c
+        ${LNG_ROOT}/backends/imgui/launcher_imgui.cpp
+        ${LNG_IMGUI}/imgui.cpp
+        ${LNG_IMGUI}/imgui_draw.cpp
+        ${LNG_IMGUI}/imgui_tables.cpp
+        ${LNG_IMGUI}/imgui_widgets.cpp
+        ${LNG_IMGUI}/backends/imgui_impl_sdl2.cpp
+        ${LNG_IMGUI}/backends/imgui_impl_opengl3.cpp)
+    target_include_directories(${TGT} PRIVATE
+        ${LNG_ROOT}/../launcher ${LNG_ROOT}
+        ${LNG_ROOT}/third_party ${LNG_IMGUI}
+        ${LNG_IMGUI}/backends)
+    target_compile_definitions(${TGT} PRIVATE SNES_LAUNCHER SDL_MAIN_HANDLED)
+    set_target_properties(${TGT} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    add_custom_command(TARGET ${TGT} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${TGT}>/assets/fonts
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${TGT}>/assets/img
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${LNG_ROOT}/../launcher/assets/fonts/LatoLatin-Regular.ttf
+            ${LNG_ROOT}/../launcher/assets/fonts/LatoLatin-Bold.ttf
+            $<TARGET_FILE_DIR:${TGT}>/assets/fonts/
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${LNG_ROOT}/../launcher/assets/img/brand_mark.tga
+            ${LNG_ROOT}/../launcher/assets/img/snes_pad.tga
+            $<TARGET_FILE_DIR:${TGT}>/assets/img/
+        VERBATIM)
+    if(LNG_BOXART AND EXISTS ${LNG_BOXART})
+        add_custom_command(TARGET ${TGT} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LNG_BOXART}
+                $<TARGET_FILE_DIR:${TGT}>/assets/img/boxart.tga VERBATIM)
+    endif()
+endfunction()
 
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -118,7 +169,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
 
     # Dear ImGui pre-boot launcher (GUI). One call wires sources/includes/
     # SNES_LAUNCHER/CXX/asset-staging; see launcher_ng/launcher_ng.cmake.
-    snesrecomp_target_launcher_ng(${TARGET}
+    mmx_target_launcher_ng(${TARGET}
         BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
 endfunction()
 
