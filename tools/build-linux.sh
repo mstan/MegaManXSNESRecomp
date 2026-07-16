@@ -193,6 +193,16 @@ exec "\$HERE/usr/bin/$EXE" "\$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
+# The ImGui pre-boot launcher loads fonts + images from assets/ next to the exe
+# (SDL_GetBasePath resolves to usr/bin inside the AppImage). CMake's launcher_ng
+# POST_BUILD staged them beside the build ELF; carry them into the AppDir so the
+# launcher renders inside the packaged AppImage.
+if [ -d "$(dirname "$BIN")/assets" ]; then
+    echo "      staging launcher assets/ -> AppDir/usr/bin/assets"
+    mkdir -p "$APPDIR/usr/bin"
+    cp -r "$(dirname "$BIN")/assets" "$APPDIR/usr/bin/assets"
+fi
+
 APP="$OUT/$APP_NAME-x86_64.AppImage"
 ARCH=x86_64 $APPIMAGETOOL "$APPDIR" "$APP"
 chmod +x "$APP"
