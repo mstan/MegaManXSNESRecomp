@@ -258,6 +258,9 @@
     <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_debug.c">
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_binds.c">
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\tinyfiledialogs.c">
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
