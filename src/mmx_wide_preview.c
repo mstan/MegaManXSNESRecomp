@@ -458,6 +458,14 @@ static void CompositeIcon(uint8_t *pixels, int width, int height,
 }
 
 void MmxWidePreview_Draw(uint8_t *pixels, int width, int height, int extra) {
+  /* Real margin spawning supersedes the frozen-icon preview: with the
+   * WS-SPAWN/WS-CULL consumers statically compiled and active, margin
+   * enemies are live simulated objects rendered through the widened OAM
+   * path. Compositing the ROM-table icon on top would double-draw a
+   * frozen twin over (or beside) the real enemy. */
+  extern int MmxWsRealSpawnActive(void);
+  if (MmxWsRealSpawnActive())
+    return;
   if (!pixels || extra <= 0 || !g_rom || !g_ppu ||
       PPU_forcedBlank(g_ppu) || PPU_brightness(g_ppu) == 0)
     return;

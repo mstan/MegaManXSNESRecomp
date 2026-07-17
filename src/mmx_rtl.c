@@ -867,6 +867,15 @@ static int MmxWsSpawnWide(void) {
   return s_on;
 }
 
+/* True when the margins are populated by REAL spawned objects (widened
+ * DC36 anchors + widened 806E cull + wide OAM emission), i.e. the AOT
+ * bodies carry the WS-SPAWN/WS-CULL injections and the spawn gate is on.
+ * The frozen-icon margin preview (mmx_wide_preview.c) must stand down
+ * then — it would composite a static duplicate over the live enemy. */
+int MmxWsRealSpawnActive(void) {
+  return MmxWsSpawnWide() && MmxWsMargin() > 0;
+}
+
 /* +32px slack past the visible margin: an anchor of exactly the margin
  * lands record spawns on the outermost visible wide column (visible
  * pop-in; vanilla's +0x100 anchor is exactly the masked 4:3 edge).
