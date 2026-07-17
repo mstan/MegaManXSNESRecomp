@@ -821,3 +821,149 @@ void RunOneFrameOfGame(void) {
   cpu_trace_px_breadcrumb(&g_cpu, 0x2003, "after_Internal");
   g_first_frame_done = true;
 }
+
+/* ------------------------------------------------------------------ */
+/* Widescreen Tier-2 helpers, called from gen-code snippets injected by
+ * tools/apply_overrides.py (see that file's header for the full design
+ * and the WS-LOOKAHEAD post-mortem: biasing the committed camera
+ * snapshot froze the scroll state machine, so widening happens at the
+ * consumer comparisons below instead). All return vanilla results when
+ * widescreen is off -> the authentic build behaves identically.
+ *
+ * ws margin in px, rounded to the 8px tile grid, from the live
+ * presentation margin (dynamic with window aspect). */
+static int MmxWsMargin(void) {
+  extern bool g_ws_active;
+  extern int g_ws_extra;
+  extern uint8_t g_ram[0x20000];
+  if (!g_ws_active || g_ram[0xD1] != 0x02 || g_ram[0xD2] != 0x04)
+    return 0;
+  return (g_ws_extra + 7) & ~7;
+}
+
+/* bank_02_806E X-axis scroll-off cull: vanilla verdict is
+ * carry = (objX - camX + 0x40) >= 0x180  (keep window cam-64..+320).
+ * Widened: (v + margin) >= 0x180 + 2*margin  (keep window
+ * cam-(64+margin)..+(320+margin)). Returns the carry (0/1). */
+uint16 MmxWsCullVerdictX(uint16 v) {
+  int m = MmxWsMargin();
+  return ((uint16)(v + m) >= (uint16)(0x180 + 2 * m)) ? 1 : 0;
+}
+
+/* bank_00_DC36 spawn-scan anchors (one 32px column scanned per camera
+ * column crossing; bank_00_DCDB walks the column's spawn records).
+ * Right anchor: vanilla $1E4D + 0x100 -> +margin so enemies enter the
+ * world before the widescreen right edge shows them. Left: vanilla
+ * $1E4D -> -margin (clamped at 0; DCDB's $E000 guard also drops
+ * wrapped columns). Spawn widening is separately gated
+ * (SNESRECOMP_WS_SPAWN, default ON) so it can fall back to authentic
+ * 4:3 spawning if wide spawning misbehaves; the cull stays wide. */
+static int MmxWsSpawnWide(void) {
+  static int s_on = -1;
+  if (s_on < 0) {
+    const char *e = getenv("SNESRECOMP_WS_SPAWN");
+    s_on = (e && e[0]) ? ((e[0] != '0') ? 1 : 0) : 1;
+  }
+  return s_on;
+}
+
+/* +32px slack past the visible margin: an anchor of exactly the margin
+ * lands record spawns on the outermost visible wide column (visible
+ * pop-in; vanilla's +0x100 anchor is exactly the masked 4:3 edge).
+ * One column beyond keeps spawns hidden; spawned objects stay inside
+ * the widened 806E keep window (margin+0x40 hysteresis) either side. */
+uint16 MmxWsSpawnAnchorRight(uint16 v) {
+  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  if (m) m += 32;
+  return (uint16)(v + m);
+}
+
+uint16 MmxWsSpawnAnchorLeft(uint16 v) {
+  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  if (m) m += 32;
+  return (v >= (uint16)m) ? (uint16)(v - m) : 0;
+}
+
+/* bank_03_FDD3 camera-line trigger compare. Tilemap screen staging
+ * (Task_B091 via FE05/FE0C) is fired by level-placed camera-line
+ * trigger objects: FDD3 compares live camera X ($0BAD, via $0BA8+X
+ * with X=5 from the $86:E4DC offset table) against the trigger's
+ * line at obj D+$05; state 0 (FDAB) fires on cam < line (stage
+ * left), state 2 (FDC0) fires on cam >= line (stage right). Shift
+ * the fire line INTO the travel direction by the margin so the
+ * leading widescreen margin is staged before it scrolls on screen.
+ * A single direction-aware line keeps the two fire conditions
+ * complementary at every instant -> no fire-loop; worst case equals
+ * vanilla wiggling across the line (one restage per flip). Only
+ * X-axis staging watchers are biased: offset X==5 and event code
+ * byte (obj D+$0A) == 0x15. Y staging (0x18, offset 8) has no
+ * vertical margins; codes 0x16/0x17 are other trigger classes
+ * (camera locks etc.) and must fire at authentic positions. */
+static int MmxWsStageWide(void) {
+  static int s_on = -1;
+  if (s_on < 0) {
+    const char *e = getenv("SNESRECOMP_WS_STAGE");
+    s_on = (e && e[0]) ? ((e[0] != '0') ? 1 : 0) : 1;
+  }
+  return s_on;
+}
+
+/* WS-SHADOW fire pairing: when the biased FDD3 verdict is about to fire
+ * a staging (FE05/FE0C -> Task_B091 -> B23C per screen), remember the
+ * direction + trigger line so the B23C hook below can bind the staged
+ * screen to its world chunk for the runner-side margin shadow.
+ * Right-fire stages the chunk entered at the line's boundary
+ * (line+0x40, measured); left-fire restores the chunk two screens back
+ * (line+0x40-0x200, the half that held the off-right screen). */
+static struct {
+  int dir;          /* +1 right, -1 left, 0 none pending */
+  uint16 line;      /* unbiased trigger line */
+  int frame;        /* stamp for expiry */
+} s_ws_fire;
+
+uint16 MmxWsStageLineAdjust(uint16 v, uint16 dpage, uint16 xoff) {
+  extern uint8_t g_ram[0x20000];
+  static uint16 s_prev;
+  static int s_dir;
+  uint16 cam = (uint16)(g_ram[0x1E6A] | (g_ram[0x1E6B] << 8));
+  if (cam != s_prev) {
+    s_dir = ((int16)(cam - s_prev) > 0) ? 1 : -1;
+    s_prev = cam;
+  }
+  int m = MmxWsStageWide() ? MmxWsMargin() : 0;
+  if (!m || xoff != 5) return v;
+  if (g_ram[(uint16)(dpage + 0x0A)] != 0x15) return v;
+  /* Fire lead = the margin, no more. Region fires also upload the next
+   * section's enemy/sprite CHR; firing further ahead (a margin+96
+   * experiment) swapped tiles out from under still-alive current-
+   * section enemies -> intermittent sprite garbling (user-reported,
+   * 2026-07-06). First-visit margin content is the prefill/shadow's
+   * job, not the fire bias's. SNESRECOMP_WS_STAGE_BIAS=<px> overrides
+   * for experiments (capped at 184). */
+  {
+    static int s_bias_env = -2;
+    if (s_bias_env == -2) {
+      const char *e = getenv("SNESRECOMP_WS_STAGE_BIAS");
+      s_bias_env = (e && e[0]) ? atoi(e) : -1;
+    }
+    if (s_bias_env >= 0) m = s_bias_env;
+    if (m > 184) m = 184;
+    if (!m) return v;
+  }
+  uint16 adj = v;
+  if (s_dir > 0) adj = (v >= (uint16)m) ? (uint16)(v - m) : 0;
+  else if (s_dir < 0) adj = (uint16)(v + m);
+  /* Predict the caller's verdict to pair the fire with the staging it
+   * schedules: state (D+2) 0 = FDAB fires on live < line', 2 = FDC0
+   * fires on live >= line'. Live value = the BG-module camera $0BAD. */
+  uint8_t state = g_ram[(uint16)(dpage + 0x02)];
+  uint16 live = (uint16)(g_ram[0x0BAD] | (g_ram[0x0BAE] << 8));
+  int fires = (state == 2) ? (live >= adj) : (state == 0 ? (live < adj) : 0);
+  if (fires) {
+    s_ws_fire.dir = (state == 2) ? 1 : -1;
+    s_ws_fire.line = v;
+    s_ws_fire.frame = snes_frame_counter;
+  }
+  return adj;
+}
+
