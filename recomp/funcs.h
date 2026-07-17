@@ -15,7 +15,7 @@
 
 #include "cpu_state.h"
 
-/* 17 functions across all banks (5 decls each). */
+/* 18 functions across all banks (5 decls each). */
 
 void ResetHandler(CpuState *cpu);  /* $00:8007 alias */
 RecompReturn ResetHandler_M0X0(CpuState *cpu);
@@ -97,6 +97,11 @@ RecompReturn Task_B436_M0X0(CpuState *cpu);
 RecompReturn Task_B436_M0X1(CpuState *cpu);
 RecompReturn Task_B436_M1X0(CpuState *cpu);
 RecompReturn Task_B436_M1X1(CpuState *cpu);
+void SpriteClip(CpuState *cpu);  /* $00:D780 alias */
+RecompReturn SpriteClip_M0X0(CpuState *cpu);
+RecompReturn SpriteClip_M0X1(CpuState *cpu);
+RecompReturn SpriteClip_M1X0(CpuState *cpu);
+RecompReturn SpriteClip_M1X1(CpuState *cpu);
 void Task_E6B1(CpuState *cpu);  /* $00:E6B1 alias */
 RecompReturn Task_E6B1_M0X0(CpuState *cpu);
 RecompReturn Task_E6B1_M0X1(CpuState *cpu);
