@@ -1,7 +1,15 @@
 # Issues — MegamanXRecomp
 
-> **OPEN:** one issue.
-> 1. A BRIEF sprite/OBJ-layer + HUD dropout under heavy sprite load (X, the
+> **OPEN:** two issue classes.
+> 1. **Widescreen margin spawn/cull, WIP (2026-07-16):** static-coverage
+>    promotion landed (32 → 4,552 AOT variants) and the WS-SPAWN/WS-CULL/
+>    WS-STAGE injections are live for the first time, but playtest shows
+>    enemies still spawning at the 4:3 edge, margin BG misalignment after
+>    vertical camera motion, and a savestate-resume wedge amplified by
+>    Autosave. Owner decision: engine side merges to snesrecomp main
+>    (opt-in); MMX widescreen stays hidden — not even experimental. See
+>    the full partial-fix + remaining-defect ledger under "Open".
+> 2. A BRIEF sprite/OBJ-layer + HUD dropout under heavy sprite load (X, the
 >    fish, and the HUD vanish for a moment after a fish explosion, then
 >    re-appear). Transient, self-recovering; the digger-area artifacting is
 >    the same class. See "Open" below.
@@ -61,6 +69,81 @@
 ---
 
 ## Open
+
+### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
+
+**Status:** feature stays HIDDEN on MMX (owner decision 2026-07-16) — not
+shipped, not experimental. The engine-side widescreen + static-coverage work
+merges to snesrecomp `main` (all opt-in / pin-gated); this entry is the
+ledger of what was actually fixed and what verifiably remains, so the next
+session starts from mechanisms, not symptoms.
+
+**What was PARTIALLY FIXED (proven):**
+
+- **Root cause of "injector matches 0 sites" found and fixed at the
+  generator level.** The LLE-first emitter had collapsed MMX to 32 AOT
+  variants (architectural vectors only): cfg `func`s were no longer roots,
+  decode truncated at every unproven callee exit (one unproven exit hid
+  every later call site), multi-path-width callees (e.g. `$00:D6A7`) could
+  never publish an exact exit fact, ONE self-recursive fn (`$84:95E6`)
+  gated 19 caller chains incl. Task0, and wrong-width poisoned variants
+  (`$00:DEDB` M0X0 — `LDX #$02 ; RTS` only coheres under x=1; proven at
+  `$00:DFED`) blocked their callers. Fixes (engine `c6fc987`): proven
+  exit-mode SETS forked across post-call continuations, set composition
+  through tail chains, self-recursion least-fixpoint, poison width
+  refutation, `v2_emit --cfg-roots`. Result: **4,552 exact AOT variants,
+  9 LLE-only**; regen proven deterministic (fresh regen differs from
+  published output in exactly the 3 injected TUs).
+- **The WS injections land for the first time:** 6 WS-SPAWN (blocks
+  `$00DC62`/`$00DC78` in the 3 emitted `bank_00_DC36` variants), 3 WS-CULL
+  (`bank_82_806E`), 1 WS-STAGE (`bank_83_FDD3` M0X1). WS-SHADOW was removed
+  from the injector on this branch — its host subsystem (stage-prefill
+  shadow) was never ported here; injecting it alone was a hard link error.
+- **Frozen-icon preview stands down** when real spawning is active
+  (`MmxWsRealSpawnActive()`); `SNESRECOMP_WS_SPAWN=0` restores authentic
+  4:3 spawning AND the icon preview.
+- **Interp fallbacks are now LOUD** (engine `95e1b8a`): first-hit
+  `[tier2] INTERP GAP` stderr lines + exit summary. Verified: a fresh boot
+  (Autosave off) runs the attract 90 s at 60 fps with ZERO tier-down lines
+  — the promoted static coverage carries the whole executed path.
+
+**What is STILL WRONG (user playtest 2026-07-16, Highway stage, screenshot
+on file):**
+
+1. **Enemies still spawn at the 4:3 edge.** The widened anchors are
+   injected, but spawning behaves authentically. Candidate mechanisms, in
+   verification order (block-hit tracing first, no theorizing):
+   (a) the DC36 copy that actually EXECUTES is an inlined copy inside a
+   caller whose store didn't match the injector patterns (the injector
+   patched 6 sites; count which body fires at runtime);
+   (b) runtime reaches DC36 at a width whose dispatch slot is NULL
+   (`M1X0` is not emitted — dispatch row `{M0X0, M0X1, NULL, M1X1}`), so
+   the authentic ROM anchor runs via LLE for that width;
+   (c) the anchor write is fine but `bank_00_DCDB`'s record walker culls
+   margin records for another reason (only `M0X0` emitted).
+2. **Margin BG misalignment appears after a vertical camera move** (jump
+   up/down) and then STAYS wrong — it was aligned before the first
+   vertical motion. Y-axis cousin of the resolved 1-px margin-sag class
+   (that fix switched X to PPU per-line scroll regs). Suspect the staged
+   margin tilemap lookup (`StageTileWord` world-Y quantization / stale
+   staged-region cache after vertical restage), NOT the per-line vScroll
+   read itself — `EnhancePpuLine` already samples `ppu->vScroll[0] + y`
+   per line.
+3. **Savestate-resume wedge, amplified by Autosave.** Loading
+   `saves/save0.sav` wedges the LLE scheduler: interp enters `$80:8099`
+   and spins at the `$80:8715` BNE (db=$86, a=$BBAA) until the 2M-step
+   cap, every time. `[mmx_state] v5 state loaded: fibers rebuilt
+   (0 resume-pending)` on a mid-game save is itself suspicious (a gameplay
+   save should carry suspended task resume contexts). Compounding footgun:
+   `Autosave = 1` auto-LOADS slot 0 at boot (main.c:1284) and auto-SAVES
+   slot 0 on quit — quitting the frozen game PERSISTED the wedged state
+   into save0, so every later boot (even `SkipLauncher=1`) re-entered the
+   wedge and masqueraded as a global freeze. Fix candidates: refuse
+   autosave-on-exit after an `interp_cap` has fired; and root-cause the
+   fiber/task resume round-trip. NOT yet determined whether the wedge
+   predates the coverage promotion (old binaries overwritten; needs an
+   old-build A/B). The `[mx_async] YieldVblank_M1X0` line fires on clean
+   boots too — benign diagnostic, ruled out as a wedge signature.
 
 ### Rangda Bangda (eye/nose wall boss, Sigma stage 2) — blue eye flies ~17× too far (filed 2026-06-01) — ✅ FIXED 2026-06-02, released `v1.0.5`
 
