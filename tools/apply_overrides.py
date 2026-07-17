@@ -55,6 +55,7 @@ Usage:
     python tools/apply_overrides.py --restore [--gen-dir src/gen] [-v]
 """
 import argparse
+import glob
 import os
 import re
 import sys
@@ -68,12 +69,20 @@ RE_STORE00 = re.compile(
 RE_CONST180 = re.compile(r"^\s*uint16 (_v\d+) = 0x180;\s*$")
 RE_READ_A = re.compile(r"^\s*uint16 (_v\d+) = cpu_read_a16\(cpu\);\s*$")
 RE_BRANCH_C = re.compile(r"^(\s*)if \(cpu->_flag_C == 1\)")
-RE_FUNC = re.compile(r"^RecompReturn (bank_03_[0-9A-F]+)_M\dX\d\(CpuState")
+# The LLE-first emitter keys nodes by the DEMANDED pc24, so a JSL'd body
+# lands under its LoROM execution-mirror bank ($83:FDD3, $82:806E) while
+# short-called bank-00 code keeps its canonical key. Match both: mask bit 7
+# of the bank when comparing block/function PCs.
+RE_FUNC = re.compile(r"^RecompReturn (bank_[08]3_[0-9A-F]+)_M\dX\d\(CpuState")
+
+
+def canon_pc24(pc24):
+    return pc24 & ~0x800000
 RE_CMP_DX = re.compile(
     r"^(\s*)uint16 (_v\d+) = cpu_read16\(cpu, 0x7E, "
     r"\(uint16\)\(cpu->D \+ 0x0000 \+ cpu->X\)\);\s*$")
 RE_B23C_ENTRY = re.compile(
-    r"^(\s*)cpu_trace_func_entry\(cpu, 0x00B23C, ")
+    r"^(\s*)cpu_trace_func_entry\(cpu, 0x[08]0B23C, ")
 
 
 def spawn_snippet(indent, var, which):
@@ -105,7 +114,7 @@ def apply_bank00(lines, verbose):
             continue
         m = RE_TRACE.search(line)
         if m:
-            cur_block = int(m.group(1), 16)
+            cur_block = canon_pc24(int(m.group(1), 16))
             continue
         m = RE_STORE00.match(line)
         if m and cur_block in (0x00DC78, 0x00DC62):
@@ -134,7 +143,7 @@ def apply_bank03(lines, verbose):
         if m:
             cur_fn = m.group(1)
             continue
-        if cur_fn == "bank_03_FDD3":
+        if cur_fn in ("bank_03_FDD3", "bank_83_FDD3"):
             m = RE_CMP_DX.match(line)
             if m:
                 out.append(stage_snippet(m.group(1), m.group(2)))
@@ -154,7 +163,7 @@ def apply_bank02(lines, verbose):
     for line in lines:
         m = RE_TRACE.search(line)
         if m:
-            cur_block = int(m.group(1), 16)
+            cur_block = canon_pc24(int(m.group(1), 16))
             state = 0
         if cur_block == 0x02806E:
             if state == 0 and RE_CONST180.match(line):
@@ -206,27 +215,36 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
-    targets = {"bank00_v2.c": apply_bank00, "bank02_v2.c": apply_bank02,
-               "bank03_v2.c": apply_bank03}
+    # Sharded, mirror-bank-keyed generation: anchor patterns are gated on
+    # block PCs / function symbols, so every applier can safely run over
+    # every generated translation unit; non-matching files are no-ops.
+    appliers = (apply_bank00, apply_bank02, apply_bank03)
+    paths = sorted(glob.glob(os.path.join(args.gen_dir, "bank*_v2.c")))
+    if not paths:
+        print(f"no bank*_v2.c under {args.gen_dir}", file=sys.stderr)
+        return 1
     total = 0
-    for name, fn in targets.items():
-        path = os.path.join(args.gen_dir, name)
-        if not os.path.exists(path):
-            print(f"missing {path}", file=sys.stderr)
-            return 1
+    for path in paths:
+        name = os.path.basename(path)
         if args.restore:
             n = restore_file(path, args.verbose)
-            print(f"{name}: removed {n} injected line(s)")
+            if n:
+                print(f"{name}: removed {n} injected line(s)")
             total += n
             continue
         with open(path, "r", encoding="utf-8") as f:
             if any(mk in f.read() for mk in MARKERS):
                 print(f"{name}: already patched — run --restore first")
                 continue
-        n = process(path, fn, args.check, args.verbose)
-        verb = "would inject" if args.check else "injected"
-        print(f"{name}: {verb} {n} site(s)")
-        total += n
+        n_file = 0
+        for fn in appliers:
+            n_file += process(path, fn, args.check, args.verbose)
+        if n_file:
+            verb = "would inject" if args.check else "injected"
+            print(f"{name}: {verb} {n_file} site(s)")
+        total += n_file
+    if args.restore:
+        print(f"restore: removed {total} injected line(s) total")
     if not args.restore and total == 0:
         print("WARNING: no anchor sites matched", file=sys.stderr)
         return 1
