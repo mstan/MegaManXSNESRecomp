@@ -4,16 +4,17 @@
 # macOS counterpart to tools/build-linux.sh and tools/make_release.ps1, with the
 # same prod-vs-debug discipline (prod strips the TCP debug server + rings).
 #
-# Run this ON a Mac (it cannot be built on Linux/Windows). See F:/Recomp/Mac/
-# BUILD-ON-MAC.md for prerequisites. It configures + builds with clang, then
+# Run this on a Mac (it cannot be built on Linux/Windows). It configures and
+# builds with clang, then
 # bundles a relocatable <APP_NAME>.app (dylibbundler copies SDL2 in and rewrites
 # the install names) and a <APP_NAME>.dmg for distribution.
 #
 # Usage:
 #   bash tools/build-macos.sh                  # prod .app + .dmg (default)
 #   bash tools/build-macos.sh --config debug   # debug build (TCP server + rings)
-#   bash tools/build-macos.sh --regen          # regen src/gen first
+#   bash tools/build-macos.sh --rom path --regen # regen src/gen first
 #   bash tools/build-macos.sh --no-dmg         # .app only
+#   bash tools/build-macos.sh --nopin          # allow local snesrecomp changes
 #   bash tools/build-macos.sh --arch arm64|x86_64|universal   # default: host arch
 #
 # Prereqs (Homebrew): cmake, sdl2, dylibbundler, create-dmg (optional).
@@ -25,7 +26,6 @@ APP_NAME="MegaManX"
 CMAKE_TARGET="MegaManXSNESRecomp"
 ROM_EXTS="sfc smc"
 EXTRA_ARGS=""
-REGEN_CMD=""
 PREBUILD_CMD=""
 POSTBUILD_CMD=""
 PROD_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=OFF )
@@ -33,8 +33,15 @@ DEBUG_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=ON )
 BUNDLE_ID="com.mstan.megamanxrecomp"
 # ============================================================================
 
-CONFIG="prod"; DO_REGEN=0; DO_DMG=1
-ARCH="$(uname -m)"   # arm64 on Apple Silicon, x86_64 on Intel
+CONFIG="prod"; DO_REGEN=0; DO_DMG=1; NOPIN=0
+ROM_PATH=""
+ARCH="$(uname -m)"
+# A translated x86_64 shell on Apple Silicon still needs an arm64 default so it
+# links against the normal /opt/homebrew dependency set.
+if [ "$(uname -s)" = "Darwin" ] &&
+   [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = "1" ]; then
+  ARCH="arm64"
+fi
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO/release-macos"
 
@@ -44,7 +51,9 @@ while [ $# -gt 0 ]; do
     --prod) CONFIG="prod"; shift;;
     --debug) CONFIG="debug"; shift;;
     --regen) DO_REGEN=1; shift;;
+    --rom) ROM_PATH="$2"; shift 2;;
     --no-dmg) DO_DMG=0; shift;;
+    --nopin) NOPIN=1; shift;;
     --arch) ARCH="$2"; shift 2;;
     --out) OUT="$2"; shift 2;;
     -h|--help) sed -n '2,30p' "$0"; exit 0;;
@@ -53,6 +62,11 @@ while [ $# -gt 0 ]; do
 done
 case "$CONFIG" in prod) FLAGS=( "${PROD_CMAKE_FLAGS[@]}" );; debug) FLAGS=( "${DEBUG_CMAKE_FLAGS[@]}" );;
   *) echo "--config must be prod or debug" >&2; exit 2;; esac
+if [ "$NOPIN" = "1" ]; then
+  FLAGS+=( -DMMX_ALLOW_UNPINNED_SNESRECOMP=ON )
+else
+  FLAGS+=( -DMMX_ALLOW_UNPINNED_SNESRECOMP=OFF )
+fi
 [ "$(uname -s)" = "Darwin" ] || { echo "ERROR: run this on macOS." >&2; exit 1; }
 
 case "$ARCH" in
@@ -65,11 +79,40 @@ BUILD="$REPO/build-macos-$CONFIG"
 echo "==================== $APP_NAME ($CONFIG, $ARCH) ===================="
 cd "$REPO"
 
+# Homebrew maintains separate prefixes on Apple Silicon Macs. Select the
+# dependency tree that matches the requested slice instead of silently linking
+# the host SDL2 into an x86_64 or universal build.
+if [ "$ARCH" = "x86_64" ] && [ -d /usr/local/lib/cmake/SDL2 ]; then
+  FLAGS+=( -DSDL2_DIR=/usr/local/lib/cmake/SDL2 )
+elif [ "$ARCH" = "arm64" ] && [ -d /opt/homebrew/lib/cmake/SDL2 ]; then
+  FLAGS+=( -DSDL2_DIR=/opt/homebrew/lib/cmake/SDL2 )
+fi
+
+[ -f "$REPO/snesrecomp/runner/runner.cmake" ] || {
+  echo "ERROR: snesrecomp is not initialized; run 'bash tools/bootstrap.sh' first." >&2
+  exit 1
+}
+
+if [ -z "$ROM_PATH" ]; then
+  for candidate in "$REPO"/mmx.sfc "$REPO"/mmx.smc "$REPO"/roms/*.sfc "$REPO"/roms/*.smc; do
+    if [ -f "$candidate" ]; then ROM_PATH="$candidate"; break; fi
+  done
+fi
+
+if [ "$DO_REGEN" = "1" ]; then
+  [ -n "$ROM_PATH" ] || { echo "ERROR: --regen requires --rom path (or a ROM in mmx.sfc/mmx.smc/roms/)" >&2; exit 1; }
+  case "$ROM_PATH" in
+    *.smc) cp "$ROM_PATH" "$REPO/mmx.sfc" ;;
+    *.sfc) cp "$ROM_PATH" "$REPO/mmx.sfc" ;;
+    *) echo "ERROR: ROM must have .sfc or .smc extension" >&2; exit 1;;
+  esac
+  bash "$REPO/tools/regen.sh" usa --no-tests
+fi
+
 RAN_PREBUILD=0
 cleanup() { [ "$RAN_PREBUILD" = "1" ] && [ -n "$POSTBUILD_CMD" ] && { echo "[postbuild] $POSTBUILD_CMD"; eval "$POSTBUILD_CMD" || true; }; return 0; }
 trap cleanup EXIT
 
-[ "$DO_REGEN" = "1" ] && [ -n "$REGEN_CMD" ] && { echo "[regen] $REGEN_CMD"; eval "$REGEN_CMD"; }
 if [ -n "$PREBUILD_CMD" ]; then echo "[prebuild] $PREBUILD_CMD"; RAN_PREBUILD=1; eval "$PREBUILD_CMD"; fi
 
 echo "[1/4] configure"
@@ -78,7 +121,7 @@ cmake -S "$REPO" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release \
 echo "[2/4] build ($CMAKE_TARGET)"
 cmake --build "$BUILD" --target "$CMAKE_TARGET" -j"$(sysctl -n hw.ncpu)"
 
-BIN="$(find "$BUILD" -maxdepth 3 -type f -name "$CMAKE_TARGET" -perm +111 | head -1)"
+BIN="$(find "$BUILD" -type f -path "*/Contents/MacOS/$CMAKE_TARGET" | head -1)"
 [ -n "$BIN" ] || { echo "ERROR: no binary named '$CMAKE_TARGET' under $BUILD" >&2; exit 1; }
 echo "      bin: $BIN"
 
@@ -90,6 +133,8 @@ mkdir -p "$APPDIR/Contents/MacOS" "$APPDIR/Contents/Resources" "$APPDIR/Contents
 # The real game binary lives next to a launcher that finds the ROM in the same
 # folder as the .app and runs from there (so saves land beside the .app).
 cp "$BIN" "$APPDIR/Contents/MacOS/$CMAKE_TARGET"
+cp "$BUILD/$CMAKE_TARGET.app/Contents/Resources/MegaManX.icns" \
+   "$APPDIR/Contents/Resources/MegaManX.icns"
 cat > "$APPDIR/Contents/MacOS/$APP_NAME" <<EOF
 #!/bin/sh
 DIR="\$(cd "\$(dirname "\$0")" && pwd)"
@@ -121,7 +166,8 @@ cat > "$APPDIR/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>0.1.0</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>CFBundleIconFile</key><string>MegaManX.icns</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 EOF
@@ -131,7 +177,16 @@ if command -v dylibbundler >/dev/null 2>&1; then
   dylibbundler -od -b -x "$APPDIR/Contents/MacOS/$CMAKE_TARGET" \
       -d "$APPDIR/Contents/Frameworks" -p @executable_path/../Frameworks
 else
-  echo "      WARNING: dylibbundler not found — .app will need a system SDL2."
+  SDL_DYLIB="$(otool -L "$APPDIR/Contents/MacOS/$CMAKE_TARGET" | awk '/libSDL2.*dylib/ { print $1; exit }')"
+  if [ -n "$SDL_DYLIB" ] && [ -f "$SDL_DYLIB" ]; then
+    SDL_NAME="$(basename "$SDL_DYLIB")"
+    cp "$SDL_DYLIB" "$APPDIR/Contents/Frameworks/$SDL_NAME"
+    install_name_tool -change "$SDL_DYLIB" "@executable_path/../Frameworks/$SDL_NAME" \
+      "$APPDIR/Contents/MacOS/$CMAKE_TARGET"
+    echo "      bundled $SDL_NAME (dylibbundler unavailable)"
+  else
+    echo "      WARNING: SDL2 dylib not found — .app will need a system SDL2."
+  fi
 fi
 # Ad-hoc codesign so Gatekeeper lets it run locally (no Developer ID required).
 codesign --force --deep --sign - "$APPDIR" 2>/dev/null || \

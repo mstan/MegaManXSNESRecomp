@@ -8,33 +8,26 @@ per-game `.cfg`, and the build glue.
 ## What "static recompilation" means here
 
 The 65816 CPU code from the ROM is statically translated to C — every
-function the analysis can prove is a real generated C function in
-`src/gen/`. Execution is **LLE-first**: an authoritative 65816
-interpreter (LakeSnes-derived, MIT) is the correctness floor, and the
-statically compiled bodies are exact, proven materializations on top of
-it — anything the static pass cannot prove keeps running through the
-interpreter, loudly. **The rest of the SNES is not recompiled** — it's
-hardware. PPU rendering, the APU/SPC700 audio coprocessor, DMA and
-HDMA channels, hardware register I/O, and bank-mapping run through
-snesrecomp's own runner implementations (`snesrecomp/runner/`). Same
-model as N64Recomp and similar projects: recompile the CPU, emulate the
-silicon.
+function the game runs on the SNES's main CPU is a real generated C
+function in `src/gen/`. **The rest of the SNES is not recompiled** —
+it's hardware. PPU rendering, the APU/SPC700 audio coprocessor, DMA
+and HDMA channels, hardware register I/O, and bank-mapping all run
+through an embedded copy of snes9x's emulator core
+(`snesrecomp/runner/snes9x-core/`). Same model as N64Recomp and
+similar projects: recompile the CPU, emulate the silicon.
 
 The ROM is **never** redistributed — you supply your own legally-dumped
 copy.
 
-## Current status: fully playable
+## Current status: 1.0.5 — fully playable
 
-The game has been tested and is playable end to end on Windows, with
-macOS and Linux builds supported from source. See
-[Releases](../../releases) for the latest packaged version and
-[ISSUES.md](ISSUES.md) for the current known-issue ledger.
+The game has been tested and is playable end to end. 
 
-### Linux / Steam Deck validation
+**Known issues at this release (minor, non-blocking):**
 
-Tester **littlerobotfairy** completed the game on Linux running on Steam
-Deck (on the contributed widescreen fork build). The complete playthrough
-is documented in the [Twitch VOD](https://www.twitch.tv/videos/2820912518).
+No known issues at this time on Windows builds. 
+
+Mac OSX/Linux are supported, but have not been extensively tested.
 
 If you hit a reproducible lockup or visual regression, please open an
 issue with a savestate (`Shift+F1`) and the frame at which it
@@ -91,6 +84,7 @@ set a key to an empty value there to unbind it, e.g. `DisplayPerf =`):
 | Turbo (fast-forward) | Tab |
 | FPS / perf readout   | F |
 | Toggle PPU renderer  | R |
+| Toggle true widescreen renderer | Alt+W |
 | Volume up / down     | Shift+= / Shift+- |
 
 ## Reporting crashes
@@ -111,78 +105,83 @@ hardware model, and the folder path the game runs from.
 
 ## Building from source
 
-Clone with all framework dependencies, then run the idempotent
-bootstrap check:
+Prerequisites: Windows 10+, Visual Studio 2022 (with C++ desktop
+workload), Python 3.9+ on PATH.
 
 ```bash
-git clone --recurse-submodules https://github.com/mstan/MegaManXSNESRecomp.git
+git clone https://github.com/mstan/MegaManXSNESRecomp
+git clone https://github.com/mstan/snesrecomp
 cd MegaManXSNESRecomp
-bash tools/bootstrap.sh
 ```
 
-The `snesrecomp/` directory is a pinned submodule from
-[mstan/snesrecomp](https://github.com/mstan/snesrecomp), and `recomp-ui/`
-is the shared launcher UI submodule. If you cloned without
-`--recurse-submodules`, `tools/bootstrap.sh` initializes them and their
-nested dependencies. The gitlink in this repository is the dependency pin;
-there is no separate SHA to keep synchronized.
+The `snesrecomp/` directory is a [sibling repo](https://github.com/mstan/snesrecomp)
+accessed via a junction/symlink to the clone next to this repo.
 
-Generated game C is not redistributed. Before the first build, stage a legally
-obtained USA Rev 1 ROM as `mmx.sfc`, then run:
+Build:
 
 ```bash
-cp "/path/to/Mega Man X (USA Rev 1).sfc" mmx.sfc
-bash tools/regen.sh usa --no-tests
-```
-
-On Windows 10 or newer, install Visual Studio 2022 with the C++ desktop
-workload, Git, and Python 3.9 or newer. Run the bootstrap and regeneration steps
-from Git Bash, then build from a Developer Command Prompt:
-
-```powershell
-msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
+# From a Developer Command Prompt for VS 2022, or with MSBuild on PATH:
+msbuild mmx.sln /p:Configuration=Oracle /p:Platform=x64 /m
 ```
 
 ### macOS / Linux (CMake)
 
 Builds natively on macOS (Apple Silicon + Intel) and Linux with clang/gcc.
-On macOS, install dependencies with
-`brew install cmake sdl2 ninja python3`. On Ubuntu/Debian, install
-`build-essential cmake ninja-build libsdl2-dev libgl1-mesa-dev python3`.
+Prerequisites: CMake 3.16+, SDL2, Ninja, Python 3.9+
+(`brew install cmake sdl2 ninja python3`).
 
 ```bash
-cmake -S . -B build-dev -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build-dev --target MegaManXSNESRecomp
-ctest --test-dir build-dev --output-on-failure
+git clone https://github.com/mstan/snesrecomp.git ../snesrecomp
+ln -s ../snesrecomp snesrecomp
+cp "/path/to/Mega Man X (USA Rev 1).sfc" mmx.sfc
+bash tools/regen.sh usa --no-tests
+cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+cmake --build build-macos --target MegaManXSNESRecomp
+open build-macos/MegaManXSNESRecomp.app
 ```
 
-On macOS, add `-DCMAKE_PREFIX_PATH="$(brew --prefix)"` if CMake does not find
-Homebrew's SDL2. Apple Silicon contributors running an x86_64-translated shell
-must also configure with `-DCMAKE_OSX_ARCHITECTURES=arm64`. Packaging helpers
-detect the native hardware architecture and are documented by
-`bash tools/build-macos.sh --help` and `bash tools/build-linux.sh --help`.
-The cross-platform Windows release can be built with MinGW using
-`SDL2_MINGW_ROOT=/path/to/SDL2 bash tools/build-windows-mingw.sh VERSION`.
-All release packages are ROM-free; place your legally obtained ROM beside the
-executable or AppImage after extraction.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for dependency development, validation,
-and pull-request guidance.
+On macOS, the runtime uses Metal for presentation, `GameController.framework`
+for Xbox/PlayStation/Switch-compatible controllers, and a Core Audio output
+AudioUnit for sound. SDL2 remains only for the window, event loop, and
+keyboard path. `Alt+Enter` toggles fullscreen. The emulator oracle is a
+developer-only feature and is off in this build.
 
-macOS builds use the same SDL2 + CMake path as Linux. A native macOS
-backend (Metal presentation, `GameController.framework`,
-Core Audio output) and an optional in-game display menu were contributed
-in [PR #10](../../pull/10) and are staged on per-feature branches; they
-land after the shared launcher-UI restructure settles.
+Press `F1` on macOS to open the Dear ImGui display menu. It can enable the
+optional NTSC-CRT mode, scanlines, phosphor blending, signal noise, and hue
+adjustment while the game is running. NTSC-CRT is vendored under
+`third_party/ntsc-crt/` and uses its SNES encoder/decoder path; the normal
+Metal presentation path remains unchanged when the mode is off.
 
-### True widescreen renderer (merged, currently hidden)
+macOS presentation uses integer scales (1×, 2×, 3×, ...). Resizing or
+fullscreen leaves centered black borders rather than applying a fractional
+scale. The F1 menu also exposes Save/Load buttons for the ten existing
+serialized savestate slots; the keyboard bindings remain available as
+documented below.
 
-A true-widescreen renderer (genuine additional PPU columns; authentic 7:6
-pixel aspect; camera, collision, AI, and save-state data untouched) is
-merged into this repo but is **hidden and disabled**: the margin enemy
-spawn/cull behavior is still work-in-progress (see the
-"Widescreen margin spawn/cull — WIP" ledger in [ISSUES.md](ISSUES.md)).
-There is no launcher control, config key, or default keybind for it in
-shipped builds; it will be exposed once the remaining defects are fixed.
+Linux also includes the in-game Dear ImGui menu on both SDL and OpenGL output
+backends. Press `F1` to toggle it while playing; it exposes the true-widescreen
+switch and Save/Load buttons for all ten slots. `Alt+W` toggles widescreen
+directly without opening the menu.
+
+### True widescreen renderer
+
+Set `Widescreen = 1` in `[Graphics]`, enable it from the launcher, or press
+`Alt+W` (all rebindable through `[KeyMap]`) to render genuine additional PPU
+columns. The active frame width follows the display aspect ratio, from the
+authentic 256 pixels through a safe 446-pixel maximum. This changes only host
+rendering: Mega Man X's camera, collision, AI, scrolling, and save-state data
+remain untouched. Background layers use the PPU tilemap data already prepared
+by the game. Foreground geometry in the margins is resolved from MMX's prepared
+level data and inserted into the live PPU priority buffer, so
+it uses current VRAM graphics, palettes, fades, sprite priority, and color math
+without advancing the camera or VRAM streamer. Future enemy records in the
+added right margin are decoded from the ROM into a separate host-only preview
+list and drawn in their authored resting pose. These previews allocate no
+emulated object slots and run no AI or collision; they disappear when they
+enter the original 256-pixel window, where the game's normal event spawner
+becomes authoritative. At the beginning or end of a stage, empty space beyond
+the level boundary remains empty by design.
 
 The S-DSP retains the SNES BRR predictor filters and canonical four-tap
 Gaussian interpolation. Host-rate conversion uses continuous interpolation
@@ -212,7 +211,7 @@ section.
    `recomp/bank*.cfg` and writes `src/gen/bankXX_v2.c` + `dispatch_v2.c`).
    On Windows without bash, invoke the underlying tool directly:
    ```bash
-   python snesrecomp/tools/v2_emit.py --rom mmx.sfc --cfg-dir recomp --out-dir src/gen --cfg-roots
+   python snesrecomp/tools/v2_emit.py --rom mmx.sfc --cfg-dir recomp --out-dir src/gen
    ```
 3. Rebuild as above.
 
@@ -230,8 +229,7 @@ compiler cannot prove remain on the authoritative interpreter fallback.
 | `src/gen/` | Recompiler output (gitignored; regenerated from ROM). |
 | `recomp/bank*.cfg` | Per-bank function declarations + hardware hints the framework cannot derive from the ROM alone. |
 | `recomp/funcs.h` | Auto-regenerated by `tools/regen.sh`; never hand-edit. |
-| `snesrecomp/` | Pinned submodule containing the [snesrecomp framework](https://github.com/mstan/snesrecomp). |
-| `recomp-ui/` | Pinned submodule containing the shared, console-agnostic launcher UI. |
+| `snesrecomp/` | Symlink to a sibling clone of the [snesrecomp framework](https://github.com/mstan/snesrecomp). |
 | `third_party/` | Vendored deps (gl_core, stb_image) with their own licenses. |
 | `mmx.sln` + `src/mmx.vcxproj` | Visual Studio build glue. |
 | `config.ini` | The config. Generated next to the exe on first run if missing. |

@@ -46,6 +46,11 @@ cd "$ROOT"
 
 TESTS="snesrecomp/tests/run_tests.py"
 
+if [ ! -f "snesrecomp/tools/v2_emit.py" ]; then
+  echo "regen.sh: snesrecomp is not initialized; run 'bash tools/bootstrap.sh' first." >&2
+  exit 1
+fi
+
 # Python interpreter: prefer python3 (macOS / most Linux have no bare `python`).
 PYTHON="${PYTHON:-$(command -v python3 || command -v python || true)}"
 if [ -z "$PYTHON" ]; then

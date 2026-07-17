@@ -21,6 +21,7 @@
 #   bash tools/build-linux.sh --regen         # regen src/gen first (tools/regen.sh)
 #   bash tools/build-linux.sh --run           # launch the AppImage after building
 #   bash tools/build-linux.sh --no-package    # configure + build only, skip AppImage
+#   bash tools/build-linux.sh --nopin         # allow local snesrecomp changes
 #   bash tools/build-linux.sh --out DIR       # where to drop the .AppImage
 #   bash tools/build-linux.sh --jobs N        # parallel build jobs (default: nproc)
 #
@@ -34,7 +35,7 @@ APP_NAME="MegaManX"
 CMAKE_TARGET="MegaManXSNESRecomp"
 ROM_EXTS="sfc smc"
 EXTRA_ARGS=""
-REGEN_CMD=""
+REGEN_CMD="bash tools/regen.sh usa --no-tests"
 PREBUILD_CMD=""
 POSTBUILD_CMD=""
 PROD_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=OFF )
@@ -76,12 +77,10 @@ case "$CONFIG" in prod) FLAGS=( "${PROD_CMAKE_FLAGS[@]}" );; debug) FLAGS=( "${D
 SDL2_CFG_DIR="$( { find /usr/lib /usr/lib64 /usr/local/lib -type d -path '*cmake/SDL2' 2>/dev/null || true; } | head -1 )"
 [ -n "$SDL2_CFG_DIR" ] && FLAGS+=( -DSDL2_DIR="$SDL2_CFG_DIR" )
 
-# Single cleanup hook: remove the AppDir scratch dir AND restore any .pin files
-# the --nopin bypass moved aside (so a failed build never leaves the repo dirty).
-WORK=""; PIN_BAK=""; RAN_PREBUILD=0
+# Single cleanup hook: remove the AppDir scratch dir and restore generated files.
+WORK=""; RAN_PREBUILD=0
 cleanup() {
   [ -n "$WORK" ] && rm -rf "$WORK"
-  for p in $PIN_BAK; do [ -f "$p.nopin.bak" ] && mv -f "$p.nopin.bak" "$p"; done
   # Restore the repo's gen state (re-run POSTBUILD) even if the build failed.
   [ "$RAN_PREBUILD" = "1" ] && [ -n "$POSTBUILD_CMD" ] && { echo "[postbuild] $POSTBUILD_CMD"; eval "$POSTBUILD_CMD" || true; }
   return 0   # never let the trap's last test override the script's real exit code
@@ -92,12 +91,16 @@ BUILD="$REPO/build-linux-$CONFIG"
 echo "==================== $APP_NAME ($CONFIG) ===================="
 cd "$REPO"
 
-# Pin bypass (non-destructive): the per-game CMakeLists FATAL_ERRORs when the
-# <framework>.pin SHA != framework HEAD. Release policy is to build against HEAD,
-# so hide the pin for the duration; cleanup() restores it on exit either way.
+[ -f "$REPO/snesrecomp/runner/runner.cmake" ] || {
+  echo "ERROR: snesrecomp is not initialized; run 'bash tools/bootstrap.sh' first." >&2
+  exit 1
+}
+
 if [ "$NOPIN" = "1" ]; then
-  for p in "$REPO"/*.pin; do [ -f "$p" ] || continue; mv "$p" "$p.nopin.bak"; PIN_BAK="$PIN_BAK $p"; done
-  [ -n "$PIN_BAK" ] && echo "      pin bypass: hid$PIN_BAK"
+  FLAGS+=( -DMMX_ALLOW_UNPINNED_SNESRECOMP=ON )
+  echo "      pin bypass: MMX_ALLOW_UNPINNED_SNESRECOMP=ON"
+else
+  FLAGS+=( -DMMX_ALLOW_UNPINNED_SNESRECOMP=OFF )
 fi
 
 if [ "$DO_REGEN" = "1" ] && [ -n "$REGEN_CMD" ]; then

@@ -1,7 +1,6 @@
-# Build artifacts
-build/
-build-mac/
-# macOS/Linux runtime ROM-path cache + sibling-repo symlink
+# Build artifacts (all root-level CMake build trees)
+/build*/
+# macOS/Linux runtime ROM-path cache
 rom.cfg
 *.obj
 *.pdb
@@ -79,12 +78,11 @@ packages/
 
 # Release artifacts (built locally, uploaded via gh release upload)
 MegaManXSNESRecomp-windows-*.zip
+MegaManXSNESRecomp-steamdeck-*.7z
 MegamanXRecomp-windows-*.zip
 mmx-v*.zip
 release-stage/
+release-macos*/
 *.fig
 # per-variant generated C (copyrighted, regenerated at build time)
 variants/*/gen/
-build-jp/
-build-jp-dbg/
-build-release-jp/
