@@ -30,6 +30,7 @@
 #include "common_rtl.h"
 #include "cpu_trace.h"
 #include "variables.h"
+#include "widescreen.h"
 
 /* Yield primitives bridge from recompiled task bodies to the host
  * fiber-based scheduler in mmx_rtl.c. mmx_host_yield switches to the
@@ -57,6 +58,78 @@ static int mmx_hle_diag_enabled(void) {
     s_init = 1;
   }
   return s_enabled;
+}
+
+/* $00:D780: build one metasprite tile's screen coordinates, then reject it
+ * when it cannot touch the PPU viewport. The rest of the shared object
+ * renderer ($00:D6BD) has already converted world position to screen space
+ * in direct-page $00/$02 and finishes the tile/OAM-high-table writes after
+ * this helper returns.
+ *
+ * The SNES program's original horizontal test is equivalent to
+ * -16 <= x < 255. Preserve that interval exactly when the host PPU is 256
+ * columns wide. When true widescreen is active, extend the OAM emission
+ * range symmetrically by g_ws_extra. This is presentation-only: object
+ * update, collision, activation, spawn, camera, and the emulated scroll
+ * registers all retain their original values.
+ */
+static uint8_t MmxDpRead8(CpuState *cpu, uint16_t off) {
+  return cpu_read8(cpu, 0x00, (uint16_t)(cpu->D + off));
+}
+
+static uint16_t MmxDpRead16(CpuState *cpu, uint16_t off) {
+  return cpu_read16(cpu, 0x00, (uint16_t)(cpu->D + off));
+}
+
+static void MmxDpWrite8(CpuState *cpu, uint16_t off, uint8_t value) {
+  cpu_write8(cpu, 0x00, (uint16_t)(cpu->D + off), value);
+}
+
+static void MmxDpWrite16(CpuState *cpu, uint16_t off, uint16_t value) {
+  cpu_write16(cpu, 0x00, (uint16_t)(cpu->D + off), value);
+}
+
+static void MmxSetCompareFlags(CpuState *cpu, uint16_t left, uint16_t right) {
+  uint16_t result = (uint16_t)(left - right);
+  cpu->_flag_C = left >= right;
+  cpu->_flag_Z = result == 0;
+  cpu->_flag_N = (result & 0x8000) != 0;
+  cpu->P = (uint8_t)((cpu->P & ~(CPU_P_C | CPU_P_Z | CPU_P_N | CPU_P_M)) |
+                     (cpu->_flag_C ? CPU_P_C : 0) |
+                     (cpu->_flag_Z ? CPU_P_Z : 0) |
+                     (cpu->_flag_N ? CPU_P_N : 0));
+  cpu->m_flag = 0;  /* mirrors the primitive's REP #$20 */
+}
+
+RecompReturn HleMmxSpriteClip(CpuState *cpu) {
+  uint16_t ptr = MmxDpRead16(cpu, 0x18);
+  uint8_t bank = MmxDpRead8(cpu, 0x1A);
+  uint8_t attr = cpu_read8(cpu, bank, (uint16_t)(ptr + 4));
+  MmxDpWrite8(cpu, 0x0D, (uint8_t)((attr & 0x20) << 2));
+
+  int16_t tile_x = (int8_t)cpu_read8(cpu, bank, (uint16_t)(ptr + 1));
+  if (MmxDpRead8(cpu, 0x0A) & 0x40)
+    tile_x = (int16_t)(-tile_x + ((attr & 0x20) ? -16 : -8));
+  tile_x = (int16_t)(tile_x + (int16_t)MmxDpRead16(cpu, 0x00));
+
+  cpu_write16(cpu, cpu->DB, (uint16_t)(0x0700 + cpu->X), (uint16_t)tile_x);
+  MmxDpWrite16(cpu, 0x04, (uint16_t)tile_x);
+
+  int margin = g_ws_active ? g_ws_extra : 0;
+  if (tile_x < -16 - margin || tile_x >= 255 + margin) {
+    /* The caller branches on carry to skip this tile. Match the real CMP's
+     * flag contract, including its 16-bit accumulator mode. */
+    MmxSetCompareFlags(cpu, 0x010F, 0x010F);
+    return RECOMP_RETURN_NORMAL;
+  }
+
+  int16_t tile_y = (int16_t)((int8_t)cpu_read8(cpu, bank, (uint16_t)(ptr + 2)) +
+                             (int16_t)MmxDpRead16(cpu, 0x02));
+  cpu_write16(cpu, cpu->DB, (uint16_t)(0x0701 + cpu->X), (uint16_t)tile_y);
+
+  /* Original tail: CLC; ADC #$000F; CMP #$00EF; RTS. */
+  MmxSetCompareFlags(cpu, (uint16_t)(tile_y + 15), 0x00EF);
+  return RECOMP_RETURN_NORMAL;
 }
 
 RecompReturn HleMmxYieldOneFrame(CpuState *cpu) {

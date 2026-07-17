@@ -86,8 +86,13 @@ regen_variant() {
   step "Regenerating $name banks"
   # The LLE-first emitter publishes a complete staging directory atomically.
   # Missing AOT coverage remains authoritative ROM execution through LLE.
+  # --cfg-roots is the static-coverage policy (2026-07-16): every declared
+  # `func` seeds the analysis closure so the proven surface is materialized
+  # as AOT; the interpreter is a failsafe for the unprovable remainder,
+  # never the plan of record for known code.
   "$PYTHON" snesrecomp/tools/v2_emit.py --rom "$rom" \
-      --cfg-dir "$cfg_dir" --out-dir "$out_dir" "${emit_extra[@]}"
+      --cfg-dir "$cfg_dir" --out-dir "$out_dir" --cfg-roots \
+      "${emit_extra[@]}"
 
   step "Syncing $name funcs.h"
   "$PYTHON" snesrecomp/tools/v2_sync_funcs_h.py --cfg-dir "$cfg_dir" \
@@ -97,7 +102,8 @@ regen_variant() {
     step "Checking $name idempotency"
     tmp_gen="$(mktemp -d)"
     "$PYTHON" snesrecomp/tools/v2_emit.py --rom "$rom" \
-        --cfg-dir "$cfg_dir" --out-dir "$tmp_gen" "${emit_extra[@]}"
+        --cfg-dir "$cfg_dir" --out-dir "$tmp_gen" --cfg-roots \
+        "${emit_extra[@]}"
     "$PYTHON" snesrecomp/tools/v2_compare_output.py \
         --expected "$out_dir" --actual "$tmp_gen"
     rm -rf "$tmp_gen"

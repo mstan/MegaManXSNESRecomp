@@ -232,6 +232,7 @@
     <ClCompile Include="..\third_party\gl_core\gl_core_3_1.c" />
     <ClCompile Include="..\snesrecomp\runner\src\common_cpu_infra.c" />
     <ClCompile Include="..\snesrecomp\runner\src\common_rtl.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\widescreen.c" />
     <ClCompile Include="..\snesrecomp\runner\src\recomp_hw.c" />
     <ClCompile Include="..\snesrecomp\runner\src\framedump.c" />
     <ClCompile Include="..\snesrecomp\runner\src\launcher.c" />
@@ -310,6 +311,8 @@
     <ClCompile Include="config.c" />
     <ClCompile Include="glsl_shader.c" />
     <ClCompile Include="main.c" />
+    <ClCompile Include="mmx_wide_preview.c" />
+    <ClCompile Include="mmx_display.c" />
     <ClCompile Include="post_mortem.c" />
 
     <ClCompile Include="opengl.c" />
@@ -372,6 +375,8 @@
     <ClInclude Include="..\recomp\funcs.h" />
     <ClInclude Include="glsl_shader.h" />
     <ClInclude Include="mmx_rtl.h" />
+    <ClInclude Include="mmx_display.h" />
+    <ClInclude Include="mmx_wide_preview.h" />
     <ClInclude Include="..\snesrecomp\runner\src\snes\apu.h" />
     <ClInclude Include="..\snesrecomp\runner\src\snes\cart.h" />
     <ClInclude Include="..\snesrecomp\runner\src\snes\cpu.h" />

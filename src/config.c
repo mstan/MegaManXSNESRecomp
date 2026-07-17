@@ -30,8 +30,8 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   _(SDLK_F1), _(SDLK_F2), _(SDLK_F3), _(SDLK_F4), _(SDLK_F5), _(SDLK_F6), _(SDLK_F7), _(SDLK_F8), _(SDLK_F9), _(SDLK_F10), N, N, N, N, N, N, N, N, N, N,
   // SaveState
   S(SDLK_F1), S(SDLK_F2), S(SDLK_F3), S(SDLK_F4), S(SDLK_F5), S(SDLK_F6), S(SDLK_F7), S(SDLK_F8), S(SDLK_F9), S(SDLK_F10), N, N, N, N, N, N, N, N, N, N,
-  // Fullscreen, Reset, Pause, PauseDimmed, Turbo, WindowBigger, WindowSmaller, DisplayPerf, ToggleRenderer
-  A(SDLK_RETURN), C(SDLK_r), S(SDLK_p), _(SDLK_p), _(SDLK_TAB), N, N, _(SDLK_f), _(SDLK_r),
+  // Fullscreen, Reset, Pause, PauseDimmed, Turbo, WindowBigger, WindowSmaller, DisplayPerf, ToggleRenderer, ToggleWidescreen
+  A(SDLK_RETURN), C(SDLK_r), S(SDLK_p), _(SDLK_p), _(SDLK_TAB), N, N, _(SDLK_f), _(SDLK_r), A(SDLK_w),
   // VolumeUp VolumeDown
   0, 0,
 };
@@ -53,7 +53,7 @@ static const KeyNameId kKeyNameId[] = {
   M(Controls), M(ControlsP2),
   M(Load), M(Save),
   S(Fullscreen), S(Reset),
-  S(Pause), S(PauseDimmed), S(Turbo), S(WindowBigger), S(WindowSmaller), S(VolumeUp), S(VolumeDown), S(DisplayPerf), S(ToggleRenderer),
+  S(Pause), S(PauseDimmed), S(Turbo), S(WindowBigger), S(WindowSmaller), S(VolumeUp), S(VolumeDown), S(DisplayPerf), S(ToggleRenderer), S(ToggleWidescreen),
 };
 #undef S
 #undef M
@@ -349,6 +349,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_config.linear_filtering);
     } else if (StringEqualsNoCase(key, "NoSpriteLimits")) {
       return ParseBool(value, &g_config.no_sprite_limits);
+    } else if (StringEqualsNoCase(key, "Widescreen")) {
+      return ParseBool(value, &g_config.widescreen);
     } else if (StringEqualsNoCase(key, "Shader")) {
       g_config.shader = *value ? value : NULL;
       return true;
@@ -509,8 +511,7 @@ void ConfigReloadKeyMap(const char *filename) {
 
 /* ---------------------------------------------------------------------------
  * WriteConfigFile — persist the launcher-editable settings (surgical in-place
- * update preserving comments + [KeyMap]/[GamepadMap]). MMX has no widescreen
- * and no MSU-1, so neither key is written.
+ * update preserving comments + [KeyMap]/[GamepadMap]).
  * ------------------------------------------------------------------------- */
 
 typedef struct CfgKV {
@@ -568,6 +569,7 @@ void WriteConfigFile(const char *filename) {
   CfgKV kvs[] = {
     { "Graphics", "WindowScale" },
     { "Graphics", "LinearFiltering" },
+    { "Graphics", "Widescreen" },
     { "Sound",    "EnableAudio" },
     { "Sound",    "AudioFreq" },
     { "GamepadMap", "EnableGamepad1" },
@@ -578,12 +580,13 @@ void WriteConfigFile(const char *filename) {
   const int N = (int)countof(kvs);
   snprintf(kvs[0].val, sizeof(kvs[0].val), "%d", g_config.window_scale ? g_config.window_scale : 3);
   snprintf(kvs[1].val, sizeof(kvs[1].val), "%d", g_config.linear_filtering ? 1 : 0);
-  snprintf(kvs[2].val, sizeof(kvs[2].val), "%d", g_config.enable_audio ? 1 : 0);
-  snprintf(kvs[3].val, sizeof(kvs[3].val), "%d", g_config.audio_freq);
-  snprintf(kvs[4].val, sizeof(kvs[4].val), "%s", g_config.enable_gamepad[0] ? "true" : "false");
-  snprintf(kvs[5].val, sizeof(kvs[5].val), "%s", g_config.enable_gamepad[1] ? "true" : "false");
-  snprintf(kvs[6].val, sizeof(kvs[6].val), "%d", g_config.skip_launcher ? 1 : 0);
-  snprintf(kvs[7].val, sizeof(kvs[7].val), "%d", g_config.gamepad_deadzone);
+  snprintf(kvs[2].val, sizeof(kvs[2].val), "%d", g_config.widescreen ? 1 : 0);
+  snprintf(kvs[3].val, sizeof(kvs[3].val), "%d", g_config.enable_audio ? 1 : 0);
+  snprintf(kvs[4].val, sizeof(kvs[4].val), "%d", g_config.audio_freq);
+  snprintf(kvs[5].val, sizeof(kvs[5].val), "%s", g_config.enable_gamepad[0] ? "true" : "false");
+  snprintf(kvs[6].val, sizeof(kvs[6].val), "%s", g_config.enable_gamepad[1] ? "true" : "false");
+  snprintf(kvs[7].val, sizeof(kvs[7].val), "%d", g_config.skip_launcher ? 1 : 0);
+  snprintf(kvs[8].val, sizeof(kvs[8].val), "%d", g_config.gamepad_deadzone);
 
   char *data = NULL;
   long sz = 0;
