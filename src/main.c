@@ -957,7 +957,13 @@ int main(int argc, char** argv) {
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */
         gi.num_known_sha256 = 1;
-        gi.widescreen_supported = 1;   /* expose the runtime widescreen control */
+        /* Widescreen is merged but HIDDEN (owner decision 2026-07-16): the
+         * margin spawn/cull work is WIP (see ISSUES.md ledger — 4:3-edge
+         * spawning, vertical-motion margin misalignment). No launcher row,
+         * no config-template key, no toggle keybind; the code path stays
+         * reachable for development by hand-adding `Widescreen = 1` under
+         * [Graphics] and a `ToggleWidescreen` binding under [KeyMap]. */
+        gi.widescreen_supported = 0;
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */

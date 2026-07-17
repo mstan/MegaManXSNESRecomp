@@ -566,10 +566,13 @@ void WriteConfigFile(const char *filename) {
   if (filename == NULL)
     filename = "config.ini";
 
+  /* NOTE: Widescreen is deliberately NOT in this writeback set while the
+   * feature is hidden (WIP — see ISSUES.md): the launcher must not
+   * resurrect the key in user configs. A hand-added `Widescreen = 1` in
+   * config.ini is still read (dev path) and left untouched here. */
   CfgKV kvs[] = {
     { "Graphics", "WindowScale" },
     { "Graphics", "LinearFiltering" },
-    { "Graphics", "Widescreen" },
     { "Sound",    "EnableAudio" },
     { "Sound",    "AudioFreq" },
     { "GamepadMap", "EnableGamepad1" },
@@ -580,13 +583,12 @@ void WriteConfigFile(const char *filename) {
   const int N = (int)countof(kvs);
   snprintf(kvs[0].val, sizeof(kvs[0].val), "%d", g_config.window_scale ? g_config.window_scale : 3);
   snprintf(kvs[1].val, sizeof(kvs[1].val), "%d", g_config.linear_filtering ? 1 : 0);
-  snprintf(kvs[2].val, sizeof(kvs[2].val), "%d", g_config.widescreen ? 1 : 0);
-  snprintf(kvs[3].val, sizeof(kvs[3].val), "%d", g_config.enable_audio ? 1 : 0);
-  snprintf(kvs[4].val, sizeof(kvs[4].val), "%d", g_config.audio_freq);
-  snprintf(kvs[5].val, sizeof(kvs[5].val), "%s", g_config.enable_gamepad[0] ? "true" : "false");
-  snprintf(kvs[6].val, sizeof(kvs[6].val), "%s", g_config.enable_gamepad[1] ? "true" : "false");
-  snprintf(kvs[7].val, sizeof(kvs[7].val), "%d", g_config.skip_launcher ? 1 : 0);
-  snprintf(kvs[8].val, sizeof(kvs[8].val), "%d", g_config.gamepad_deadzone);
+  snprintf(kvs[2].val, sizeof(kvs[2].val), "%d", g_config.enable_audio ? 1 : 0);
+  snprintf(kvs[3].val, sizeof(kvs[3].val), "%d", g_config.audio_freq);
+  snprintf(kvs[4].val, sizeof(kvs[4].val), "%s", g_config.enable_gamepad[0] ? "true" : "false");
+  snprintf(kvs[5].val, sizeof(kvs[5].val), "%s", g_config.enable_gamepad[1] ? "true" : "false");
+  snprintf(kvs[6].val, sizeof(kvs[6].val), "%d", g_config.skip_launcher ? 1 : 0);
+  snprintf(kvs[7].val, sizeof(kvs[7].val), "%d", g_config.gamepad_deadzone);
 
   char *data = NULL;
   long sz = 0;
