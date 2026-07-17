@@ -148,9 +148,9 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)snesrecomp\runner\src\launcher_ng;$(SolutionDir)snesrecomp\runner\src\launcher_ng\third_party\imgui;$(SolutionDir)snesrecomp\runner\src\launcher_ng\third_party\imgui\backends</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)recomp-ui\src;$(SolutionDir)recomp-ui\src\common;$(SolutionDir)recomp-ui\src\third_party\imgui;$(SolutionDir)recomp-ui\src\third_party\imgui\backends</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;RECOMP_LAUNCHER=1;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <!-- 4005: HIBYTE macro collision (types.h vs windows.h). banks.h is
            force-included before any file's own <windows.h>, so types.h's
@@ -174,9 +174,9 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)snesrecomp\runner\src\launcher_ng;$(SolutionDir)snesrecomp\runner\src\launcher_ng\third_party\imgui;$(SolutionDir)snesrecomp\runner\src\launcher_ng\third_party\imgui\backends</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)recomp-ui\src;$(SolutionDir)recomp-ui\src\common;$(SolutionDir)recomp-ui\src\third_party\imgui;$(SolutionDir)recomp-ui\src\third_party\imgui\backends</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;RECOMP_LAUNCHER=1;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -189,13 +189,13 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Production|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)snesrecomp\runner\src\launcher_ng;$(SolutionDir)snesrecomp\runner\src\launcher_ng\third_party\imgui;$(SolutionDir)snesrecomp\runner\src\launcher_ng\third_party\imgui\backends</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)recomp-ui\src;$(SolutionDir)recomp-ui\src\common;$(SolutionDir)recomp-ui\src\third_party\imgui;$(SolutionDir)recomp-ui\src\third_party\imgui\backends</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <!-- Production: SNESRECOMP_TRACE is NOT defined (default 0). The
            cpu_trace.h / debug_server.h #else blocks compile every call
            into a no-op static inline; debug_server.c and cpu_trace.c
            are ExcludedFromBuild below. -->
-      <PreprocessorDefinitions>$(SnesRecompVersionDefine)NDEBUG;SMW_DISABLE_LM=1;SNES_LAUNCHER=1;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(SnesRecompVersionDefine)NDEBUG;SMW_DISABLE_LM=1;RECOMP_LAUNCHER=1;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -236,61 +236,113 @@
     <ClCompile Include="..\snesrecomp\runner\src\recomp_hw.c" />
     <ClCompile Include="..\snesrecomp\runner\src\framedump.c" />
     <ClCompile Include="..\snesrecomp\runner\src\launcher.c" />
-    <!-- launcher_ng: SDL2 + Dear ImGui launcher (replaces the RmlUi launcher).
-         x64 only, gated behind SNES_LAUNCHER like the old one. -->
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_ng_capi.c">
+    <!-- Shared recomp-ui launcher (SDL2 + Dear ImGui), consumed as the
+         ./recomp-ui submodule. Source set mirrors recomp-ui/recomp_ui.cmake;
+         keep in sync when that file changes. x64 only, gated behind
+         RECOMP_LAUNCHER (defined above). recomp-ui namespaces its public
+         helpers (recompui_crc32_*, recompui_sha256_*, recompui_keybinds_*)
+         so its bundled crc32/sha256/keybinds coexist with the engine's own.
+
+         Every recomp-ui obj is written as rui_<name>.obj: MSBuild flattens
+         all objs into one $(IntDir) keyed by basename, so recomp-ui's
+         crc32.c/sha256.c/keybinds.c would otherwise overwrite the engine's
+         identically-named objs (last-compiled wins), dropping one symbol set
+         and breaking the link. The rui_ prefix keeps both sets and blocks the
+         whole basename-collision class if recomp-ui adds more files. (CMake
+         avoids this by mirroring the source tree into obj paths.) -->
+    <ClCompile Include="..\recomp-ui\src\common\launcher_ng_capi.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_model.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_model.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_platform_sdl2.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_platform_sdl2.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_gl.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_gl.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_input.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_input.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_files.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_files.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_debug.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_debug.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\launcher_binds.c">
+    <ClCompile Include="..\recomp-ui\src\common\launcher_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\tinyfiledialogs.c">
+    <ClCompile Include="..\recomp-ui\src\common\crc32.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\recomp-ui\src\common\sha256.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\recomp-ui\src\common\keybinds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\recomp-ui\src\common\ips_patch.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\recomp-ui\src\consoles\psx\memcard_format.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\recomp-ui\src\consoles\psx\psx_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\recomp-ui\src\third_party\tinyfiledialogs.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\backends\imgui\launcher_imgui.cpp">
+    <ClCompile Include="..\recomp-ui\src\common\backends\imgui\launcher_imgui.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\imgui\imgui.cpp">
+    <ClCompile Include="..\recomp-ui\src\third_party\imgui\imgui.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\imgui\imgui_draw.cpp">
+    <ClCompile Include="..\recomp-ui\src\third_party\imgui\imgui_draw.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\imgui\imgui_tables.cpp">
+    <ClCompile Include="..\recomp-ui\src\third_party\imgui\imgui_tables.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\imgui\imgui_widgets.cpp">
+    <ClCompile Include="..\recomp-ui\src\third_party\imgui\imgui_widgets.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\imgui\backends\imgui_impl_sdl2.cpp">
+    <ClCompile Include="..\recomp-ui\src\third_party\imgui\backends\imgui_impl_sdl2.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\launcher_ng\third_party\imgui\backends\imgui_impl_opengl3.cpp">
+    <ClCompile Include="..\recomp-ui\src\third_party\imgui\backends\imgui_impl_opengl3.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>
@@ -409,12 +461,13 @@
     <Error Condition="!Exists('..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.2.26.3\build\native\sdl2.nuget.targets'))" />
   </Target>
 
-  <!-- Stage launcher_ng assets next to the exe (loaded via SDL_GetBasePath):
-       fonts + shared images -> $(OutDir)assets\. x64 only. -->
+  <!-- Stage the shared recomp-ui launcher assets next to the exe (loaded via
+       SDL_GetBasePath): fonts + shared images -> $(OutDir)assets\. x64 only.
+       Mirrors the POST_BUILD copy in recomp-ui/recomp_ui.cmake. -->
   <Target Name="CopyLauncherAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
     <ItemGroup>
-      <LauncherFonts Include="$(SolutionDir)snesrecomp\runner\src\launcher\assets\fonts\*" />
-      <LauncherImgs  Include="$(SolutionDir)snesrecomp\runner\src\launcher\assets\img\*" />
+      <LauncherFonts Include="$(SolutionDir)recomp-ui\assets\fonts\*" />
+      <LauncherImgs  Include="$(SolutionDir)recomp-ui\assets\img\*" />
     </ItemGroup>
     <Copy SourceFiles="@(LauncherFonts)"
           DestinationFolder="$(OutDir)assets\fonts" SkipUnchangedFiles="true" />

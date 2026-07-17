@@ -147,9 +147,13 @@ cmake --build build-recompui
 
 Windows releases are built and packaged this way (CMake/mingw with the
 recomp-ui launcher; see `tools/make_release.ps1`). The Visual Studio
-solution (`mmx.sln`) is a developer/debugging harness and currently
-references the retired in-engine launcher — it needs a pass before it
-builds again; use the CMake path.
+solution (`mmx.sln`) is also maintained as a developer/debugging harness
+(MSVC, with a `Production` config) and builds the same recomp-ui
+launcher:
+
+```powershell
+msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
+```
 
 ### macOS / Linux (CMake)
 
