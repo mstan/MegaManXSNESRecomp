@@ -26,16 +26,11 @@ set(CMAKE_C_STANDARD 11)
 set(SNESRECOMP_ROOT ${CMAKE_SOURCE_DIR}/snesrecomp)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
 
-# Launcher UI backend. Default = the in-tree launcher_ng. -DMMX_RECOMP_UI=ON
-# swaps in the SHARED recomp-ui launcher (F:\Projects\recomp-ui, vendored via
-# the ./recomp-ui junction) so MMX and Ape Escape drive ONE launcher repo.
-# Mutually exclusive: both bundle Dear ImGui, so exactly one is compiled in.
-option(MMX_RECOMP_UI "Consume the shared recomp-ui launcher instead of in-tree launcher_ng" OFF)
-if(MMX_RECOMP_UI)
-    include(${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake)
-else()
-    include(${SNESRECOMP_ROOT}/runner/src/launcher_ng/launcher_ng.cmake)
-endif()
+# Launcher UI backend: the SHARED recomp-ui launcher (F:\Projects\recomp-ui,
+# consumed as the ./recomp-ui submodule/junction) so every recomp game drives
+# ONE launcher repo. The former in-tree launcher_ng has been retired from the
+# engine in favour of this shared, console-agnostic launcher.
+include(${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake)
 
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -126,17 +121,11 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         target_link_libraries(${TARGET} PRIVATE ${SDL2_LIBRARIES})
     endif()
 
-    # Dear ImGui pre-boot launcher (GUI). One call wires sources/includes/
-    # launcher define/CXX/asset-staging. MMX_RECOMP_UI swaps the in-tree
-    # launcher_ng for the shared recomp-ui launcher (same MMX boxart; recomp-ui's
-    # default pad.tga is already the SNES pad).
-    if(MMX_RECOMP_UI)
-        recomp_target_launcher_ui(${TARGET}
-            BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
-    else()
-        snesrecomp_target_launcher_ng(${TARGET}
-            BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
-    endif()
+    # Dear ImGui pre-boot launcher (GUI) from the shared recomp-ui repo. One call
+    # wires sources/includes/RECOMP_LAUNCHER define/CXX/asset-staging (same MMX
+    # boxart; recomp-ui's default pad.tga is already the SNES pad).
+    recomp_target_launcher_ui(${TARGET}
+        BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
 endfunction()
 
 # ── USA: Mega Man X (v1.1) — faithful LLE scheduler by default ──
