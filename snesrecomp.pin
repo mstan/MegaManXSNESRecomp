@@ -3,7 +3,7 @@
 # repo evolving on its own cadence). Update via:
 #   git -C ../snesrecomp rev-parse main > /tmp/sha && \
 #     sed -i "s|^sha = .*|sha = $(cat /tmp/sha)|" snesrecomp.pin
-sha = 2b9ec8b12e946fb86628662dc89ee13f42533701
+sha = 0fb1989be33a057343d1c2c9a99485736d7bda56
 # 2026-07-16 bump for MMX true widescreen (PR #10 split, engine branch
 # pr10/ws-margin-enhancer, recreated after engine repo re-clone): adds the host-only PPU widescreen line-enhancer
 # API (PpuSetWidescreenLineEnhancer), RendererFuncs.GetOutputSize, and the
