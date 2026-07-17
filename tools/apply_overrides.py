@@ -100,18 +100,12 @@ def apply_bank00(lines, verbose):
     out = []
     cur_block = None
     n = 0
+    # NOTE: the WS-SHADOW pass (B23C staging note -> MmxWsShadowStageNote)
+    # belongs to the tier-2 stage-prefill subsystem, which has NOT been
+    # ported to this branch (no host-side consumer exists). It must come
+    # back together with that port; injecting it alone is a link error.
     for line in lines:
         out.append(line)
-        m = RE_B23C_ENTRY.match(line)
-        if m:
-            out.append(f"{m.group(1)}/*WS-SHADOW*/ {{ extern void "
-                       f"MmxWsShadowStageNote(uint8); "
-                       f"MmxWsShadowStageNote(cpu->DB); }}\n")
-            n += 1
-            if verbose:
-                print(f"  WS-SHADOW note after line {len(out) - 1} "
-                      f"(B23C entry)")
-            continue
         m = RE_TRACE.search(line)
         if m:
             cur_block = canon_pc24(int(m.group(1), 16))
