@@ -135,13 +135,21 @@ cp "/path/to/Mega Man X (USA Rev 1).sfc" mmx.sfc
 bash tools/regen.sh usa --no-tests
 ```
 
-On Windows 10 or newer, install Visual Studio 2022 with the C++ desktop
-workload, Git, and Python 3.9 or newer. Run the bootstrap and regeneration steps
-from Git Bash, then build from a Developer Command Prompt:
+On Windows 10 or newer, install [MSYS2](https://www.msys2.org/) with the
+mingw64 toolchain (`cmake`, `ninja`, `SDL2`), Git, and Python 3.9 or
+newer. Run the bootstrap and regeneration steps from Git Bash, then:
 
-```powershell
-msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
+```bash
+cmake -S . -B build-recompui -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-recompui
+# or, packaged: SDL2_MINGW_ROOT=/path/to/SDL2 bash tools/build-windows-mingw.sh VERSION
 ```
+
+Windows releases are built and packaged this way (CMake/mingw with the
+recomp-ui launcher; see `tools/make_release.ps1`). The Visual Studio
+solution (`mmx.sln`) is a developer/debugging harness and currently
+references the retired in-engine launcher — it needs a pass before it
+builds again; use the CMake path.
 
 ### macOS / Linux (CMake)
 
