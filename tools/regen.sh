@@ -60,6 +60,17 @@ fi
 
 step() { echo; echo "=== $* ==="; }
 
+ANALYSIS_BACKEND="${SNESRECOMP_ANALYSIS_BACKEND:-native}"
+case "$ANALYSIS_BACKEND" in
+  native|python|auto) ;;
+  *) echo "regen.sh: invalid SNESRECOMP_ANALYSIS_BACKEND: $ANALYSIS_BACKEND" >&2; exit 2 ;;
+esac
+
+if [ "$ANALYSIS_BACKEND" = native ]; then
+  step "Building native analyzer"
+  "$PYTHON" snesrecomp/tools/build_native_analyzer.py
+fi
+
 regen_variant() {
   local name="$1" rom cfg_dir out_dir funcs_h tmp_gen
   local -a emit_extra=()
@@ -97,6 +108,7 @@ regen_variant() {
   # never the plan of record for known code.
   "$PYTHON" snesrecomp/tools/v2_emit.py --rom "$rom" \
       --cfg-dir "$cfg_dir" --out-dir "$out_dir" --cfg-roots \
+      --analysis-backend "$ANALYSIS_BACKEND" \
       "${emit_extra[@]}"
 
   step "Syncing $name funcs.h"
@@ -108,6 +120,7 @@ regen_variant() {
     tmp_gen="$(mktemp -d)"
     "$PYTHON" snesrecomp/tools/v2_emit.py --rom "$rom" \
         --cfg-dir "$cfg_dir" --out-dir "$tmp_gen" --cfg-roots \
+        --analysis-backend "$ANALYSIS_BACKEND" \
         "${emit_extra[@]}"
     "$PYTHON" snesrecomp/tools/v2_compare_output.py \
         --expected "$out_dir" --actual "$tmp_gen"

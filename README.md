@@ -136,8 +136,8 @@ bash tools/regen.sh usa --no-tests
 ```
 
 On Windows 10 or newer, install [MSYS2](https://www.msys2.org/) with the
-mingw64 toolchain (`cmake`, `ninja`, `SDL2`), Git, and Python 3.9 or
-newer. Run the bootstrap and regeneration steps from Git Bash, then:
+mingw64 toolchain (`cmake`, `ninja`, `SDL2`), Git, Python 3.9 or newer, and
+`rustup`. Run the bootstrap and regeneration steps from Git Bash, then:
 
 ```bash
 cmake -S . -B build-recompui -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -222,9 +222,12 @@ section.
    (`.gitignore` excludes it), or pass it to `tools/build-macos.sh --rom`.
 2. Run `bash tools/regen.sh usa --no-tests` (drives the recompiler over every
    `recomp/bank*.cfg` and writes `src/gen/bankXX_v2.c` + `dispatch_v2.c`).
+   The script builds and requires the fast native analyzer by default; set
+   `SNESRECOMP_ANALYSIS_BACKEND=python` only to use the slower reference path.
    On Windows without bash, invoke the underlying tool directly:
    ```bash
-   python snesrecomp/tools/v2_emit.py --rom mmx.sfc --cfg-dir recomp --out-dir src/gen --cfg-roots
+   python snesrecomp/tools/build_native_analyzer.py
+   python snesrecomp/tools/v2_emit.py --rom mmx.sfc --cfg-dir recomp --out-dir src/gen --cfg-roots --analysis-backend native
    ```
 3. Rebuild as above.
 
