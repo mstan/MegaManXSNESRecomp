@@ -1131,8 +1131,8 @@ int main(int argc, char** argv) {
   }
   host_report_breadcrumb("rom loaded: %u bytes", kRom_SIZE);
 
-  extern const RtlGameInfo kSmwGameInfo;
-  RtlRegisterGame(&kSmwGameInfo);
+  extern const RtlGameInfo kMmxGameInfo;
+  RtlRegisterGame(&kMmxGameInfo);
   Snes *snes = SnesInit(kRom, kRom_SIZE);
   host_report_breadcrumb("SnesInit: %s", snes ? "ok" : "FAILED");
   if (snes == NULL) {
