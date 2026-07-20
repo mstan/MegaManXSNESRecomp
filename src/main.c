@@ -1635,6 +1635,29 @@ error_reading:;
       if (s_ft < 0) { const char *e = getenv("SNESRECOMP_FORCE_TURBO");
                       s_ft = (e && e[0] && e[0] != '0') ? 1 : 0; }
       if (s_ft) g_turbo = 1; }
+    /* Process-local finite turbo stress. Unlike synthetic keyboard input this
+     * cannot leak into another running recomp. Format is start_frame,count;
+     * it is dev-only and inert unless explicitly configured. */
+    { static int s_start = -2, s_end = -2;
+      if (s_start == -2) {
+        const char *e = getenv("SNESRECOMP_TURBO_BURST");
+        int start = -1, count = 0;
+        if (e && sscanf(e, "%d,%d", &start, &count) == 2 &&
+            start >= 0 && count > 0) {
+          s_start = start;
+          s_end = start + count;
+        } else {
+          s_start = s_end = -1;
+        }
+      }
+      if (s_start >= 0) {
+        if (frameCtr >= (uint32)s_start && frameCtr < (uint32)s_end)
+          g_turbo = 1;
+        else if (frameCtr == (uint32)s_end)
+          g_turbo = 0;
+      }
+    }
+    RtlAudioSetFastForward(g_turbo != 0);
     g_snes->disableRender = g_turbo && (frameCtr & 0xf) != 0;
 
     if (!g_snes->disableRender) {
