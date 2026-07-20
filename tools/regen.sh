@@ -126,6 +126,9 @@ regen_variant() {
         --expected "$out_dir" --actual "$tmp_gen"
     rm -rf "$tmp_gen"
   fi
+
+  step "Applying $name widescreen overrides"
+  "$PYTHON" tools/apply_overrides.py --gen-dir "$out_dir"
 }
 
 if [ "$VARIANT" = "all" ]; then

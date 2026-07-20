@@ -850,6 +850,15 @@ uint16 MmxWsCullVerdictX(uint16 v) {
   return ((uint16)(v + m) >= (uint16)(0x180 + 2 * m)) ? 1 : 0;
 }
 
+/* bank_82_80B4 X-axis projectile lifetime test: vanilla verdict is
+ * carry = (shotX - camX + 0x20) >= 0x140 (keep window cam-32..+287).
+ * Use the same symmetric live-margin expansion as the enemy cull while
+ * retaining the projectile routine's tighter 0x20/0x140 base window. */
+uint16 MmxWsShotCullVerdictX(uint16 v) {
+  int m = MmxWsMargin();
+  return ((uint16)(v + m) >= (uint16)(0x140 + 2 * m)) ? 1 : 0;
+}
+
 /* bank_00_DC36 spawn-scan anchors (one 32px column scanned per camera
  * column crossing; bank_00_DCDB walks the column's spawn records).
  * Right anchor: vanilla $1E4D + 0x100 -> +margin so enemies enter the
@@ -865,6 +874,16 @@ static int MmxWsSpawnWide(void) {
     s_on = (e && e[0]) ? ((e[0] != '0') ? 1 : 0) : 1;
   }
   return s_on;
+}
+
+/* bank_00_D76A rejects a metasprite tile when (screenX + 16) reaches
+ * vanilla_limit ($010F), which suppresses all ordinary enemy OAM at the
+ * native right edge.  Extending the limit exposes the live right margin;
+ * D6A7 already packs bit 8 of D76A's 16-bit screen X into the SNES OAM high
+ * table, and the widened PPU preserves those positive 256+ coordinates. */
+uint16 MmxWsOamRightLimit(uint16 vanilla_limit) {
+  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  return (uint16)(vanilla_limit + m);
 }
 
 /* True when the margins are populated by REAL spawned objects (widened
@@ -891,6 +910,18 @@ uint16 MmxWsSpawnAnchorLeft(uint16 v) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
   return (v >= (uint16)m) ? (uint16)(v - m) : 0;
+}
+
+/* bank_82_B964 controls the intro-stage helicopter's entrance. Vanilla
+ * starts its descent when (objX - 0x80) < X's world X, which places its
+ * center at the native right edge. Add the visible widescreen margin plus
+ * 32px of sprite-footprint lead so the large helicopter's outer tiles enter
+ * naturally instead of its controller waking only when the center reaches
+ * the widened edge. */
+uint16 MmxWsEnemyActivationDistance(uint16 v) {
+  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  if (m) m += 32;
+  return (uint16)(v + m);
 }
 
 /* bank_03_FDD3 camera-line trigger compare. Tilemap screen staging
@@ -975,4 +1006,3 @@ uint16 MmxWsStageLineAdjust(uint16 v, uint16 dpage, uint16 xoff) {
   }
   return adj;
 }
-

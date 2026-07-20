@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(MegaManXSNESRecomp C)
 
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
 # Cross-platform (macOS/Linux) build for MegaManXSNESRecomp.
 #
 # One repo, two games (the RubySapphireRecomp pattern):
@@ -88,6 +90,17 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # recompiled banks (generated, per-variant)
         ${_MMX_GEN}
     )
+
+    # Generated banks are ROM-derived and gitignored. Ensure the opt-in
+    # widescreen consumer hooks are present even when an existing pristine
+    # generation directory is reused instead of regenerated in this build.
+    add_custom_target(${TARGET}_widescreen_overrides
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py
+                --gen-dir ${GEN_DIR}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Applying ${TARGET} widescreen generated-code overrides"
+        VERBATIM)
+    add_dependencies(${TARGET} ${TARGET}_widescreen_overrides)
 
     # NOTE: CFG_INCLUDE_DIR must precede any other dir that also holds a
     # funcs.h so the generated banks pick up THIS variant's declarations.
