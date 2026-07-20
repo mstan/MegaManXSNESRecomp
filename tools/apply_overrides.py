@@ -28,6 +28,12 @@ WS-SPAWN — shift the enemy spawn-scan anchor into the margins.
   anchor = $1E4D + 0x100 (block $00DC78), scrolling left anchor = $1E4D
   (block $00DC62). Snippets re-store the anchor through
   MmxWsSpawnAnchorRight/Left (+margin / -margin, left clamped at 0).
+  Each camera-column update runs complementary record passes: the normal
+  call scans the widescreen anchor but admits only type-3 enemies; a
+  balanced second call scans the native anchor and admits every record.
+  Per-record flags make already-created enemies no-ops in the native pass,
+  while camera, staging, darkness, and encounter controllers (types 0-2)
+  retain authentic activation.
   Spawn bookkeeping self-heals: spawn sets the per-record flag, cull
   clears it via slot+$0C, so early spawn + wide cull keep hysteresis.
   Gated separately (SNESRECOMP_WS_SPAWN, default on) so spawning can
@@ -63,7 +69,9 @@ WS-STAGE — stage the BG tilemap margins before they scroll on screen.
   (offset 5, event code 0x15). Direction-aware single line keeps the
   two fire conditions complementary -> no fire oscillation. Only the
   M0 variants carry the real 16-bit compare (M1 variants are pruned
-  BRK stubs). Gated by SNESRECOMP_WS_STAGE (default on).
+  BRK stubs). Gated by SNESRECOMP_WS_STAGE (default off): renderer-side
+  BG2 prefill now covers first-visit margins without prematurely swapping
+  the guest's shared OBJ graphics at section boundaries.
 
 WS-SHOT-CULL - widen X's projectile lifetime window (X axis only).
   bank_82_80B4 is the common projectile motion/camera test used by X's
@@ -82,7 +90,7 @@ import os
 import re
 import sys
 
-MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-ACTIVATE*/",
+MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/")
 
@@ -150,6 +158,59 @@ def apply_bank00(lines, verbose):
             if verbose:
                 print(f"  WS-SPAWN {which} after line {len(out) - 1} "
                       f"(block {cur_block:#08x})")
+    return out, n
+
+
+RE_SPAWN_TYPE_READ = re.compile(
+    r"^(\s*)uint8 (_v\d+) = cpu_read8\(cpu, cpu->DB, \(uint16\)\("
+    r"cpu_read16\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0018\)\)\)\);\s*$")
+RE_SPAWN_POST_CALL = re.compile(
+    r"^(\s*)goto L_DC92_M0X0; /\* implicit fall-through \*/\s*$")
+
+
+def apply_bank00_spawn_pass(lines, verbose):
+    """Filter the wide DCDB pass to type-3 enemies, then run a native pass."""
+    out = []
+    cur_fn = None
+    cur_block = None
+    n = 0
+    for line in lines:
+        m = re.match(r"^RecompReturn (bank_00_[0-9A-F]+)_M\dX\d\(CpuState", line)
+        if m:
+            cur_fn = m.group(1)
+            cur_block = None
+        elif line.startswith("RecompReturn "):
+            cur_fn = None
+            cur_block = None
+        m = RE_TRACE.search(line)
+        if m:
+            cur_block = canon_pc24(int(m.group(1), 16))
+
+        if cur_fn == "bank_00_DCDB" and cur_block == 0x00DD2D:
+            m = RE_SPAWN_TYPE_READ.match(line)
+            if m:
+                out.append(line)
+                out.append(
+                    f"{m.group(1)}/*WS-SPAWN-PASS*/ {{ extern int "
+                    f"MmxWsSpawnRecordAllowed(uint16, uint8); if "
+                    f"(!MmxWsSpawnRecordAllowed(cpu->D, {m.group(2)})) "
+                    f"goto L_DD94_M1X0; }}\n")
+                n += 1
+                continue
+
+        if cur_fn == "bank_00_DC36" and cur_block == 0x00DC81:
+            m = RE_SPAWN_POST_CALL.match(line)
+            if m:
+                out.append(
+                    f"{m.group(1)}/*WS-SPAWN-PASS*/ {{ extern void "
+                    f"MmxWsSpawnRunNativePass(CpuState *); "
+                    f"MmxWsSpawnRunNativePass(cpu); }}\n")
+                out.append(line)
+                n += 1
+                continue
+        out.append(line)
+    if verbose and n:
+        print(f"  WS-SPAWN-PASS injected {n} site(s)")
     return out, n
 
 
@@ -391,6 +452,7 @@ def main():
     # every generated translation unit; non-matching files are no-ops.
     appliers = (
         (apply_bank00, "/*WS-SPAWN*/"),
+        (apply_bank00_spawn_pass, "/*WS-SPAWN-PASS*/"),
         (apply_bank00_oam, "/*WS-OAM*/"),
         (apply_bank00_oam_left, "/*WS-OAM-L*/"),
         (apply_bank02, "/*WS-CULL*/"),

@@ -911,6 +911,18 @@ int MmxWsRealSpawnActive(void) {
   return MmxWsSpawnWide() && MmxWsMargin() > 0;
 }
 
+/* A camera-column update now runs two complementary scans. The normal DCDB
+ * call uses the wide anchor and admits only ordinary type-3 enemies; a second
+ * host-paired DCDB call uses the unmodified 4:3 anchor and admits every record.
+ * Existing per-record flags make already-created type-3 enemies a no-op in
+ * the native pass. Types 0-2 include camera/tile staging and Spark Mandrill's
+ * darkness/miniboss controller, so they activate at authentic timing. */
+static struct {
+  uint16 native_anchor;
+  uint16 wide_anchor;
+  int active;
+} s_ws_spawn_pass;
+
 /* +32px slack past the visible margin: an anchor of exactly the margin
  * lands record spawns on the outermost visible wide column (visible
  * pop-in; vanilla's +0x100 anchor is exactly the masked 4:3 edge).
@@ -919,13 +931,49 @@ int MmxWsRealSpawnActive(void) {
 uint16 MmxWsSpawnAnchorRight(uint16 v) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
-  return (uint16)(v + m);
+  uint16 wide = (uint16)(v + m);
+  s_ws_spawn_pass.native_anchor = v;
+  s_ws_spawn_pass.wide_anchor = wide;
+  s_ws_spawn_pass.active = (m != 0 && wide != v);
+  return wide;
 }
 
 uint16 MmxWsSpawnAnchorLeft(uint16 v) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
-  return (v >= (uint16)m) ? (uint16)(v - m) : 0;
+  uint16 wide = (v >= (uint16)m) ? (uint16)(v - m) : 0;
+  s_ws_spawn_pass.native_anchor = v;
+  s_ws_spawn_pass.wide_anchor = wide;
+  s_ws_spawn_pass.active = (m != 0 && wide != v);
+  return wide;
+}
+
+/* Called from DCDB after it reads the event descriptor's first byte. High
+ * bits are difficulty filters; the low nibble is the allocation/event type. */
+int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
+  extern uint8_t g_ram[0x20000];
+  if (!s_ws_spawn_pass.active) return 1;
+  uint16 anchor = (uint16)(g_ram[dpage] |
+                           ((uint16)g_ram[(uint16)(dpage + 1)] << 8));
+  if (anchor != s_ws_spawn_pass.wide_anchor) return 1;
+  return (type & 0x0f) == 3;
+}
+
+/* Run DCDB as a balanced synthetic JSR, preserving all guest registers and
+ * cycle accounting while retaining its object allocations/record flags in
+ * WRAM. The original wide anchor is restored for DC36's remaining logic. */
+void MmxWsSpawnRunNativePass(CpuState *cpu) {
+  extern uint8_t g_ram[0x20000];
+  if (!s_ws_spawn_pass.active) return;
+  CpuState saved = *cpu;
+  uint16 dpage = cpu->D;
+  g_ram[dpage] = (uint8_t)s_ws_spawn_pass.native_anchor;
+  g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.native_anchor >> 8);
+  (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Du);
+  *cpu = saved;
+  g_ram[dpage] = (uint8_t)s_ws_spawn_pass.wide_anchor;
+  g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.wide_anchor >> 8);
+  s_ws_spawn_pass.active = 0;
 }
 
 /* bank_82_B964 controls the intro-stage helicopter's entrance. Vanilla
@@ -959,7 +1007,11 @@ static int MmxWsStageWide(void) {
   static int s_on = -1;
   if (s_on < 0) {
     const char *e = getenv("SNESRECOMP_WS_STAGE");
-    s_on = (e && e[0]) ? ((e[0] != '0') ? 1 : 0) : 1;
+    /* Early guest staging also swaps the section's shared OBJ graphics.
+     * The renderer-side BG2 prefill now supplies first-visit margins without
+     * advancing that guest resource transition, so preserve authentic timing
+     * by default. Keep this as an opt-in diagnostic for older comparisons. */
+    s_on = (e && e[0]) ? ((e[0] != '0') ? 1 : 0) : 0;
   }
   return s_on;
 }
