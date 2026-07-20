@@ -193,6 +193,87 @@ bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
 bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active; }
 int MmxDisplay_GetCurrentFrameWidth(void) { return g_snes_width > 0 ? g_snes_width : 256; }
 
+/* Resolve one BG2 8x8 tile directly from MMX's decompressed level map.
+ *
+ * The game keeps a 32x32 table of 256px screen IDs at $EC00.  Each screen
+ * expands to a 16x16 table of 16px metatile IDs at $A600, and each metatile
+ * points at four raw SNES tilemap entries through $0B98-$0B9A.  The vanilla
+ * B5DE/B670 streamer performs this same lookup, but only when a column reaches
+ * the native 4:3 edge.  Reading the retained map here lets the renderer seed
+ * first-visit widescreen margins without advancing the guest's camera, DMA
+ * queue, or rolling-map bookkeeping. */
+static uint16_t MmxDisplay_ResolveBg2Tile(uint16_t tile_x, uint16_t tile_y) {
+  uint16_t px = (uint16_t)(tile_x << 3);
+  uint16_t py = (uint16_t)(tile_y << 3);
+  uint16_t screen_addr = (uint16_t)(0xec00 + ((px >> 8) & 0x1f) +
+                                    (((py >> 8) & 0x1f) << 5));
+  uint8_t screen = g_ram[screen_addr];
+  uint16_t metatile_addr = (uint16_t)(0xa600 + ((uint16_t)screen << 9) +
+                                      ((px & 0x00f0) >> 3) +
+                                      ((py & 0x00f0) << 1));
+  uint16_t metatile = (uint16_t)(g_ram[metatile_addr] |
+                                 (g_ram[(uint16_t)(metatile_addr + 1)] << 8));
+  uint16_t tiledef = (uint16_t)(g_ram[0x0b98] |
+                                (g_ram[0x0b99] << 8));
+  uint8_t tiledef_bank = g_ram[0x0b9a];
+  uint16_t quadrant = (uint16_t)(((py & 8) ? 4 : 0) +
+                                 ((px & 8) ? 2 : 0));
+  uint16_t addr = (uint16_t)(tiledef + (metatile << 3) + quadrant);
+  return (uint16_t)(cart_read(g_snes->cart, tiledef_bank, addr) |
+                    (cart_read(g_snes->cart, tiledef_bank,
+                               (uint16_t)(addr + 1)) << 8));
+}
+
+static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
+                                        uint32_t shadow_x,
+                                        uint32_t shadow_y) {
+  static int s_enabled = -1;
+  if (s_enabled < 0) {
+    const char *e = getenv("SNESRECOMP_WS_BG2_PREFILL");
+    s_enabled = (e && e[0] == '0') ? 0 : 1;
+  }
+  if (!s_enabled)
+    return;
+
+  /* Seed only the off-native columns.  The center remains authentic VRAM,
+   * and WsShadowTile never consults this cache for screen X 0..255. */
+  int margin = (g_ws_extra + 7) & ~7;
+  int x_ranges[2][2] = {{-margin, -1}, {256, 255 + margin}};
+  /* PPU scroll wraps at 1024px, but the streamer's retained coordinates do
+   * not.  Slot 0, for example, renders h=22 while BG2's source X is $0416;
+   * keeping that high part selects the correct level-screen record. */
+  uint16_t stream_h = (uint16_t)(g_ram[0x1e8d] | (g_ram[0x1e8e] << 8));
+  uint16_t stream_v = (uint16_t)(g_ram[0x1e90] | (g_ram[0x1e91] << 8));
+  int16_t dh = (int16_t)((h - stream_h) & 0x03ff);
+  int16_t dv = (int16_t)((v - stream_v) & 0x03ff);
+  if (dh >= 512) dh -= 1024;
+  if (dv >= 512) dv -= 1024;
+  stream_h = (uint16_t)(stream_h + dh);
+  stream_v = (uint16_t)(stream_v + dv);
+  int guest_ty0 = (int)(stream_v >> 3);
+  int guest_ty1 = (int)((stream_v + 231) >> 3);
+  int32_t shadow_tile_dx = ((int32_t)shadow_x - (int32_t)stream_h) >> 3;
+  int32_t shadow_tile_dy = ((int32_t)shadow_y - (int32_t)stream_v) >> 3;
+
+  for (int range = 0; range < 2; range++) {
+    if (x_ranges[range][0] > x_ranges[range][1])
+      continue;
+    int guest_tx0 = ((int)stream_h + x_ranges[range][0]) >> 3;
+    int guest_tx1 = ((int)stream_h + x_ranges[range][1]) >> 3;
+    if (guest_tx0 < 0)
+      guest_tx0 = 0;
+    for (int guest_tx = guest_tx0; guest_tx <= guest_tx1; guest_tx++) {
+      for (int guest_ty = guest_ty0; guest_ty <= guest_ty1; guest_ty++) {
+        WsShadowPrefillTile(1,
+            (uint32_t)(guest_tx + shadow_tile_dx),
+            (uint32_t)(guest_ty + shadow_tile_dy),
+            MmxDisplay_ResolveBg2Tile((uint16_t)guest_tx,
+                                     (uint16_t)guest_ty));
+      }
+    }
+  }
+}
+
 static void MmxDisplay_PrepareBg2Shadow(void) {
   static bool s_was_active;
   static int s_fold_enabled = -1;
@@ -252,6 +333,7 @@ static void MmxDisplay_PrepareBg2Shadow(void) {
   WsShadowSetBlankTile(1, -1);
   WsShadowSetPeriodicFold(1);
   WsShadowFrame(g_ppu);
+  MmxDisplay_PrefillBg2Shadow(h, v, s_world_x, s_world_y);
 }
 
 // --- Scripted input ---
