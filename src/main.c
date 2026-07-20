@@ -203,23 +203,51 @@ static void MmxDisplay_PrepareBg2Shadow(void) {
   bool active = s_fold_enabled && g_ws_active && g_ram[0x00d1] == 0x02 &&
                 !(g_ram[0x00c3] & 0x80) && g_ram[0x00d2] == 0x04;
 
-  /* MMX rewrites the BG2 map only at section loads: it holds one
-   * horizontally periodic parallax pattern that need not cover the full
-   * 512px (the intro highway leaves the last 64px unwritten), and the
-   * native view provably never leaves the populated span. Widescreen
-   * margins do leave it, showing blank or previous-section cells — and a
-   * world-keyed history replays exactly those stale cells after the
-   * 512px wrap. The periodic fold instead re-detects each row's period
-   * from the natively displayed columns every frame and folds margin
-   * columns onto their congruent native column: content is always
-   * this-frame fresh, and rows without an exact period keep the plain
-   * map wrap. */
-  if (active)
-    WsShadowSetPeriodicFold(1);
-  else if (s_was_active)
+  if (!active) {
+    if (s_was_active)
+      WsShadowReset();
+    s_was_active = false;
+    /* A frame with no registration deactivates the renderer-side shadow. */
+    WsShadowFrame(g_ppu);
+    return;
+  }
+
+  /* The BG2 map holds two 256px world chunks with fixed half parity,
+   * rewritten a whole half at a time as camera-line triggers fire
+   * (WS-STAGE biases those ~margin early). Its content is a mix of
+   * horizontally periodic filler (sky, repeating city glow) and
+   * world-anchored features (towers, the lower highway). Margins layer
+   * three sources, best first:
+   *   1. periodic fold — rows whose natively displayed columns prove an
+   *      exact period fold margins onto fresh native columns;
+   *   2. world-keyed history — world-anchored rows serve columns
+   *      captured while they scrolled through the native view, keyed by
+   *      the unwrapped BG2 scroll below;
+   *   3. plain map wrap — correct whenever the fetched half already
+   *      holds the right chunk (the early-fired staging makes that the
+   *      common case for the leading margin). */
+  uint16_t h = (uint16_t)((g_ram[0x00b8] | (g_ram[0x00b9] << 8)) & 0x03ff);
+  uint16_t v = (uint16_t)((g_ram[0x00ba] | (g_ram[0x00bb] << 8)) & 0x03ff);
+  static uint32_t s_world_x, s_world_y;
+  static uint16_t s_prev_h, s_prev_v;
+  if (!s_was_active) {
     WsShadowReset();
-  s_was_active = active;
-  /* A frame with no registration deactivates the renderer-side shadow. */
+    s_world_x = (uint32_t)h + 2048;
+    s_world_y = (uint32_t)v + 1024;
+  } else {
+    int32_t dx = (int32_t)((h - s_prev_h) & 0x03ff);
+    int32_t dy = (int32_t)((v - s_prev_v) & 0x03ff);
+    if (dx >= 512) dx -= 1024;
+    if (dy >= 512) dy -= 1024;
+    s_world_x = (uint32_t)((int32_t)s_world_x + dx);
+    s_world_y = (uint32_t)((int32_t)s_world_y + dy);
+  }
+  s_prev_h = h;
+  s_prev_v = v;
+  s_was_active = true;
+  WsShadowSetWorld(1, s_world_x, s_world_y);
+  WsShadowSetBlankTile(1, -1);
+  WsShadowSetPeriodicFold(1);
   WsShadowFrame(g_ppu);
 }
 
