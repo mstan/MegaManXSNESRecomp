@@ -886,6 +886,22 @@ uint16 MmxWsOamRightLimit(uint16 vanilla_limit) {
   return (uint16)(vanilla_limit + m);
 }
 
+/* bank_00_D76A's per-metasprite-tile X gate is one UNSIGNED compare:
+ * reject when (screenX + 0x10) >= limit. Negative screen X wraps high
+ * and always rejects, so sprites vanish at x < -16 — the native left
+ * edge — no matter how far MmxWsOamRightLimit widens the right side.
+ * Replace the verdict: accept the right window (against the already
+ * widened limit) OR the left-margin window x+16 in [-margin, 0). The
+ * PPU's 9-bit OAM X path already renders the negative coordinates. */
+uint16 MmxWsOamXReject(uint16 x_plus_16, uint16 widened_limit) {
+  if (x_plus_16 < widened_limit)
+    return 0;
+  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  if (m && x_plus_16 >= (uint16)(0u - (uint16)m))
+    return 0;
+  return 1;
+}
+
 /* True when the margins are populated by REAL spawned objects (widened
  * DC36 anchors + widened 806E cull + wide OAM emission), i.e. the AOT
  * bodies carry the WS-SPAWN/WS-CULL injections and the spawn gate is on.
