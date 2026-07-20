@@ -175,6 +175,12 @@ static void MmxDisplay_PreparePpuFrame(void) {
               (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
   PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)width * 4, 0);
   PpuSetExtraSpace(g_ppu, (uint8)g_ws_extra);
+  /* MMX reserves OAM slots 0-15 for HUD sprites. Life/weapon bars hug the
+   * native left edge and boss health hugs the right; keep both attached to
+   * the corresponding widescreen border during live stage gameplay. */
+  bool in_stage = g_ws_active && g_ram[0x00d1] == 0x02 &&
+                  !(g_ram[0x00c3] & 0x80) && g_ram[0x00d2] == 0x04;
+  PpuSetWsHudOamShift(g_ppu, in_stage ? 16 : 0);
   PpuSetWidescreenLineEnhancer(
       g_ppu, (g_ws_active && MmxWidePreview_IsMarginEnhancerReady())
                  ? MmxWidePreview_EnhancePpuLine : NULL,
@@ -1283,8 +1289,8 @@ int main(int argc, char** argv) {
   }
   host_report_breadcrumb("rom loaded: %u bytes", kRom_SIZE);
 
-  extern const RtlGameInfo kSmwGameInfo;
-  RtlRegisterGame(&kSmwGameInfo);
+  extern const RtlGameInfo kMmxGameInfo;
+  RtlRegisterGame(&kMmxGameInfo);
   Snes *snes = SnesInit(kRom, kRom_SIZE);
   host_report_breadcrumb("SnesInit: %s", snes ? "ok" : "FAILED");
   if (snes == NULL) {
