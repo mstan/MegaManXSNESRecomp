@@ -16,6 +16,7 @@
 #endif
 
 #include "snes/ppu.h"
+#include "snes/ws_shadow.h"
 #include "widescreen.h"
 #include "mmx_wide_preview.h"
 
@@ -191,6 +192,49 @@ void MmxDisplay_SetWidescreenEnabled(bool enabled) {
 bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
 bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active; }
 int MmxDisplay_GetCurrentFrameWidth(void) { return g_snes_width > 0 ? g_snes_width : 256; }
+
+static void MmxDisplay_PrepareBg2Shadow(void) {
+  static bool s_was_active;
+  static uint32_t s_world_x, s_world_y;
+  static uint16_t s_prev_h, s_prev_v;
+  bool active = g_ws_active && g_ram[0x00d1] == 0x02 &&
+                !(g_ram[0x00c3] & 0x80) && g_ram[0x00d2] == 0x04;
+
+  if (!active) {
+    if (s_was_active)
+      WsShadowReset();
+    s_was_active = false;
+    /* A frame with no registration deactivates the renderer-side shadow. */
+    WsShadowFrame(g_ppu);
+    return;
+  }
+
+  /* BG2 is parallaxed and its 10-bit scroll wraps independently of the
+   * stage camera. Unwrap MMX's stable BG2 scroll shadows into a monotonic
+   * presentation-only coordinate. The world shadow then remembers native
+   * columns before MMX reuses their rolling VRAM page, while an unseen
+   * margin still falls back to current VRAM instead of becoming a mirror. */
+  uint16_t h = (uint16_t)((g_ram[0x00b8] | (g_ram[0x00b9] << 8)) & 0x03ff);
+  uint16_t v = (uint16_t)((g_ram[0x00ba] | (g_ram[0x00bb] << 8)) & 0x03ff);
+  if (!s_was_active) {
+    WsShadowReset();
+    s_world_x = (uint32_t)h + 2048;
+    s_world_y = (uint32_t)v + 1024;
+  } else {
+    int32_t dx = (int32_t)((h - s_prev_h) & 0x03ff);
+    int32_t dy = (int32_t)((v - s_prev_v) & 0x03ff);
+    if (dx >= 512) dx -= 1024;
+    if (dy >= 512) dy -= 1024;
+    s_world_x = (uint32_t)((int32_t)s_world_x + dx);
+    s_world_y = (uint32_t)((int32_t)s_world_y + dy);
+  }
+  s_prev_h = h;
+  s_prev_v = v;
+  s_was_active = true;
+  WsShadowSetWorld(1, s_world_x, s_world_y);
+  WsShadowSetBlankTile(1, -1);
+  WsShadowFrame(g_ppu);
+}
 
 // --- Scripted input ---
 typedef struct {
@@ -401,6 +445,7 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
 }
 
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
+  MmxDisplay_PrepareBg2Shadow();
   g_rtl_game_info->draw_ppu_frame();
   if (g_ws_active)
     MmxWidePreview_Draw(g_my_pixels, g_snes_width, g_snes_height, g_ws_extra);

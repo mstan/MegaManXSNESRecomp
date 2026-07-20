@@ -220,11 +220,23 @@ void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
     int x_end = side ? 256 + ppu->extraRightCur : 0;
     for (int x = x_begin; x < x_end; x++) {
       int world_x = camera_x + x;
+      int sample_x = world_x;
+      int stage_width = (int)s_stage_bounds[stage].width << 8;
+      /* At a hard stage boundary there is no map data outside the level.
+       * Reflect the nearest real BG1 edge into that margin instead of leaving
+       * the backdrop exposed at the authentic 4:3 boundary. Interior margins
+       * still sample their true world coordinates. */
+      if (sample_x < 0)
+        sample_x = -sample_x - 1;
+      else if (sample_x >= stage_width)
+        sample_x = stage_width * 2 - sample_x - 1;
+      if (sample_x < 0) sample_x = 0;
+      if (sample_x >= stage_width) sample_x = stage_width - 1;
       uint16_t tile_word;
-      if (!StageTileWord(&s_stage_bounds[stage], world_x, world_y, &tile_word))
+      if (!StageTileWord(&s_stage_bounds[stage], sample_x, world_y, &tile_word))
         continue;
       uint8_t pixel = BackgroundTilePixel(ppu, tile_word,
-                                          world_x & 7, world_y & 7);
+                                          sample_x & 7, world_y & 7);
       if (!pixel) continue;
       PpuZbufType z = (tile_word & 0x2000) ? 0xc000 : 0x8000;
       z += (PpuZbufType)(((tile_word & 0x1c00) >> 6) + pixel);
