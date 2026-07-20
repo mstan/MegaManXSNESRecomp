@@ -60,6 +60,23 @@ void MmxDisplay_ComputeViewport(int source_width, int source_height,
 
   viewport->width = (int)(source_display_width * scale + 0.5);
   viewport->height = (int)(source_height * scale + 0.5);
+
+  /* The integer PPU width cannot represent every display aspect exactly.
+   * At 16:9, for example, the ideal 7:6-PAR frame is 341 1/3 pixels wide,
+   * while the renderer must choose the even width 342. Do not turn that
+   * harmless sub-pixel quantization into a visible 1-2 px letterbox seam.
+   * Snap only gaps smaller than one native source pixel; real aspect-ratio
+   * differences still letterbox normally, and integer scaling stays exact. */
+  if (!integer_scale) {
+    int width_gap = drawable_width - viewport->width;
+    int height_gap = drawable_height - viewport->height;
+    int native_x = (drawable_width + 255) / 256;
+    int native_y = (drawable_height + 223) / 224;
+    if (width_gap > 0 && width_gap <= native_x)
+      viewport->width = drawable_width;
+    if (height_gap > 0 && height_gap <= native_y)
+      viewport->height = drawable_height;
+  }
   viewport->x = (drawable_width - viewport->width) / 2;
   viewport->y = (drawable_height - viewport->height) / 2;
 }
@@ -70,3 +87,17 @@ int MmxDisplay_GetWindowBaseWidth(int frame_width) {
 }
 
 int MmxDisplay_GetWindowBaseHeight(void) { return 240; }
+
+int MmxDisplay_ExpandStageScroll(uint16_t camera, uint16_t ppu_scroll) {
+  /* MMX streams the current 256x256 stage screen into a reusable SNES
+   * tilemap page. The PPU scroll is authoritative for the pixel phase, but
+   * it loses the full stage-screen number after crossing a page. Choose the
+   * phase copy nearest the camera so shake/HDMA offsets survive page edges. */
+  int world = (camera & ~0xff) | (ppu_scroll & 0xff);
+  int delta = world - (int)camera;
+  if (delta > 128)
+    world -= 256;
+  else if (delta < -128)
+    world += 256;
+  return world;
+}

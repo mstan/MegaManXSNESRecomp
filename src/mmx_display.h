@@ -29,6 +29,9 @@ void MmxDisplay_ComputeViewport(int source_width, int source_height,
 int MmxDisplay_GetWindowBaseWidth(int frame_width);
 int MmxDisplay_GetWindowBaseHeight(void);
 
+/* Reattach a streamed PPU tilemap's 8-bit phase to MMX's full world camera. */
+int MmxDisplay_ExpandStageScroll(uint16_t camera, uint16_t ppu_scroll);
+
 #ifdef __cplusplus
 }
 #endif

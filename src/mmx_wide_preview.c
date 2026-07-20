@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "common_rtl.h"
+#include "mmx_display.h"
 #include "snes/ppu.h"
 #include "snes/snes.h"
 
@@ -197,13 +198,17 @@ void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
   uint8_t stage = g_ram[0x1f7a];
   if (stage >= kPlayableStages || !LoadStageBounds(stage)) return;
 
-  /* Sample with the PPU's own BG1 scroll registers for THIS line — the exact
-   * values PpuDrawBackground_4bpp uses for the authentic 256 columns. Using
-   * the game's camera mirror instead (as before) was off by MMX's VOFS
-   * convention (a constant 1-line sag in the margins) and would diverge
-   * anywhere HDMA rewrites scroll mid-frame. */
-  int camera_x = ppu->hScroll[0];
-  int world_y = ppu->vScroll[0] + (int)y;
+  /* Use the full game camera for the stage-screen number and the PPU's live
+   * BG1 registers for the within-screen phase. Using only the camera caused
+   * a one-line seam; using only the 10-bit PPU scroll tore by whole streamed
+   * pages after later horizontal/vertical camera motion. */
+  uint16_t world_camera_x =
+      (uint16_t)(g_ram[0x1e4d] | (g_ram[0x1e4e] << 8));
+  uint16_t world_camera_y =
+      (uint16_t)(g_ram[0x1e50] | (g_ram[0x1e51] << 8));
+  int camera_x = MmxDisplay_ExpandStageScroll(world_camera_x, ppu->hScroll[0]);
+  int world_y = MmxDisplay_ExpandStageScroll(world_camera_y, ppu->vScroll[0]) +
+                (int)y;
   PpuZbufType *dst = ppu->bgBuffers[sub].data;
 
   /* Add only host-visible margin columns. Each ROM tile word becomes the same

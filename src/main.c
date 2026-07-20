@@ -505,6 +505,7 @@ static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len) {
 static SDL_Renderer *g_renderer;
 static SDL_Texture *g_texture;
 static SDL_Rect g_sdl_renderer_rect;
+static SDL_Rect g_sdl_present_rect;
 
 static bool SdlRenderer_Init(SDL_Window *window) {
   if (g_config.shader)
@@ -560,14 +561,19 @@ static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pi
                                   SDL_TEXTUREACCESS_STREAMING, width, height);
     if (!g_texture) Die("SDL widescreen texture allocation failed");
   }
-  if (g_config.ignore_aspect_ratio) {
-    SDL_RenderSetLogicalSize(g_renderer, 0, 0);
-  } else {
-    int logical_width, logical_height;
-    MmxDisplay_ComputePresentationSize(width, height,
-                                       &logical_width, &logical_height);
-    SDL_RenderSetLogicalSize(g_renderer, logical_width, logical_height);
-  }
+  /* Use the same explicit viewport as OpenGL. SDL's integer logical size
+   * rounded the 342x224 16:9 frame to 399x224 and produced a 1920x1078
+   * destination on a 1080p display. The shared geometry snaps that
+   * unrepresentable sub-pixel remainder to a clean full-height viewport. */
+  int output_width = 0, output_height = 0;
+  SdlRenderer_GetOutputSize(&output_width, &output_height);
+  MmxDisplayViewport viewport;
+  MmxDisplay_ComputeViewport(width, height, output_width, output_height,
+                             g_config.ignore_aspect_ratio, false, &viewport);
+  g_sdl_present_rect.x = viewport.x;
+  g_sdl_present_rect.y = viewport.y;
+  g_sdl_present_rect.w = viewport.width;
+  g_sdl_present_rect.h = viewport.height;
   g_sdl_renderer_rect.w = width;
   g_sdl_renderer_rect.h = height;
   if (SDL_LockTexture(g_texture, &g_sdl_renderer_rect, (void **)pixels, pitch) != 0) {
@@ -583,7 +589,8 @@ static void SdlRenderer_EndDraw(void) {
   //  float v = (double)(after - before) / SDL_GetPerformanceFrequency();
   //  printf("%f ms\n", v * 1000);
   SDL_RenderClear(g_renderer);
-  SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect, NULL);
+  SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect,
+                 &g_sdl_present_rect);
   SDL_RenderPresent(g_renderer); // vsyncs to 60 FPS?
 }
 
