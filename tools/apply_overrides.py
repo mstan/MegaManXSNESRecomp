@@ -83,7 +83,8 @@ import re
 import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-ACTIVATE*/",
-           "/*WS-OAM*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/", "/*WS-SHADOW*/")
+           "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
+           "/*WS-SHADOW*/")
 
 RE_TRACE = re.compile(r"cpu_trace_block\(cpu, (0x[0-9A-Fa-f]+)\)")
 RE_STORE00 = re.compile(
@@ -185,6 +186,46 @@ def apply_bank00_oam(lines, verbose):
                 n += 1
                 if verbose:
                     print(f"  WS-OAM after line {len(out) - 1} "
+                          f"(bank_00_D76A, {m.group(2)})")
+    return out, n
+
+
+RE_OAM_LIMIT_INJ = re.compile(
+    r"MmxWsOamRightLimit\(uint16\); (_v\d+) = MmxWsOamRightLimit")
+
+
+def apply_bank00_oam_left(lines, verbose):
+    """Replace bank_00_D76A's unsigned X-gate verdict so left-margin
+    sprites are emitted too. The vanilla verdict is one unsigned compare,
+    C = (screenX + 0x10) >= limit; negative screen X wraps high and
+    always rejects, i.e. sprites vanish at the native LEFT edge no
+    matter how far WS-OAM widens the right limit. Runs after the WS-OAM
+    pass (its own applier + marker so it also lands on gen that already
+    carries WS-OAM), keying on the injected right-limit line to learn
+    the limit variable."""
+    out = []
+    limit_var = None
+    n = 0
+    for line in lines:
+        out.append(line)
+        m = RE_OAM_LIMIT_INJ.search(line)
+        if m:
+            limit_var = m.group(1)
+            continue
+        if limit_var:
+            m = re.match(
+                r"^(\s*)cpu->_flag_C = \(\((_v\d+) & 0xFFFF\) >= "
+                r"\((" + limit_var + r") & 0xFFFF\)\) \? 1 : 0;", line)
+            if m:
+                out.append(
+                    f"{m.group(1)}/*WS-OAM-L*/ {{ extern uint16 "
+                    f"MmxWsOamXReject(uint16, uint16); cpu->_flag_C = "
+                    f"MmxWsOamXReject((uint16)({m.group(2)}), "
+                    f"(uint16)({limit_var})); }}\n")
+                limit_var = None
+                n += 1
+                if verbose:
+                    print(f"  WS-OAM-L after line {len(out) - 1} "
                           f"(bank_00_D76A, {m.group(2)})")
     return out, n
 
@@ -351,6 +392,7 @@ def main():
     appliers = (
         (apply_bank00, "/*WS-SPAWN*/"),
         (apply_bank00_oam, "/*WS-OAM*/"),
+        (apply_bank00_oam_left, "/*WS-OAM-L*/"),
         (apply_bank02, "/*WS-CULL*/"),
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
