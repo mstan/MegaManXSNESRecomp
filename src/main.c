@@ -226,8 +226,11 @@ static void MmxDisplay_PrepareBg2Shadow(void) {
    *   3. plain map wrap — correct whenever the fetched half already
    *      holds the right chunk (the early-fired staging makes that the
    *      common case for the leading margin). */
-  uint16_t h = (uint16_t)((g_ram[0x00b8] | (g_ram[0x00b9] << 8)) & 0x03ff);
-  uint16_t v = (uint16_t)((g_ram[0x00ba] | (g_ram[0x00bb] << 8)) & 0x03ff);
+  /* Key presentation-only history to the scroll actually rendered this
+   * frame. MMX advances its WRAM shadow before the corresponding PPU write,
+   * which otherwise makes the widescreen margins alternate one frame early. */
+  uint16_t h = (uint16_t)(g_ppu->hScroll[1] & 0x03ff);
+  uint16_t v = (uint16_t)(g_ppu->vScroll[1] & 0x03ff);
   static uint32_t s_world_x, s_world_y;
   static uint16_t s_prev_h, s_prev_v;
   if (!s_was_active) {
