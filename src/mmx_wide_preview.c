@@ -232,6 +232,19 @@ void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
         sample_x = stage_width * 2 - sample_x - 1;
       if (sample_x < 0) sample_x = 0;
       if (sample_x >= stage_width) sample_x = stage_width - 1;
+
+      /* Launch Octopus's large submarine is encoded in the retained BG1
+       * stage map before its room script performs the real entrance. The
+       * native viewport cannot see those ahead-of-trigger tiles, but the
+       * host margin enhancer otherwise reconstructs its nose briefly at the
+       * right edge. Until the authentic camera trigger, fill only that map
+       * rectangle from the preceding water screen; all other stage pixels,
+       * and the real entrance from $0AC0 onward, remain untouched. */
+      if (stage == 1 && camera_x >= 0x0a70 && camera_x < 0x0ac0 &&
+          y >= 0x0050 && y < 0x00b0 &&
+          sample_x >= 0x0bc0 && sample_x < 0x0c40)
+        sample_x -= 0x0100;
+
       uint16_t tile_word;
       if (!StageTileWord(&s_stage_bounds[stage], sample_x, world_y, &tile_word))
         continue;
