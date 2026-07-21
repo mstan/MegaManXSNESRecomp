@@ -178,8 +178,12 @@ static void MmxDisplay_PreparePpuFrame(void) {
   /* MMX reserves OAM slots 0-15 for HUD sprites. Life/weapon bars hug the
    * native left edge and boss health hugs the right; keep both attached to
    * the corresponding widescreen border during live stage gameplay. */
+  /* $C3 mirrors HDMAEN, not the gameplay mode. Spark Mandrill's light-streak
+   * effect temporarily enables channels 6/7 ($C3 = $C0); using bit 7 as part
+   * of this gate made the HUD snap back to its native positions throughout
+   * the effect. $D1/$D2 remain the stable stage/gameplay discriminator. */
   bool in_stage = g_ws_active && g_ram[0x00d1] == 0x02 &&
-                  !(g_ram[0x00c3] & 0x80) && g_ram[0x00d2] == 0x04;
+                  g_ram[0x00d2] == 0x04;
   PpuSetWsHudOamShift(g_ppu, in_stage ? 16 : 0);
   PpuSetWidescreenLineEnhancer(
       g_ppu, (g_ws_active && MmxWidePreview_IsMarginEnhancerReady())
