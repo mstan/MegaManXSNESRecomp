@@ -80,6 +80,7 @@ regen_variant() {
       cfg_dir="recomp"
       out_dir="src/gen"
       funcs_h="recomp/funcs.h"
+      emit_extra=(--profile-manifest recomp/tier2_coverage.json)
       ;;
     jp)
       rom="variants/jp/roms/rockmanx.sfc"

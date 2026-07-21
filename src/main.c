@@ -1136,7 +1136,16 @@ int main(int argc, char** argv) {
         gi.num_known_sha256 = 1;
         /* Type-3 enemies spawn into the added margins while room and stage
          * controllers retain authentic 4:3 activation timing. */
+#if defined(MMX_VARIANT_JP)
+        /* Rockman X (JP): widescreen is not maintained - the JP build runs a
+         * much larger interpreter share and enemies/shots still cull at the 4:3
+         * frame edges, so 16:9 shows empty margins with pop-in. Hide the toggle
+         * (the widescreen code path stays, just not surfaced) until JP coverage
+         * is promoted far enough to drive faithful margin spawn/cull. */
+        gi.widescreen_supported = 0;
+#else
         gi.widescreen_supported = 1;
+#endif
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */
