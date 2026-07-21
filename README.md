@@ -186,15 +186,14 @@ Core Audio output) and an optional in-game display menu were contributed
 in [PR #10](../../pull/10) and are staged on per-feature branches; they
 land after the shared launcher-UI restructure settles.
 
-### True widescreen renderer (merged, currently hidden)
+### True widescreen renderer
 
 A true-widescreen renderer (genuine additional PPU columns; authentic 7:6
 pixel aspect; camera, collision, AI, and save-state data untouched) is
-merged into this repo but is **hidden and disabled**: the margin enemy
-spawn/cull behavior is still work-in-progress (see the
-"Widescreen margin spawn/cull — WIP" ledger in [ISSUES.md](ISSUES.md)).
-There is no launcher control, config key, or default keybind for it in
-shipped builds; it will be exposed once the remaining defects are fixed.
+available from the launcher and enabled by default. Ordinary enemies activate
+at the expanded 16:9 boundary, while scripted room and stage triggers retain
+their authentic 4:3 timing. Toggle it at runtime with `Alt+W`, or select the
+native presentation from the launcher.
 
 The S-DSP retains the SNES BRR predictor filters and canonical four-tap
 Gaussian interpolation. Host-rate conversion uses continuous interpolation

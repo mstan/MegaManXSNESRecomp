@@ -1097,9 +1097,8 @@ int main(int argc, char** argv) {
         RecompLauncherCGameInfo gi;
         memset(&gi, 0, sizeof(gi));
         /* SNES system identity (theme=CRT, platform="SUPER NINTENDO", rom_noun
-         * "ROM", widescreen_supported=1); MMX overrides the per-game specifics
-         * below (it hides widescreen). One profile call keeps the identity from
-         * drifting across SNES titles, exactly as the PSX host does for its. */
+         * "ROM", widescreen_supported=1). One profile call keeps the identity
+         * from drifting across SNES titles, exactly as the PSX host does. */
         launcher_profile_apply("snes", &gi);
 #else
         SnesLauncherCGameInfo gi;
@@ -1115,13 +1114,9 @@ int main(int argc, char** argv) {
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */
         gi.num_known_sha256 = 1;
-        /* Widescreen is merged but HIDDEN (owner decision 2026-07-16): the
-         * margin spawn/cull work is WIP (see ISSUES.md ledger — 4:3-edge
-         * spawning, vertical-motion margin misalignment). No launcher row,
-         * no config-template key, no toggle keybind; the code path stays
-         * reachable for development by hand-adding `Widescreen = 1` under
-         * [Graphics] and a `ToggleWidescreen` binding under [KeyMap]. */
-        gi.widescreen_supported = 0;
+        /* Type-3 enemies spawn into the added margins while room and stage
+         * controllers retain authentic 4:3 activation timing. */
+        gi.widescreen_supported = 1;
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */
@@ -2074,9 +2069,9 @@ static const char kDefaultConfigIniContent[] =
   "\n"
   "# Render real extra PPU columns to match a widescreen display.\n"
   "# Foreground geometry is rendered farther from MMX's prepared level data;\n"
-  "# enemies remain static until the authentic activation window reaches them.\n"
+  "# enemies spawn into the added margins; stage triggers retain native timing.\n"
   "# Camera, collision, AI, and save-state data are unchanged.\n"
-  "Widescreen = 0\n"
+  "Widescreen = 1\n"
   "\n"
   "# Remove the sprite limits per scan line\n"
   "NoSpriteLimits = 1\n"
