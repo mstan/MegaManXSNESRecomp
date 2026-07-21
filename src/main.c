@@ -250,6 +250,17 @@ static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
   if (!s_enabled)
     return;
 
+  /* Storm Eagle's boss roof replaces BG2 with a scrolling sky, but the
+   * retained level map still describes the lower airport.  Treating that
+   * map as exact margin history exposes the old airport at the native edges
+   * until the live sky has scrolled through them.  The sky is periodic and
+   * is already handled exactly by WsShadowSetPeriodicFold, so leave these
+   * margins unseeded for the upper roof only. */
+  uint8_t stage = g_ram[0x1f7a];
+  uint16_t camera_y = (uint16_t)(g_ram[0x1e50] | (g_ram[0x1e51] << 8));
+  if (stage == 5 && camera_y >= 0x0300)
+    return;
+
   /* Seed only the off-native columns.  The center remains authentic VRAM,
    * and WsShadowTile never consults this cache for screen X 0..255. */
   int margin = (g_ws_extra + 7) & ~7;
