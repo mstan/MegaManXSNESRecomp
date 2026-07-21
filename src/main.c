@@ -185,6 +185,11 @@ static void MmxDisplay_PreparePpuFrame(void) {
   bool in_stage = g_ws_active && g_ram[0x00d1] == 0x02 &&
                   g_ram[0x00d2] == 0x04;
   PpuSetWsHudOamShift(g_ppu, in_stage ? 16 : 0);
+  /* MMX draws its HUD with OBJ, leaving BG3 available for stage overlays.
+   * Widen it during gameplay so effects such as Launch Octopus's foreground
+   * water filter cover the side margins as well as the native viewport.
+   * The API reserves zero for disabled; scanline 0 is hidden by overscan. */
+  PpuSetWidescreenBg3Widen(g_ppu, in_stage ? 1 : 0);
   PpuSetWidescreenLineEnhancer(
       g_ppu, (g_ws_active && MmxWidePreview_IsMarginEnhancerReady())
                  ? MmxWidePreview_EnhancePpuLine : NULL,
