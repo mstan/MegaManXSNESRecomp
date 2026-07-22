@@ -30,6 +30,17 @@ macOS and Linux builds supported from source. See
 [Releases](../../releases) for the latest packaged version and
 [ISSUES.md](ISSUES.md) for the current known-issue ledger.
 
+The USA Rev 1 build now also includes **experimental true widescreen
+support**, rendering additional gameplay at the sides instead of stretching
+the original image. See [Experimental widescreen support](#experimental-widescreen-support)
+for availability and controls.
+
+<p align="center">
+  <img src="docs/screenshots/widescreen-ocean.png" width="32%" alt="Mega Man X experimental widescreen rendering in an ocean scene">
+  <img src="docs/screenshots/widescreen-highway.png" width="32%" alt="Mega Man X experimental widescreen rendering on the opening highway stage">
+  <img src="docs/screenshots/widescreen-snow-base.png" width="32%" alt="Mega Man X experimental widescreen rendering in a snowy base">
+</p>
+
 ### Linux / Steam Deck validation
 
 Tester **littlerobotfairy** completed the game on Linux running on Steam
@@ -186,14 +197,19 @@ Core Audio output) and an optional in-game display menu were contributed
 in [PR #10](../../pull/10) and are staged on per-feature branches; they
 land after the shared launcher-UI restructure settles.
 
-### True widescreen renderer
+### Experimental widescreen support
 
-A true-widescreen renderer (genuine additional PPU columns; authentic 7:6
-pixel aspect; camera, collision, AI, and save-state data untouched) is
-available from the launcher and enabled by default. Ordinary enemies activate
-at the expanded 16:9 boundary, while scripted room and stage triggers retain
-their authentic 4:3 timing. Toggle it at runtime with `Alt+W`, or select the
-native presentation from the launcher.
+The USA Rev 1 build includes an experimental true-widescreen renderer. It
+draws genuine additional PPU columns at the authentic 7:6 pixel aspect rather
+than stretching the original 4:3 image. The implementation widens presentation
+and ordinary enemy activation at the expanded 16:9 boundary while keeping the
+camera, collision, scripted room and stage triggers, and save-state data on
+their original timing and coordinates.
+
+Toggle widescreen at runtime with `Alt+W`, or select the widescreen presentation
+in the launcher. This support is still experimental, so visual or gameplay
+edge cases may remain; please report reproducible regressions with a savestate
+and screenshot. Widescreen is currently not exposed for Rockman X (Japan).
 
 The S-DSP retains the SNES BRR predictor filters and canonical four-tap
 Gaussian interpolation. Host-rate conversion uses continuous interpolation
