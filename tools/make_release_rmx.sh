@@ -6,7 +6,7 @@
 #   RockmanXSNESRecomp.exe  (Release, console-free via -mwindows)
 #   SDL2.dll + mingw runtime DLLs (bundled via ldd so it runs without msys2)
 #   config.ini              (repo copy — the launcher rewrites it in place)
-#   launcher/               (shared RmlUi assets + per-game boxart)
+#   assets/                 (shared Dear ImGui assets + per-game boxart)
 #   README.md
 #
 # Zip lands in release-stage/RockmanXSNESRecomp-windows-<Version>.zip.
@@ -34,15 +34,15 @@ EXE="$BUILD/RockmanXSNESRecomp.exe"
 [ -f "$EXE" ] || { echo "build produced no exe" >&2; exit 1; }
 
 echo "=== stage ==="
-rm -rf "$STAGE"; mkdir -p "$STAGE/launcher"
+rm -rf "$STAGE"; mkdir -p "$STAGE/assets"
 cp "$EXE" "$STAGE/"
 cp "$ROOT/config.ini" "$STAGE/"
 [ -f "$ROOT/README.md" ] && cp "$ROOT/README.md" "$STAGE/"
 
-# Launcher assets: shared RmlUi set + per-game boxart (mirrors the vcxproj
-# CopyLauncherAssets + CopyGameLauncherAssets targets).
-cp -r "$ROOT/snesrecomp/runner/src/launcher/assets/." "$STAGE/launcher/"
-[ -d "$ROOT/recomp/launcher" ] && cp -r "$ROOT/recomp/launcher/." "$STAGE/launcher/"
+# The shared recomp-ui CMake integration stages all launcher assets, including
+# the per-game box art, next to the built executable.
+[ -d "$BUILD/assets" ] || { echo "build produced no assets directory" >&2; exit 1; }
+cp -r "$BUILD/assets/." "$STAGE/assets/"
 
 # Bundle the runtime DLLs the mingw exe links (SDL2 + libgcc/libstdc++/
 # libwinpthread/etc.) so it runs on a machine without msys2. ldd lists them;

@@ -24,7 +24,7 @@ The eventual enhancement is to give MMX the same save UX as a battery game by
 - **History log** — append each distinct captured password (timestamped) so the
   player can return to any earlier state by re-entering an older password.
 - **Launcher display/edit** — surface the last password in the launcher's SAVES
-  panel (read-only, with an edit→confirm flow), reusing the shared RmlUi
+  panel (read-only, with an edit→confirm flow), reusing the shared Dear ImGui
   launcher / `sram_path` plumbing rather than adding game-specific UI.
 - **Auto-prefill** — on the password-entry screen, inject the saved password
   automatically so the player never has to type it.
