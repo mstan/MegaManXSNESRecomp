@@ -34,6 +34,8 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   A(SDLK_RETURN), C(SDLK_r), S(SDLK_p), _(SDLK_p), _(SDLK_TAB), N, N, _(SDLK_f), _(SDLK_r), A(SDLK_w),
   // VolumeUp VolumeDown
   0, 0,
+  // ToggleParallax — Alt+P, alongside widescreen's Alt+W
+  A(SDLK_p),
 };
 #undef _
 #undef A
@@ -54,6 +56,7 @@ static const KeyNameId kKeyNameId[] = {
   M(Load), M(Save),
   S(Fullscreen), S(Reset),
   S(Pause), S(PauseDimmed), S(Turbo), S(WindowBigger), S(WindowSmaller), S(VolumeUp), S(VolumeDown), S(DisplayPerf), S(ToggleRenderer), S(ToggleWidescreen),
+  S(ToggleParallax),
 };
 #undef S
 #undef M
@@ -351,6 +354,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_config.no_sprite_limits);
     } else if (StringEqualsNoCase(key, "Widescreen")) {
       return ParseBool(value, &g_config.widescreen);
+    } else if (StringEqualsNoCase(key, "Parallax")) {
+      return ParseBool(value, &g_config.parallax);
     } else if (StringEqualsNoCase(key, "Shader")) {
       g_config.shader = *value ? value : NULL;
       return true;
@@ -447,6 +452,10 @@ void ParseConfigFile(const char *filename) {
    * share this framework code; per-game .ini sets it false where the
    * oracle is incompatible with the repro workflow. See config.h doc. */
   g_config.enable_snes9x_oracle = true;
+  /* Parallax defaults ON for this evaluation build so a freshly-extracted
+   * release shows the effect without editing an ini. `Parallax = 0` in
+   * config.ini (or the F6 hotkey) turns it off. */
+  g_config.parallax = true;
 
   /* The config is config.ini next to the exe (cwd is anchored there
    * by main), or whatever --config said. No alternate names, no
@@ -570,6 +579,7 @@ void WriteConfigFile(const char *filename) {
     { "Graphics", "WindowScale" },
     { "Graphics", "LinearFiltering" },
     { "Graphics", "Widescreen" },
+    { "Graphics", "Parallax" },
     { "Sound",    "EnableAudio" },
     { "Sound",    "AudioFreq" },
     { "GamepadMap", "EnableGamepad1" },
@@ -581,12 +591,13 @@ void WriteConfigFile(const char *filename) {
   snprintf(kvs[0].val, sizeof(kvs[0].val), "%d", g_config.window_scale ? g_config.window_scale : 3);
   snprintf(kvs[1].val, sizeof(kvs[1].val), "%d", g_config.linear_filtering ? 1 : 0);
   snprintf(kvs[2].val, sizeof(kvs[2].val), "%d", g_config.widescreen ? 1 : 0);
-  snprintf(kvs[3].val, sizeof(kvs[3].val), "%d", g_config.enable_audio ? 1 : 0);
-  snprintf(kvs[4].val, sizeof(kvs[4].val), "%d", g_config.audio_freq);
-  snprintf(kvs[5].val, sizeof(kvs[5].val), "%s", g_config.enable_gamepad[0] ? "true" : "false");
-  snprintf(kvs[6].val, sizeof(kvs[6].val), "%s", g_config.enable_gamepad[1] ? "true" : "false");
-  snprintf(kvs[7].val, sizeof(kvs[7].val), "%d", g_config.skip_launcher ? 1 : 0);
-  snprintf(kvs[8].val, sizeof(kvs[8].val), "%d", g_config.gamepad_deadzone);
+  snprintf(kvs[3].val, sizeof(kvs[3].val), "%d", g_config.parallax ? 1 : 0);
+  snprintf(kvs[4].val, sizeof(kvs[4].val), "%d", g_config.enable_audio ? 1 : 0);
+  snprintf(kvs[5].val, sizeof(kvs[5].val), "%d", g_config.audio_freq);
+  snprintf(kvs[6].val, sizeof(kvs[6].val), "%s", g_config.enable_gamepad[0] ? "true" : "false");
+  snprintf(kvs[7].val, sizeof(kvs[7].val), "%s", g_config.enable_gamepad[1] ? "true" : "false");
+  snprintf(kvs[8].val, sizeof(kvs[8].val), "%d", g_config.skip_launcher ? 1 : 0);
+  snprintf(kvs[9].val, sizeof(kvs[9].val), "%d", g_config.gamepad_deadzone);
 
   char *data = NULL;
   long sz = 0;

@@ -76,6 +76,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/glsl_shader.c
         src/main.c
         src/mmx_wide_preview.c
+        src/mmx_parallax.c
         src/post_mortem.c
         src/opengl.c
         src/mmx_00.c

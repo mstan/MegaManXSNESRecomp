@@ -18,7 +18,9 @@
 #include "snes/ppu.h"
 #include "snes/ws_shadow.h"
 #include "widescreen.h"
+#include "parallax.h"
 #include "mmx_wide_preview.h"
+#include "mmx_parallax.h"
 
 #include "types.h"
 #include "mmx_rtl.h"
@@ -170,8 +172,13 @@ static void MmxDisplay_PreparePpuFrame(void) {
   g_ws_active = g_ws_extra != 0;
   /* The legacy pixel-at-a-time PPU has a hard-coded 256-column loop. Keep the
    * user's renderer selection, but use the priority-buffer PPU while a real
-   * widescreen frame is active; disabling widescreen restores that selection. */
-  g_new_ppu = g_ws_active ||
+   * widescreen frame is active; disabling widescreen restores that selection.
+   *
+   * Parallax additionally REQUIRES the priority-buffer PPU: host-overlay
+   * layer extraction (and hence every captured plane) only exists on that
+   * path, so with the legacy renderer selected the feature would silently
+   * capture nothing and present flat forever. */
+  g_new_ppu = g_ws_active || Parallax_Enabled() ||
               (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
   PpuBeginDrawing(g_ppu, g_my_pixels, (size_t)width * 4, 0);
   PpuSetExtraSpace(g_ppu, (uint8)g_ws_extra);
@@ -194,6 +201,11 @@ static void MmxDisplay_PreparePpuFrame(void) {
       g_ppu, (g_ws_active && MmxWidePreview_IsMarginEnhancerReady())
                  ? MmxWidePreview_EnhancePpuLine : NULL,
       NULL);
+  /* LAST of the per-frame PPU policy: the parallax captures are full-frame
+   * RemoveFromGame captures that deliberately override any narrower overlay
+   * policy declared above for the same source, so they must be declared after
+   * everything else has had its say. */
+  MmxParallax_PrepareFrame(width, g_snes_height, g_ws_extra);
 }
 
 void MmxDisplay_SetWidescreenEnabled(bool enabled) {
@@ -203,6 +215,10 @@ void MmxDisplay_SetWidescreenEnabled(bool enabled) {
   WriteConfigFile(g_active_config_file);
   printf("Widescreen renderer = %s\n", enabled ? "on" : "off");
 }
+
+/* Lets mmx_parallax.c persist the toggle to the same exe-anchored config.ini
+ * the widescreen toggle writes (see the config_exe_path pinning in main). */
+const char *MmxParallax_ConfigPath(void) { return g_active_config_file; }
 
 bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
 bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active; }
@@ -759,9 +775,18 @@ static void SdlRenderer_EndDraw(void) {
   //  uint64 after = SDL_GetPerformanceCounter();
   //  float v = (double)(after - before) / SDL_GetPerformanceFrequency();
   //  printf("%f ms\n", v * 1000);
+  SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
   SDL_RenderClear(g_renderer);
-  SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect,
-                 &g_sdl_present_rect);
+  /* Parallax composite, into the same destination rect the flat blit uses so
+   * letterboxing/aspect handling is identical. The backdrop plane is
+   * g_my_pixels — the residual framebuffer after the captured layers were
+   * removed from it. Returning false is the normal, expected path for every
+   * non-stage frame; fall back to the flat blit so a failure is never a black
+   * screen. */
+  if (!Parallax_Composite(g_renderer, &g_sdl_present_rect, g_my_pixels,
+                          g_snes_width, g_snes_height))
+    SDL_RenderCopy(g_renderer, g_texture, &g_sdl_renderer_rect,
+                   &g_sdl_present_rect);
   SDL_RenderPresent(g_renderer); // vsyncs to 60 FPS?
 }
 
@@ -1005,6 +1030,8 @@ int main(int argc, char** argv) {
       ParseConfigFile("config.local.ini");
     }
   }
+  /* After BOTH config passes so config.local.ini's override is honoured. */
+  MmxParallax_Init();
   host_report_breadcrumb(
       "config parsed: output=%d new_renderer=%d scale=%d fullscreen=%d "
       "audio=%d freq=%d samples=%d skip_launcher=%d",
@@ -1866,6 +1893,9 @@ static void HandleCommand(uint32 j, bool pressed) {
       break;
     case kKeys_ToggleWidescreen:
       MmxDisplay_SetWidescreenEnabled(!g_config.widescreen);
+      break;
+    case kKeys_ToggleParallax:
+      MmxParallax_Toggle();
       break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
