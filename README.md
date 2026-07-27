@@ -30,10 +30,11 @@ macOS and Linux builds supported from source. See
 [Releases](../../releases) for the latest packaged version and
 [ISSUES.md](ISSUES.md) for the current known-issue ledger.
 
-The USA Rev 1 build now also includes **experimental true widescreen
-support**, rendering additional gameplay at the sides instead of stretching
-the original image. See [Experimental widescreen support](#experimental-widescreen-support)
-for availability and controls.
+The USA Rev 1 build now also includes an **experimental true widescreen Mod**,
+rendering additional gameplay at the sides instead of stretching the original
+image. It is disabled by default and enabled from the launcher's **Mods** page.
+See [Experimental widescreen support](#experimental-widescreen-support) for
+availability and controls.
 
 <p align="center">
   <img src="docs/screenshots/widescreen-ocean.png" width="32%" alt="Mega Man X experimental widescreen rendering in an ocean scene">
@@ -206,10 +207,11 @@ and ordinary enemy activation at the expanded 16:9 boundary while keeping the
 camera, collision, scripted room and stage triggers, and save-state data on
 their original timing and coordinates.
 
-Toggle widescreen at runtime with `Alt+W`, or select the widescreen presentation
-in the launcher. This support is still experimental, so visual or gameplay
-edge cases may remain; please report reproducible regressions with a savestate
-and screenshot. Widescreen is currently not exposed for Rockman X (Japan).
+Enable the default-disabled **Widescreen (16:9)** feature from the launcher's
+**Mods** page, then start the game. This support is still experimental, so
+visual or gameplay edge cases may remain; please report reproducible
+regressions with a savestate and screenshot. Widescreen is currently not
+exposed for Rockman X (Japan).
 
 The S-DSP retains the SNES BRR predictor filters and canonical four-tap
 Gaussian interpolation. Host-rate conversion uses continuous interpolation

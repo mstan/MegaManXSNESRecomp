@@ -26,6 +26,8 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(CMAKE_C_STANDARD 11)
 
 set(SNESRECOMP_ROOT ${CMAKE_SOURCE_DIR}/snesrecomp)
+set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL
+    "Enable Mega Man X's built-in mod catalog and SNES mod packages" FORCE)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -83,6 +85,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_cpu_infra.c
         src/mmx_rtl.c
         src/mmx_spc_player.c
+        src/mods/mmx_widescreen_plugin.c
         src/fiber_compat.c    # Win32 Fiber API shim (ucontext) for non-Windows
 
         # OpenGL function loader
@@ -155,6 +158,17 @@ endfunction()
 add_mmx_variant(MegaManXSNESRecomp
     ${CMAKE_SOURCE_DIR}/src/gen
     ${CMAKE_SOURCE_DIR}/recomp)
+
+# Preload the game-owned USA catalog. Rockman X intentionally does not
+# initialize a mod provider until its widescreen path is maintained.
+set(MMX_PRELOADED_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
+if(TARGET MegaManXSNESRecomp AND EXISTS "${MMX_PRELOADED_MODS}/packages")
+    add_custom_command(TARGET MegaManXSNESRecomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MMX_PRELOADED_MODS}"
+            "$<TARGET_FILE_DIR:MegaManXSNESRecomp>/mods"
+        COMMENT "Preloading the Mega Man X mod catalog")
+endif()
 
 # ── JP: Rockman X (Japan v1.1) — faithful LLE scheduler, no task-PC table ──
 add_mmx_variant(RockmanXSNESRecomp

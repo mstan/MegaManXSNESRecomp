@@ -74,7 +74,7 @@ hw_trace.log
 _*
 
 # NuGet packages (restored on build)
-packages/
+/packages/
 
 # Release artifacts (built locally, uploaded via gh release upload)
 MegaManXSNESRecomp-windows-*.zip

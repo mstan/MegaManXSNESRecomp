@@ -28,6 +28,9 @@
 #include "mmx_display.h"
 #include "util.h"
 #include "mmx_spc_player.h"
+#if SNESRECOMP_ENABLE_MODS
+#include "mod_runtime.h"
+#endif
 #if defined(SNES_LAUNCHER) || defined(RECOMP_LAUNCHER)
 #if defined(RECOMP_LAUNCHER)
 /* Shared recomp-ui launcher (F:\Projects\recomp-ui) — the console-agnostic
@@ -184,6 +187,11 @@ static void MmxDisplay_PreparePpuFrame(void) {
    * the effect. $D1/$D2 remain the stable stage/gameplay discriminator. */
   bool in_stage = g_ws_active && g_ram[0x00d1] == 0x02 &&
                   g_ram[0x00d2] == 0x04;
+  /* PpuSetWsHudOamShift originally carried fixed x<=24 / x>=216 edge
+   * thresholds and applied to every scanline. The shared renderer now
+   * requires games to publish the HUD band explicitly; preserve MMX's
+   * original working anchors while limiting them to the measured top HUD. */
+  PpuSetWsHudOamBand(g_ppu, in_stage ? 96 : 0, 25, 216);
   PpuSetWsHudOamShift(g_ppu, in_stage ? 16 : 0);
   /* MMX draws its HUD with OBJ, leaving BG3 available for stage overlays.
    * Widen it during gameplay so effects such as Launch Octopus's foreground
@@ -1019,6 +1027,7 @@ int main(int argc, char** argv) {
    * The launcher auto-strips a 512-byte SMC copier header before hashing,
    * so headered and unheadered dumps both verify against the same hash. */
   static char rom_path_buf[512];
+  int mods_ready = 0;
   {
     /* 1.5 MiB LoROM, Rev 1 (v1.1). SHA-256 over the unheadered payload (the
      * launcher strips a 512-byte SMC copier header before hashing).
@@ -1039,6 +1048,15 @@ int main(int argc, char** argv) {
       0x1e,0x19,0x6b,0xdf,0x1a,0xc6,0xdd,0xc7,
       0xcb,0x92,0x4b,0x1a,0xd0,0xbe,0x2d,0x32,
     };
+#endif
+#if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
+    mods_ready = snes_mod_runtime_initialize_c(
+        "mods", "megaman-x-us",
+        "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32");
+    if (!mods_ready) {
+      fprintf(stderr, "SNES mods unavailable: %s\n",
+              snes_mod_runtime_last_error_c());
+    }
 #endif
     int rom_resolved_by_launcher = 0;
 
@@ -1136,7 +1154,7 @@ int main(int argc, char** argv) {
         gi.num_known_sha256 = 1;
         /* Type-3 enemies spawn into the added margins while room and stage
          * controllers retain authentic 4:3 activation timing. */
-#if defined(MMX_VARIANT_JP)
+#if MMX_VARIANT_JP
         /* Rockman X (JP): widescreen is not maintained - the JP build runs a
          * much larger interpreter share and enemies/shots still cull at the 4:3
          * frame edges, so 16:9 shows empty margins with pop-in. Hide the toggle
@@ -1144,11 +1162,17 @@ int main(int argc, char** argv) {
          * is promoted far enough to drive faithful margin spawn/cull. */
         gi.widescreen_supported = 0;
 #else
-        gi.widescreen_supported = 1;
+        /* The maintained USA widescreen implementation is a game-owned,
+         * default-disabled Mods feature. Keep the generic Settings toggle
+         * hidden so the package catalog is its single authoritative state. */
+        gi.widescreen_supported = 0;
 #endif
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
         gi.msu1_supported = 0;         /* hide MSU-1 panel */
         gi.config_path = config_file;  /* hotkey editor targets the live config */
+#if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
+        gi.mods = mods_ready ? snes_mod_runtime_launcher_provider_c() : NULL;
+#endif
 
 #if defined(RECOMP_LAUNCHER)
         /* cwd is anchored to the exe dir (snesrecomp_anchor_to_exe_dir above),
@@ -1217,6 +1241,16 @@ int main(int argc, char** argv) {
       if (rc) { fprintf(rc, "%s\n", rom_path_buf); fclose(rc); }
     }
   }
+#if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
+  if (mods_ready) {
+    if (!snes_mod_runtime_commit_c(rom_path_buf)) {
+      fprintf(stderr, "SNES mod plan rejected: %s\n",
+              snes_mod_runtime_last_error_c());
+      return 1;
+    }
+    snes_mod_runtime_activate_plugins_c();
+  }
+#endif
 
   static char *resolved_argv[2];
   resolved_argv[0] = rom_path_buf;
@@ -1865,7 +1899,11 @@ static void HandleCommand(uint32 j, bool pressed) {
       g_new_ppu = (g_ppu_render_flags & kPpuRenderFlags_NewRenderer) != 0;
       break;
     case kKeys_ToggleWidescreen:
+#if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
+      printf("Widescreen is controlled from Mods; restart after changing it.\n");
+#else
       MmxDisplay_SetWidescreenEnabled(!g_config.widescreen);
+#endif
       break;
     case kKeys_VolumeUp:
     case kKeys_VolumeDown: HandleVolumeAdjustment(j == kKeys_VolumeUp ? 1 : -1); break;
@@ -2100,7 +2138,9 @@ static const char kDefaultConfigIniContent[] =
   "# Foreground geometry is rendered farther from MMX's prepared level data;\n"
   "# enemies spawn into the added margins; stage triggers retain native timing.\n"
   "# Camera, collision, AI, and save-state data are unchanged.\n"
-  "Widescreen = 1\n"
+  "# The USA build exposes this through Mods; this legacy key remains for\n"
+  "# compatibility and for developer-only variant workflows.\n"
+  "Widescreen = 0\n"
   "\n"
   "# Remove the sprite limits per scan line\n"
   "NoSpriteLimits = 1\n"

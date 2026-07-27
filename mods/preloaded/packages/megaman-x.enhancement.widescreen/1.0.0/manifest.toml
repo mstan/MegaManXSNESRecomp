@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.enhancement.widescreen"
+version = "1.0.0"
+name = "Mega Man X Widescreen"
+author = "mstan"
+description = "Renders Mega Man X with a wider 16:9 field of view using its game-specific HUD, background-margin, stage-overlay, spawn, cull, and draw-window work."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "widescreen"
+name = "Widescreen (16:9)"
+description = "Enable Mega Man X's experimental game-specific 16:9 rendering enhancement."
+group = "Display"
+default_enabled = false
+
+[[plugin]]
+feature = "widescreen"
+id = "megaman-x.widescreen"
