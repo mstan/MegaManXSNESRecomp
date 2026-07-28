@@ -34,6 +34,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $build = Join-Path $root $BuildDir
 $exe = Join-Path $build 'MegaManXSNESRecomp.exe'
 $assets = Join-Path $build 'assets'
+$mods = Join-Path $build 'mods'
 
 if (-not (Test-Path -LiteralPath $exe)) {
   throw "Release executable missing: $exe"
@@ -67,6 +68,9 @@ Copy-Item -LiteralPath $exe -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'config.ini') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $stage
 Copy-Item -LiteralPath $assets -Destination $stage -Recurse
+if (Test-Path -LiteralPath $mods) {
+  Copy-Item -LiteralPath $mods -Destination $stage -Recurse
+}
 
 # keybinds.ini is user-generated (PSR-style rebind UI) and only exists next
 # to the exe once someone has actually rebound a key; ship it if present.

@@ -25,6 +25,9 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 set(CMAKE_C_STANDARD 11)
 
+set(SNESRECOMP_BUILD_VERSION "dev" CACHE STRING
+    "Version reported in crash diagnostics and network metadata")
+
 set(SNESRECOMP_ROOT "${CMAKE_SOURCE_DIR}/snesrecomp" CACHE PATH
     "Path to the snesrecomp checkout used by this game")
 set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL
@@ -91,6 +94,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # recompiled banks (generated, per-variant)
         ${_MMX_GEN}
     )
+    set_property(SOURCE src/main.c APPEND PROPERTY COMPILE_DEFINITIONS
+        SNESRECOMP_BUILD_VERSION="${SNESRECOMP_BUILD_VERSION}")
 
     # Generated banks are ROM-derived and gitignored. Ensure the USA build's
     # opt-in widescreen consumer hooks are present even when an existing
