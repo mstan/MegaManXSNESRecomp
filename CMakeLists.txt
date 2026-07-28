@@ -76,7 +76,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_display.c
         src/main.c
         src/mmx_wide_preview.c
-        src/post_mortem.c
         src/opengl.c
         src/mmx_00.c
         src/gen_stubs.c
@@ -112,6 +111,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
         ${SDL2_INCLUDE_DIRS}
     )
+    snesrecomp_target_post_mortem(${TARGET} TIER2)
     snesrecomp_target_mmx_config(${TARGET})
     snesrecomp_target_glsl_shader(${TARGET})
 
@@ -140,8 +140,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # WinMain would demand an SDL_main that doesn't exist). Plus DbgHelp for
         # post_mortem.c's StackWalk64 backtrace.
         target_link_libraries(${TARGET} PRIVATE
-            C:/msys64/mingw64/lib/libSDL2.dll.a
-            dbghelp)
+            C:/msys64/mingw64/lib/libSDL2.dll.a)
     else()
         target_link_libraries(${TARGET} PRIVATE ${SDL2_LIBRARIES})
     endif()
