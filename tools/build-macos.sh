@@ -6,7 +6,7 @@
 #
 # Run this on a Mac (it cannot be built on Linux/Windows). It configures and
 # builds with clang, then
-# bundles a relocatable <APP_NAME>.app (dylibbundler copies SDL2 in and rewrites
+# bundles a relocatable <APP_NAME>.app (dylibbundler copies SDL in and rewrites
 # the install names) and a <APP_NAME>.dmg for distribution.
 #
 # Usage:
@@ -80,12 +80,13 @@ echo "==================== $APP_NAME ($CONFIG, $ARCH) ===================="
 cd "$REPO"
 
 # Homebrew maintains separate prefixes on Apple Silicon Macs. Select the
-# dependency tree that matches the requested slice instead of silently linking
-# the host SDL2 into an x86_64 or universal build.
-if [ "$ARCH" = "x86_64" ] && [ -d /usr/local/lib/cmake/SDL2 ]; then
-  FLAGS+=( -DSDL2_DIR=/usr/local/lib/cmake/SDL2 )
-elif [ "$ARCH" = "arm64" ] && [ -d /opt/homebrew/lib/cmake/SDL2 ]; then
-  FLAGS+=( -DSDL2_DIR=/opt/homebrew/lib/cmake/SDL2 )
+# dependency tree that matches the requested slice and backend.
+SDL_BACKEND="${SNESRECOMP_SDL_BACKEND:-SDL3}"
+FLAGS+=( -DSNESRECOMP_SDL_BACKEND="$SDL_BACKEND" )
+if [ "$ARCH" = "x86_64" ] && [ -d "/usr/local/lib/cmake/$SDL_BACKEND" ]; then
+  FLAGS+=( "-D${SDL_BACKEND}_DIR=/usr/local/lib/cmake/$SDL_BACKEND" )
+elif [ "$ARCH" = "arm64" ] && [ -d "/opt/homebrew/lib/cmake/$SDL_BACKEND" ]; then
+  FLAGS+=( "-D${SDL_BACKEND}_DIR=/opt/homebrew/lib/cmake/$SDL_BACKEND" )
 fi
 
 [ -f "$REPO/snesrecomp/runner/runner.cmake" ] || {
@@ -172,12 +173,12 @@ cat > "$APPDIR/Contents/Info.plist" <<EOF
 </dict></plist>
 EOF
 
-# Copy + relink the SDL2 dylib (and any other non-system deps) into the bundle.
+# Copy + relink the selected SDL dylib (and any other non-system deps).
 if command -v dylibbundler >/dev/null 2>&1; then
   dylibbundler -od -b -x "$APPDIR/Contents/MacOS/$CMAKE_TARGET" \
       -d "$APPDIR/Contents/Frameworks" -p @executable_path/../Frameworks
 else
-  SDL_DYLIB="$(otool -L "$APPDIR/Contents/MacOS/$CMAKE_TARGET" | awk '/libSDL2.*dylib/ { print $1; exit }')"
+  SDL_DYLIB="$(otool -L "$APPDIR/Contents/MacOS/$CMAKE_TARGET" | awk '/libSDL[23].*dylib/ { print $1; exit }')"
   if [ -n "$SDL_DYLIB" ] && [ -f "$SDL_DYLIB" ]; then
     SDL_NAME="$(basename "$SDL_DYLIB")"
     cp "$SDL_DYLIB" "$APPDIR/Contents/Frameworks/$SDL_NAME"
@@ -185,7 +186,7 @@ else
       "$APPDIR/Contents/MacOS/$CMAKE_TARGET"
     echo "      bundled $SDL_NAME (dylibbundler unavailable)"
   else
-    echo "      WARNING: SDL2 dylib not found — .app will need a system SDL2."
+    echo "      WARNING: SDL dylib not found — .app will need the selected system SDL."
   fi
 fi
 # Ad-hoc codesign so Gatekeeper lets it run locally (no Developer ID required).

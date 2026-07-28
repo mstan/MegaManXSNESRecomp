@@ -2,7 +2,7 @@
 #include "types.h"
 #include <stdio.h>
 #include <string.h>
-#include <SDL.h>
+#include "desktop/sdl_compat.h"
 #include "util.h"
 
 enum {

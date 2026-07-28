@@ -25,7 +25,8 @@ release via SNESRECOMP_BUILD_VERSION but can't be symbolized to file:line.
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [string]$BuildDir = 'build-recompui',
-  [string]$RuntimeBinDir = 'C:\msys64\mingw64\bin'
+  [string]$RuntimeBinDir = 'C:\msys64\mingw64\bin',
+  [ValidateSet('SDL3', 'SDL2')][string]$SdlBackend = 'SDL3'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -75,11 +76,19 @@ if (Test-Path -LiteralPath $kb) {
 }
 
 $runtimeDlls = @(
-  'SDL2.dll',
   'libgcc_s_seh-1.dll',
   'libstdc++-6.dll',
   'libwinpthread-1.dll'
 )
+$sdlDll = "$SdlBackend.dll"
+$sdlSource = Join-Path $build $sdlDll
+if (-not (Test-Path -LiteralPath $sdlSource)) {
+  $sdlSource = Join-Path $RuntimeBinDir $sdlDll
+}
+if (-not (Test-Path -LiteralPath $sdlSource)) {
+  throw "Required $SdlBackend runtime DLL missing from build or runtime bin: $sdlDll"
+}
+Copy-Item -LiteralPath $sdlSource -Destination $stage
 foreach ($name in $runtimeDlls) {
   $source = Join-Path $RuntimeBinDir $name
   if (-not (Test-Path -LiteralPath $source)) {

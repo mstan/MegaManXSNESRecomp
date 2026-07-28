@@ -17,15 +17,16 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # The canonical Windows build is the MSVC solution (mmx.sln, USA only for now).
 # This CMake build mirrors the same source list (see snesrecomp/runner/
 # runner.cmake) so the games build natively on macOS/Linux/mingw with
-# clang/gcc + SDL2 + OpenGL.
+# clang/gcc + SDL3 (SDL2 fallback) + OpenGL.
 #
 # Prerequisites: a snesrecomp checkout at ./snesrecomp; the generated C for the
 # variant(s) you build (run `bash tools/regen.sh [usa|jp]` with the verified
-# ROM staged); SDL2 (e.g. `brew install sdl2`).
+# ROM staged); SDL3 (e.g. `brew install sdl3`).
 
 set(CMAKE_C_STANDARD 11)
 
-set(SNESRECOMP_ROOT ${CMAKE_SOURCE_DIR}/snesrecomp)
+set(SNESRECOMP_ROOT "${CMAKE_SOURCE_DIR}/snesrecomp" CACHE PATH
+    "Path to the snesrecomp checkout used by this game")
 set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL
     "Enable Mega Man X's built-in mod catalog and SNES mod packages" FORCE)
 
@@ -42,9 +43,10 @@ include(${SNESRECOMP_ROOT}/runner/runner.cmake)
 # consumed as the ./recomp-ui submodule/junction) so every recomp game drives
 # ONE launcher repo. The former in-tree launcher_ng has been retired from the
 # engine in favour of this shared, console-agnostic launcher.
-include(${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake)
+set(RECOMP_UI_ROOT "${CMAKE_SOURCE_DIR}/recomp-ui" CACHE PATH
+    "Path to the recomp-ui checkout used by this game")
+include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
 
-find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 
 # prod-vs-debug via the single SNESRECOMP_ENABLE_TRACE switch (runner.cmake,
@@ -111,9 +113,9 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
-        ${SDL2_INCLUDE_DIRS}
     )
     snesrecomp_target_glsl_shader(${TARGET})
+    snesrecomp_target_sdl(${TARGET})
 
     target_compile_definitions(${TARGET} PRIVATE
         SMW_DISABLE_LM=1
@@ -134,16 +136,9 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         OpenGL::GL
         ${SNESRECOMP_RUNNER_LIBRARIES}    # ws2_32 when trace/cosim builds add the TCP servers
     )
-    if(WIN32 AND NOT MSVC)
-        # mingw/msys2: this SDL2 does not auto-rename main()->SDL_main, so main.c's
-        # real main() is the entry point — link SDL2 WITHOUT SDL2main (SDL2main's
-        # WinMain would demand an SDL_main that doesn't exist). Plus DbgHelp for
-        # post_mortem.c's StackWalk64 backtrace.
-        target_link_libraries(${TARGET} PRIVATE
-            C:/msys64/mingw64/lib/libSDL2.dll.a
-            dbghelp)
-    else()
-        target_link_libraries(${TARGET} PRIVATE ${SDL2_LIBRARIES})
+    if(WIN32)
+        # DbgHelp supplies post_mortem.c's StackWalk64 backtrace.
+        target_link_libraries(${TARGET} PRIVATE dbghelp)
     endif()
 
     # Dear ImGui pre-boot launcher (GUI) from the shared recomp-ui repo. One call

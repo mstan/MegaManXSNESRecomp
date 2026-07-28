@@ -69,13 +69,12 @@ done
 case "$CONFIG" in prod) FLAGS=( "${PROD_CMAKE_FLAGS[@]}" );; debug) FLAGS=( "${DEBUG_CMAKE_FLAGS[@]}" );;
   *) echo "--config must be prod or debug (got '$CONFIG')" >&2; exit 2;; esac
 
-# Point cmake at the HOST's Linux SDL2. Several game CMakeLists pin a bundled
-# (Windows) SDL2 dev pack on CMAKE_PREFIX_PATH for the MSVC build; -DSDL2_DIR is
-# the explicit CONFIG-mode hint and is consulted before CMAKE_PREFIX_PATH, so the
-# real Linux .so links instead of a Windows import lib. Harmless when the game
-# already finds system SDL2.
-SDL2_CFG_DIR="$( { find /usr/lib /usr/lib64 /usr/local/lib -type d -path '*cmake/SDL2' 2>/dev/null || true; } | head -1 )"
-[ -n "$SDL2_CFG_DIR" ] && FLAGS+=( -DSDL2_DIR="$SDL2_CFG_DIR" )
+# SDL3 is the default; SNESRECOMP_SDL_BACKEND=SDL2 selects the compatibility
+# package. Prefer the host package over any cross-platform dependency prefix.
+SDL_BACKEND="${SNESRECOMP_SDL_BACKEND:-SDL3}"
+SDL_CFG_DIR="$( { find /usr/lib /usr/lib64 /usr/local/lib -type d -path "*cmake/$SDL_BACKEND" 2>/dev/null || true; } | head -1 )"
+FLAGS+=( -DSNESRECOMP_SDL_BACKEND="$SDL_BACKEND" )
+[ -n "$SDL_CFG_DIR" ] && FLAGS+=( "-D${SDL_BACKEND}_DIR=$SDL_CFG_DIR" )
 
 # Single cleanup hook: remove the AppDir scratch dir and restore generated files.
 WORK=""; RAN_PREBUILD=0
