@@ -73,7 +73,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     add_executable(${TARGET}
         ${SNESRECOMP_RUNNER_SOURCES}
         # game-specific runtime (shared across both variants)
-        src/config.c
         src/mmx_display.c
         src/main.c
         src/mmx_wide_preview.c
@@ -113,6 +112,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
         ${SDL2_INCLUDE_DIRS}
     )
+    snesrecomp_target_mmx_config(${TARGET})
     snesrecomp_target_glsl_shader(${TARGET})
 
     target_compile_definitions(${TARGET} PRIVATE
