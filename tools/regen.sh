@@ -129,8 +129,12 @@ regen_variant() {
     rm -rf "$tmp_gen"
   fi
 
-  step "Applying $name widescreen overrides"
-  "$PYTHON" tools/apply_overrides.py --gen-dir "$out_dir"
+  if [ "$name" = usa ]; then
+    step "Applying $name widescreen overrides"
+    "$PYTHON" tools/apply_overrides.py --gen-dir "$out_dir"
+  else
+    step "Keeping $name generated output authentic 4:3"
+  fi
 }
 
 if [ "$VARIANT" = "all" ]; then
