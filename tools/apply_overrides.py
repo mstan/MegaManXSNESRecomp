@@ -96,7 +96,8 @@ MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/
 
 RE_TRACE = re.compile(r"cpu_trace_block\(cpu, (0x[0-9A-Fa-f]+)\)")
 RE_STORE00 = re.compile(
-    r"^(\s*)cpu_write16\(cpu, 0x7E, \(uint16\)\(cpu->D \+ 0x0000\), (_v\d+)\);\s*$")
+    r"^(\s*)cpu_write16\(cpu, (0x(?:00|7E)), "
+    r"\(uint16\)\(cpu->D \+ 0x0000\), (_v\d+)\);\s*$")
 RE_CONST180 = re.compile(r"^\s*uint16 (_v\d+) = 0x180;\s*$")
 RE_CONST140 = re.compile(r"^\s*uint16 (_v\d+) = 0x140;\s*$")
 RE_CONST80 = re.compile(r"^(\s*)uint16 (_v\d+) = 0x80;\s*$")
@@ -119,9 +120,9 @@ RE_B23C_ENTRY = re.compile(
     r"^(\s*)cpu_trace_func_entry\(cpu, 0x[08]0B23C, ")
 
 
-def spawn_snippet(indent, var, which):
+def spawn_snippet(indent, bank, var, which):
     return (f"{indent}/*WS-SPAWN*/ {{ extern uint16 MmxWsSpawnAnchor{which}"
-            f"(uint16); cpu_write16(cpu, 0x7E, (uint16)(cpu->D + 0x0000), "
+            f"(uint16); cpu_write16(cpu, {bank}, (uint16)(cpu->D + 0x0000), "
             f"MmxWsSpawnAnchor{which}((uint16)({var}))); }}\n")
 
 
@@ -153,7 +154,8 @@ def apply_bank00(lines, verbose):
         m = RE_STORE00.match(line)
         if m and cur_block in (0x00DC78, 0x00DC62):
             which = "Right" if cur_block == 0x00DC78 else "Left"
-            out.append(spawn_snippet(m.group(1), m.group(2), which))
+            out.append(spawn_snippet(
+                m.group(1), m.group(2), m.group(3), which))
             n += 1
             if verbose:
                 print(f"  WS-SPAWN {which} after line {len(out) - 1} "
@@ -466,6 +468,7 @@ def main():
         return 1
     total = 0
     patched_files = 0
+    effective_counts = {}
     for path in paths:
         name = os.path.basename(path)
         if args.restore:
@@ -482,9 +485,13 @@ def main():
             with open(path, "r", encoding="utf-8") as f:
                 contents = f.read()
             if marker in contents:
+                effective_counts[marker] = (
+                    effective_counts.get(marker, 0) + contents.count(marker))
                 already += 1
                 continue
-            n_file += process(path, fn, args.check, args.verbose)
+            n = process(path, fn, args.check, args.verbose)
+            effective_counts[marker] = effective_counts.get(marker, 0) + n
+            n_file += n
         if n_file:
             verb = "would inject" if args.check else "injected"
             print(f"{name}: {verb} {n_file} site(s)")
@@ -493,6 +500,12 @@ def main():
         total += n_file
     if args.restore:
         print(f"restore: removed {total} injected line(s) total")
+    if not args.restore and effective_counts.get("/*WS-SPAWN*/", 0) != 2:
+        print(
+            "ERROR: expected exactly 2 WS-SPAWN anchor hooks, found "
+            f"{effective_counts.get('/*WS-SPAWN*/', 0)}",
+            file=sys.stderr)
+        return 1
     if not args.restore and total == 0 and patched_files == 0:
         print("WARNING: no anchor sites matched", file=sys.stderr)
         return 1
