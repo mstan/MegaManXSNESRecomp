@@ -614,7 +614,7 @@ static uint16_t mmx_runner_to_snes_joypad(uint16_t r) {
 static void DrawPpuFrameWithPerf(void) {
   /* Geometry must be fixed before the presenter allocates/locks its surface. */
   MmxDisplay_PreparePpuFrame();
-  int render_scale = PpuGetCurrentRenderScale(g_ppu, g_ppu_render_flags);
+  const int render_scale = 1;
   uint8 *pixel_buffer = 0;
   int pitch = 0;
 
@@ -1283,9 +1283,8 @@ int main(int argc, char** argv) {
    * display-derived frame is calculated. Custom WindowSize remains authoritative. */
   g_snes_width = g_config.widescreen
       ? MmxDisplay_ComputeFrameWidth(16, 9, true) : 256;
-  g_snes_height = 224;// (g_config.extend_y ? 240 : 224);
+  g_snes_height = 224;
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
-    g_config.extend_y * kPpuRenderFlags_Height240 |
     g_config.no_sprite_limits * kPpuRenderFlags_NoSpriteLimits;
 
   if (g_config.fullscreen == 1)
