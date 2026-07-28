@@ -44,9 +44,10 @@ done
 
 cd "$ROOT"
 
-TESTS="snesrecomp/tests/run_tests.py"
+SNESRECOMP_ROOT="${SNESRECOMP_ROOT:-snesrecomp}"
+TESTS="$SNESRECOMP_ROOT/tests/run_tests.py"
 
-if [ ! -f "snesrecomp/tools/v2_emit.py" ]; then
+if [ ! -f "$SNESRECOMP_ROOT/tools/v2_emit.py" ]; then
   echo "regen.sh: snesrecomp is not initialized; run 'bash tools/bootstrap.sh' first." >&2
   exit 1
 fi
@@ -68,7 +69,7 @@ esac
 
 if [ "$ANALYSIS_BACKEND" = native ]; then
   step "Building native analyzer"
-  "$PYTHON" snesrecomp/tools/build_native_analyzer.py
+  "$PYTHON" "$SNESRECOMP_ROOT/tools/build_native_analyzer.py"
 fi
 
 regen_variant() {
@@ -107,23 +108,23 @@ regen_variant() {
   # `func` seeds the analysis closure so the proven surface is materialized
   # as AOT; the interpreter is a failsafe for the unprovable remainder,
   # never the plan of record for known code.
-  "$PYTHON" snesrecomp/tools/v2_emit.py --rom "$rom" \
+  "$PYTHON" "$SNESRECOMP_ROOT/tools/v2_emit.py" --rom "$rom" \
       --cfg-dir "$cfg_dir" --out-dir "$out_dir" --cfg-roots \
       --analysis-backend "$ANALYSIS_BACKEND" \
       "${emit_extra[@]}"
 
   step "Syncing $name funcs.h"
-  "$PYTHON" snesrecomp/tools/v2_sync_funcs_h.py --cfg-dir "$cfg_dir" \
+  "$PYTHON" "$SNESRECOMP_ROOT/tools/v2_sync_funcs_h.py" --cfg-dir "$cfg_dir" \
       --out "$funcs_h"
 
   if [ "$STRICT_IDEMPOTENT" -eq 1 ]; then
     step "Checking $name idempotency"
     tmp_gen="$(mktemp -d)"
-    "$PYTHON" snesrecomp/tools/v2_emit.py --rom "$rom" \
+    "$PYTHON" "$SNESRECOMP_ROOT/tools/v2_emit.py" --rom "$rom" \
         --cfg-dir "$cfg_dir" --out-dir "$tmp_gen" --cfg-roots \
         --analysis-backend "$ANALYSIS_BACKEND" \
         "${emit_extra[@]}"
-    "$PYTHON" snesrecomp/tools/v2_compare_output.py \
+    "$PYTHON" "$SNESRECOMP_ROOT/tools/v2_compare_output.py" \
         --expected "$out_dir" --actual "$tmp_gen"
     rm -rf "$tmp_gen"
   fi
