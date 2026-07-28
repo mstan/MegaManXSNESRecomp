@@ -83,7 +83,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_rtl.c
         src/mmx_spc_player.c
         src/mods/mmx_widescreen_plugin.c
-        src/fiber_compat.c    # Win32 Fiber API shim (ucontext) for non-Windows
 
         # OpenGL function loader
         third_party/gl_core/gl_core_3_1.c
@@ -111,6 +110,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
         ${SDL2_INCLUDE_DIRS}
     )
+    snesrecomp_target_fiber_compat(${TARGET})
     snesrecomp_target_post_mortem(${TARGET} TIER2)
     snesrecomp_target_mmx_config(${TARGET})
     snesrecomp_target_glsl_shader(${TARGET})
