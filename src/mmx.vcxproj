@@ -235,6 +235,7 @@
     <ClCompile Include="..\snesrecomp\runner\src\widescreen.c" />
     <ClCompile Include="..\snesrecomp\runner\src\recomp_hw.c" />
     <ClCompile Include="..\snesrecomp\runner\src\framedump.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\host_paths.c" />
     <ClCompile Include="..\snesrecomp\runner\src\launcher.c" />
     <!-- Shared recomp-ui launcher (SDL2 + Dear ImGui), consumed as the
          ./recomp-ui submodule. Source set mirrors recomp-ui/recomp_ui.cmake;
@@ -407,7 +408,7 @@
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
     </ClCompile>
-    <ClCompile Include="..\snesrecomp\runner\src\snes\ppu_old.c" />
+    <ClCompile Include="..\snesrecomp\runner\src\snes\ppu_legacy.c" />
     <ClCompile Include="..\snesrecomp\runner\src\snes\snes.c" />
     <ClCompile Include="..\snesrecomp\runner\src\snes\snes_other.c" />
     <ClCompile Include="..\snesrecomp\runner\src\snes\superfx.c" />
