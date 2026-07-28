@@ -75,7 +75,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # game-specific runtime (shared across both variants)
         src/config.c
         src/mmx_display.c
-        src/glsl_shader.c
         src/main.c
         src/mmx_wide_preview.c
         src/post_mortem.c
@@ -114,6 +113,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
         ${SDL2_INCLUDE_DIRS}
     )
+    snesrecomp_target_glsl_shader(${TARGET})
 
     target_compile_definitions(${TARGET} PRIVATE
         SMW_DISABLE_LM=1
@@ -132,7 +132,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
 
     target_link_libraries(${TARGET} PRIVATE
         OpenGL::GL
-        m                                 # libm: glsl_shader.c uses pow() (implicit on macOS)
         ${SNESRECOMP_RUNNER_LIBRARIES}    # ws2_32 when trace/cosim builds add the TCP servers
     )
     if(WIN32 AND NOT MSVC)
