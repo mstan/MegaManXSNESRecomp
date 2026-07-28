@@ -26,6 +26,7 @@ echo "=== configure + build (mingw Release, console-free) ==="
 cmake -S "$ROOT" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=C:/msys64/mingw64/bin/gcc.exe \
+  -DSNESRECOMP_SDL_BACKEND=SDL2 \
   -DSDL2_DIR=C:/msys64/mingw64/lib/cmake/SDL2 \
   -DCMAKE_EXE_LINKER_FLAGS="-mwindows"
 cmake --build "$BUILD" --target RockmanXSNESRecomp -j6

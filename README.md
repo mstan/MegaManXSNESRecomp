@@ -148,14 +148,19 @@ bash tools/regen.sh usa --no-tests
 ```
 
 On Windows 10 or newer, install [MSYS2](https://www.msys2.org/) with the
-mingw64 toolchain (`cmake`, `ninja`, `SDL2`), Git, Python 3.9 or newer, and
-`rustup`. Run the bootstrap and regeneration steps from Git Bash, then:
+mingw64 toolchain (`cmake`, `ninja`), the SDL3 development package, Git,
+Python 3.9 or newer, and `rustup`. Run the bootstrap and regeneration steps
+from Git Bash, then:
 
 ```bash
-cmake -S . -B build-recompui -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build-recompui -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/SDL3/x86_64-w64-mingw32
 cmake --build build-recompui
-# or, packaged: SDL2_MINGW_ROOT=/path/to/SDL2 bash tools/build-windows-mingw.sh VERSION
+# or, packaged: SDL3_MINGW_ROOT=/path/to/SDL3 bash tools/build-windows-mingw.sh VERSION
 ```
+
+SDL3 is the default. SDL2 remains an explicitly supported fallback: configure
+a separate tree with `-DSNESRECOMP_SDL_BACKEND=SDL2`.
 
 Windows releases are built and packaged this way (CMake/mingw with the
 recomp-ui launcher; see `tools/make_release.ps1`). The Visual Studio
@@ -171,8 +176,8 @@ msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
 
 Builds natively on macOS (Apple Silicon + Intel) and Linux with clang/gcc.
 On macOS, install dependencies with
-`brew install cmake sdl2 ninja python3`. On Ubuntu/Debian, install
-`build-essential cmake ninja-build libsdl2-dev libgl1-mesa-dev python3`.
+`brew install cmake sdl3 ninja python3`. On Ubuntu/Debian, install
+`build-essential cmake ninja-build libsdl3-dev libgl1-mesa-dev python3`.
 
 ```bash
 cmake -S . -B build-dev -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -181,18 +186,18 @@ ctest --test-dir build-dev --output-on-failure
 ```
 
 On macOS, add `-DCMAKE_PREFIX_PATH="$(brew --prefix)"` if CMake does not find
-Homebrew's SDL2. Apple Silicon contributors running an x86_64-translated shell
+Homebrew's SDL3. Apple Silicon contributors running an x86_64-translated shell
 must also configure with `-DCMAKE_OSX_ARCHITECTURES=arm64`. Packaging helpers
 detect the native hardware architecture and are documented by
 `bash tools/build-macos.sh --help` and `bash tools/build-linux.sh --help`.
 The cross-platform Windows release can be built with MinGW using
-`SDL2_MINGW_ROOT=/path/to/SDL2 bash tools/build-windows-mingw.sh VERSION`.
+`SDL3_MINGW_ROOT=/path/to/SDL3 bash tools/build-windows-mingw.sh VERSION`.
 All release packages are ROM-free; place your legally obtained ROM beside the
 executable or AppImage after extraction.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for dependency development, validation,
 and pull-request guidance.
 
-macOS builds use the same SDL2 + CMake path as Linux. A native macOS
+macOS builds use the same SDL3 + CMake path as Linux. A native macOS
 backend (Metal presentation, `GameController.framework`,
 Core Audio output) and an optional in-game display menu were contributed
 in [PR #10](../../pull/10) and are staged on per-feature branches; they

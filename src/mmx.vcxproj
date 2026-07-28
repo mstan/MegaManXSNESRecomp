@@ -150,7 +150,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)recomp-ui\src;$(SolutionDir)recomp-ui\src\common;$(SolutionDir)recomp-ui\src\third_party\imgui;$(SolutionDir)recomp-ui\src\third_party\imgui\backends</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;RECOMP_LAUNCHER=1;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;RECOMP_LAUNCHER=1;SNESRECOMP_SDL3=0;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <!-- 4005: HIBYTE macro collision (types.h vs windows.h). banks.h is
            force-included before any file's own <windows.h>, so types.h's
@@ -176,7 +176,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)src;$(SolutionDir)snesrecomp\runner\src;$(SolutionDir)snesrecomp\runner\src\snes;$(SolutionDir)recomp;$(SolutionDir)snesrecomp\runner\src\launcher;$(SolutionDir)recomp-ui\src;$(SolutionDir)recomp-ui\src\common;$(SolutionDir)recomp-ui\src\third_party\imgui;$(SolutionDir)recomp-ui\src\third_party\imgui\backends</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;RECOMP_LAUNCHER=1;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SMW_DISABLE_LM=1;SNESRECOMP_TRACE=1;RECOMP_LAUNCHER=1;SNESRECOMP_SDL3=0;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -195,7 +195,7 @@
            cpu_trace.h / debug_server.h #else blocks compile every call
            into a no-op static inline; debug_server.c and cpu_trace.c
            are ExcludedFromBuild below. -->
-      <PreprocessorDefinitions>$(SnesRecompVersionDefine)NDEBUG;SMW_DISABLE_LM=1;RECOMP_LAUNCHER=1;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(SnesRecompVersionDefine)NDEBUG;SMW_DISABLE_LM=1;RECOMP_LAUNCHER=1;SNESRECOMP_SDL3=0;SDL_MAIN_HANDLED;_CRT_SECURE_NO_WARNINGS;SNESRECOMP_REVERSE_DEBUG=0</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996</DisableSpecificWarnings>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -237,7 +237,8 @@
     <ClCompile Include="..\snesrecomp\runner\src\framedump.c" />
     <ClCompile Include="..\snesrecomp\runner\src\host_paths.c" />
     <ClCompile Include="..\snesrecomp\runner\src\launcher.c" />
-    <!-- Shared recomp-ui launcher (SDL2 + Dear ImGui), consumed as the
+    <!-- Legacy MSVC harness explicitly uses the SDL2 fallback; CMake defaults
+         to SDL3. Shared recomp-ui launcher consumed as the
          ./recomp-ui submodule. Source set mirrors recomp-ui/recomp_ui.cmake;
          keep in sync when that file changes. x64 only, gated behind
          RECOMP_LAUNCHER (defined above). recomp-ui namespaces its public
