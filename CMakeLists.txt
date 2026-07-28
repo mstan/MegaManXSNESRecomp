@@ -75,11 +75,9 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     add_executable(${TARGET}
         ${SNESRECOMP_RUNNER_SOURCES}
         # game-specific runtime (shared across both variants)
-        src/config.c
         src/mmx_display.c
         src/main.c
         src/mmx_wide_preview.c
-        src/post_mortem.c
         src/opengl.c
         src/mmx_00.c
         src/gen_stubs.c
@@ -87,7 +85,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_rtl.c
         src/mmx_spc_player.c
         src/mods/mmx_widescreen_plugin.c
-        src/fiber_compat.c    # Win32 Fiber API shim (ucontext) for non-Windows
 
         # OpenGL function loader
         third_party/gl_core/gl_core_3_1.c
@@ -95,16 +92,20 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${_MMX_GEN}
     )
 
-    # Generated banks are ROM-derived and gitignored. Ensure the opt-in
-    # widescreen consumer hooks are present even when an existing pristine
-    # generation directory is reused instead of regenerated in this build.
-    add_custom_target(${TARGET}_widescreen_overrides
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py
-                --gen-dir ${GEN_DIR}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Applying ${TARGET} widescreen generated-code overrides"
-        VERBATIM)
-    add_dependencies(${TARGET} ${TARGET}_widescreen_overrides)
+    # Generated banks are ROM-derived and gitignored. Ensure the USA build's
+    # opt-in widescreen consumer hooks are present even when an existing
+    # pristine generation directory is reused. Rockman X intentionally ships
+    # authentic 4:3 only, so its generated output remains untouched.
+    if(NOT "${TARGET}" STREQUAL "RockmanXSNESRecomp")
+        add_custom_target(${TARGET}_widescreen_overrides
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py
+                    --gen-dir ${GEN_DIR}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Applying ${TARGET} widescreen generated-code overrides"
+            VERBATIM)
+        add_dependencies(${TARGET} ${TARGET}_widescreen_overrides)
+    endif()
 
     # NOTE: CFG_INCLUDE_DIR must precede any other dir that also holds a
     # funcs.h so the generated banks pick up THIS variant's declarations.
@@ -114,6 +115,9 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${CMAKE_SOURCE_DIR}/src
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
     )
+    snesrecomp_target_fiber_compat(${TARGET})
+    snesrecomp_target_post_mortem(${TARGET} TIER2)
+    snesrecomp_target_mmx_config(${TARGET})
     snesrecomp_target_glsl_shader(${TARGET})
     snesrecomp_target_sdl(${TARGET})
 
@@ -136,11 +140,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         OpenGL::GL
         ${SNESRECOMP_RUNNER_LIBRARIES}    # ws2_32 when trace/cosim builds add the TCP servers
     )
-    if(WIN32)
-        # DbgHelp supplies post_mortem.c's StackWalk64 backtrace.
-        target_link_libraries(${TARGET} PRIVATE dbghelp)
-    endif()
-
     # Dear ImGui pre-boot launcher (GUI) from the shared recomp-ui repo. One call
     # wires sources/includes/RECOMP_LAUNCHER define/CXX/asset-staging (same MMX
     # boxart; recomp-ui's default pad.tga is already the SNES pad).
