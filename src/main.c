@@ -293,14 +293,18 @@ static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
       continue;
     int guest_tx0 = ((int)stream_h + x_ranges[range][0]) >> 3;
     int guest_tx1 = ((int)stream_h + x_ranges[range][1]) >> 3;
-    if (guest_tx0 < 0)
-      guest_tx0 = 0;
     for (int guest_tx = guest_tx0; guest_tx <= guest_tx1; guest_tx++) {
+      /* At a hard left stage boundary, keep the off-stage destination
+       * columns but reflect their source into the first real BG2 tiles.
+       * Clamping guest_tx0 to zero made the initial Highway left range
+       * 0..-1, so the prefill ran zero iterations until the camera moved
+       * past the widescreen margin. This mirrors BG1's edge policy. */
+      int sample_tx = guest_tx < 0 ? -guest_tx - 1 : guest_tx;
       for (int guest_ty = guest_ty0; guest_ty <= guest_ty1; guest_ty++) {
         WsShadowPrefillTile(1,
             (uint32_t)(guest_tx + shadow_tile_dx),
             (uint32_t)(guest_ty + shadow_tile_dy),
-            MmxDisplay_ResolveBg2Tile((uint16_t)guest_tx,
+            MmxDisplay_ResolveBg2Tile((uint16_t)sample_tx,
                                      (uint16_t)guest_ty));
       }
     }
