@@ -149,6 +149,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     # wires sources/includes/RECOMP_LAUNCHER define/CXX/asset-staging (same MMX
     # boxart; recomp-ui's default pad.tga is already the SNES pad).
     recomp_target_launcher_ui(${TARGET}
+        CONSOLE snes
         BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
 endfunction()
 
