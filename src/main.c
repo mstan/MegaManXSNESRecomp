@@ -1360,11 +1360,15 @@ int main(int argc, char** argv) {
      * Lets all three sibling games run concurrently on the same host
      * without TCP-bind collisions. */
     if (debug_server_init(4379) == 0) {
+#if SNESRECOMP_TRACE
       fprintf(stderr, "[main] Debug server ready on port 4379\n");
+#endif
     }
     if (start_paused) {
       debug_server_start_paused();
+#if SNESRECOMP_TRACE
       fprintf(stderr, "[main] Started paused — send 'step N' or 'continue' via TCP\n");
+#endif
     }
   }
 

@@ -68,6 +68,29 @@ state2=$tmp/state2
 run_apprun "$state2/moved.AppImage"
 test -f "$state2/config.ini" || { echo "FAIL: moved AppImage did not re-anchor config" >&2; exit 1; }
 
+# 3b. A ROM dropped beside the .AppImage seeds rom.cfg rather than being passed
+#     as argv[1]. Passing it positionally skips the GUI launcher, which on this
+#     title strands the user with no route to the Mods page where Widescreen
+#     lives - and no way back, since the file picker needs zenity/kdialog/yad.
+state3=$tmp/state3
+mkdir -p "$state3"
+: > "$state3/pretend.sfc"
+run_apprun "$state3/MegaManX.AppImage"
+test -f "$state3/rom.cfg" || {
+    echo "FAIL: adjacent ROM did not seed rom.cfg" >&2; exit 1; }
+test "$(head -n1 "$state3/rom.cfg")" = "$state3/pretend.sfc" || {
+    echo "FAIL: rom.cfg does not point at the adjacent ROM: $(cat "$state3/rom.cfg")" >&2
+    exit 1; }
+# AppRun must not REPOINT a cache that already resolves. The game itself owns
+# rom.cfg and may rewrite it with the same resolved path, so assert the target
+# rather than byte-identity.
+: > "$state3/other.sfc"
+printf '%s\n' "$state3/other.sfc" > "$state3/rom.cfg"
+run_apprun "$state3/MegaManX.AppImage"
+test "$(head -n1 "$state3/rom.cfg")" = "$state3/other.sfc" || {
+    echo "FAIL: AppRun repointed a rom.cfg that already resolved: \
+$(head -n1 "$state3/rom.cfg")" >&2; exit 1; }
+
 # 4. The read-only payload stayed pristine: no state files anywhere in AppDir.
 for leak in config.ini keybinds.ini rom.cfg saves tier2_coverage.json last_run_report.json; do
     found=$(find "$appdir" -name "$leak" | grep -v '^$' || true)

@@ -291,8 +291,20 @@ for ext in $ROM_EXTS; do
     for f in "\$ROMDIR"/*."\$ext"; do [ -e "\$f" ] && ROM="\$f" && break 2; done
 done
 cd "\$ROMDIR" 2>/dev/null || true
+# Seed rom.cfg from a ROM dropped beside the .AppImage instead of passing it as
+# argv[1]. Passing it positionally counts as an explicit positional ROM and SKIPS
+# the GUI launcher entirely - which on this title means no route to the Mods page,
+# where Widescreen lives. It is also the only way back on a desktop with no
+# zenity/kdialog/yad for the launcher's file picker. Never repoint a rom.cfg that
+# already resolves.
+if [ -n "\$ROM" ]; then
+    cached=""
+    [ -f "\$ROMDIR/rom.cfg" ] && cached="\$(head -n1 "\$ROMDIR/rom.cfg" 2>/dev/null | tr -d '\\r\\n')"
+    if [ -z "\$cached" ] || [ ! -f "\$cached" ]; then
+        [ -w "\$ROMDIR" ] && printf '%s\\n' "\$ROM" > "\$ROMDIR/rom.cfg" 2>/dev/null || true
+    fi
+fi
 if [ "\$#" -eq 0 ]; then
-    [ -n "\$ROM" ] && exec "\$HERE/usr/bin/$EXE" "\$ROM"
     exec "\$HERE/usr/bin/$EXE" $EXTRA_ARGS
 fi
 exec "\$HERE/usr/bin/$EXE" "\$@"
