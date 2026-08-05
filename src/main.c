@@ -1590,6 +1590,9 @@ error_reading:;
      * vs the snes9x oracle, issue #4); the truncating division also
      * undersized the block for non-multiple rates. Round to the nearest
      * frame: 32040->534 (1:1, no resample), 48000->800, 44100->735. */
+    /* The consumer converts the SPC's native 32040 Hz onto this rate and
+     * cannot infer it; see RtlSetAudioOutputRate in common_rtl.h. */
+    RtlSetAudioOutputRate(have.freq);
     g_frames_per_block = (534 * have.freq + 32040 / 2) / 32040;
     g_audiobuffer = (uint8 *)calloc(g_frames_per_block * have.channels * sizeof(int16), 1);
     host_report_breadcrumb(
