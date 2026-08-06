@@ -174,6 +174,13 @@ static void MmxDisplay_PreparePpuFrame(void) {
 
   int width = MmxDisplay_ComputeFrameWidth(drawable_width, drawable_height,
                                            g_config.widescreen);
+  /* Probe/CI determinism: SNESRECOMP_WS_EXTRA pins the margin so measured
+   * widescreen geometry never silently follows the window aspect (a probe
+   * once measured a 43px margin where the user played at ~72px and reached
+   * the opposite verdict). Applies only while widescreen is enabled. */
+  int ws_extra_override = PpuWsExtraOverride();
+  if (ws_extra_override >= 0)
+    width = g_config.widescreen ? 256 + 2 * ws_extra_override : 256;
   g_snes_width = width;
   g_ws_extra = (width - 256) / 2;
   g_ws_active = g_ws_extra != 0;
@@ -200,6 +207,47 @@ static void MmxDisplay_PreparePpuFrame(void) {
    * original working anchors while limiting them to the measured top HUD. */
   PpuSetWsHudOamBand(g_ppu, in_stage ? 96 : 0, 25, 216);
   PpuSetWsHudOamShift(g_ppu, in_stage ? 16 : 0);
+  /* Boss health bars are NOT in the fixed HUD reserve: they are general-pool
+   * objects whose OAM slots (16+) legitimately hold X's own body or enemy
+   * sprites outside boss fights (measured: Highway gameplay = X's parts,
+   * Storm Eagle pre-fight = the boss body, fight = the bar at slots 16-22).
+   * Anchoring that range unconditionally would side-shift gameplay sprites
+   * at the screen-top edges, so detect the bar by its OAM signature every
+   * frame - a vertical run of HUD-palette bar-segment tiles hugging the
+   * native right edge - and anchor exactly the matching run. */
+  {
+    int bar_first = -1, bar_len = 0;
+    if (in_stage) {
+      int run_first = -1, run_len = 0;
+      for (int slot = 16; slot <= 48; slot++) {
+        uint16 w0 = g_ppu->oam[slot * 2];
+        uint16 w1 = g_ppu->oam[slot * 2 + 1];
+        uint8 x = (uint8)(w0 & 0xff);
+        uint8 y = (uint8)(w0 >> 8);
+        uint8 tile = (uint8)(w1 & 0xff);
+        uint8 attr = (uint8)(w1 >> 8);
+        uint8 x_hi = (uint8)((g_ppu->highOam[slot >> 2] >> ((slot & 3) * 2)) & 1);
+        bool seg = !x_hi && x >= 216 && y < 96 && ((attr >> 1) & 7) == 2 &&
+                   (tile == 128 || tile == 130 || tile == 132 ||
+                    tile == 134 || tile == 170);
+        if (seg) {
+          if (run_first < 0)
+            run_first = slot;
+          run_len++;
+        } else if (run_first >= 0) {
+          break;
+        }
+      }
+      /* A real bar is a stack of >= 4 segment sprites; anything shorter is
+       * treated as coincidental gameplay tiles and left native. */
+      if (run_len >= 4) {
+        bar_first = run_first;
+        bar_len = run_len;
+      }
+    }
+    PpuSetWsHudOamShiftRange2(g_ppu, bar_first >= 0 ? (uint8)bar_first : 0,
+                              bar_first >= 0 ? (uint8)bar_len : 0);
+  }
   /* MMX draws its HUD with OBJ, leaving BG3 available for stage overlays.
    * Widen it during gameplay so effects such as Launch Octopus's foreground
    * water filter cover the side margins as well as the native viewport.
