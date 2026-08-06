@@ -1136,13 +1136,16 @@ uint16 MmxWsStageLineAdjust(uint16 v, uint16 dpage, uint16 xoff) {
  * *change*, not by the value's zero-ness, so a legitimate page-0 bind
  * that never changes is never touched, and an early bind that latched a
  * stale value snaps to the real one as soon as the allocator writes it. */
-#define MMX_WS_CHRBIND_CAP 48  /* was 24: 8 inlined bind sites (up from the
-                                 * single 827D site) mean more concurrent
-                                 * latch traffic across a margin encounter;
-                                 * doubled for eviction headroom so a busy
-                                 * screen doesn't recycle a still-live latch
-                                 * out from under an object before its
-                                 * MAX_AGE_FRAMES/MAX_REBINDS budget is spent. */
+#define MMX_WS_CHRBIND_CAP 96  /* was 48: WS-CHRBIND-COPY adds 42 more
+                                 * inlined injection sites (the "clone my
+                                 * own tile-base to a sibling/child" idiom,
+                                 * tools/apply_overrides.py) that can each
+                                 * seed an additional CHILD latch into this
+                                 * same ring whenever their parent object is
+                                 * itself under an active latch; doubled
+                                 * again for headroom so that traffic can't
+                                 * recycle a still-live latch out from under
+                                 * an object before its budget is spent. */
 #define MMX_WS_CHRBIND_MAX_AGE_FRAMES 600u
 #define MMX_WS_CHRBIND_MAX_REBINDS 3
 
@@ -1162,6 +1165,8 @@ static MmxWsChrBindLatch s_ws_chrbind_latches[MMX_WS_CHRBIND_CAP];
 static int s_ws_chrbind_next;  /* ring cursor: overwrite-oldest on cap */
 static uint32_t s_ws_chrbind_binds_seen;
 static uint32_t s_ws_chrbind_rebinds_performed;
+static uint32_t s_ws_chrbind_copies_seen;
+static uint32_t s_ws_chrbind_copy_latches_created;
 
 /* Shared gate for both the hook and the sweep, mirroring
  * MmxDisplay_PrepareBg2Shadow's own in-stage gate: everything here is a
@@ -1199,6 +1204,62 @@ void MmxWsChrBindNote(uint16 objD, uint16 slotX) {
   l->used = 1;
 }
 
+/* Called via the WS-CHRBIND-COPY injection (tools/apply_overrides.py)
+ * right after each of the 42 verified inlined "clone my own tile-base to
+ * a sibling/child object" sites' chained store completes -- the 65816
+ * idiom `LDA [D+0x18] / STA 0x0018,X`, which never touches $7F:8200 at
+ * all and so is invisible to MmxWsChrBindNote above. parentD is the
+ * COPYING object's own D (transcribed directly, per the injector's
+ * regen-drift guard that nothing reassigns cpu->D between the anchor and
+ * the store); childBase is cpu->X, the sibling/child's own object base
+ * (NOT a VRAM-CHR slot index -- a different value space than
+ * MmxWsChrBindNote's slotX, see the module docstring's WS-CHRBIND-COPY
+ * section).
+ *
+ * This deliberately does NOT create a latch from nothing: if the
+ * copying object's own bind was never suspect (no active WS-CHRBIND
+ * latch for parentD -- e.g. its tile-base came from a fully-populated
+ * slot, or its latch already retired healthily), there is no allocator
+ * slot to compare the child against and nothing to propagate. Only when
+ * the parent IS still under an active latch does the child need one too
+ * -- it just inherited the parent's (possibly still-stale) tile-base by
+ * value, so it must heal on the same VRAM-CHR slot change the parent is
+ * waiting on. The child's latch is seeded into the SAME ring
+ * MmxWsChrRebindSweep already sweeps every frame; no separate sweep path
+ * exists for copies. */
+void MmxWsChrBindNoteCopy(uint16 parentD, uint16 childBase) {
+  if (!MmxWsChrBindActive()) return;
+  extern uint8_t g_ram[0x20000];
+  s_ws_chrbind_copies_seen++;
+  /* Most-recently (re)bound active latch for the parent -- CAP is small
+   * and fixed (96), and this runs once per copy-site hit (not per
+   * frame), so a linear scan needs no secondary index. */
+  MmxWsChrBindLatch *parent = NULL;
+  for (int i = 0; i < MMX_WS_CHRBIND_CAP; i++) {
+    MmxWsChrBindLatch *l = &s_ws_chrbind_latches[i];
+    if (l->used && l->obj_d == parentD) {
+      if (!parent || l->frame >= parent->frame) parent = l;
+    }
+  }
+  if (!parent) return;
+  MmxWsChrBindLatch *c = &s_ws_chrbind_latches[s_ws_chrbind_next];
+  s_ws_chrbind_next = (s_ws_chrbind_next + 1) % MMX_WS_CHRBIND_CAP;
+  c->obj_d = childBase;
+  c->slot = parent->slot;  /* same VRAM-CHR allocation as the parent */
+  c->read_entry = g_ram[(uint16)(childBase + 0x18)];  /* the just-copied
+                                                        * stale value */
+  /* [childBase+0x0a] (gfx/identity) may still be 0 here -- the spawn
+   * routine commonly writes the child's gfx byte LATER in the same
+   * routine, after this copy. MmxWsChrRebindSweep's eviction handles
+   * this: it adopts the identity byte once it becomes nonzero rather
+   * than treating "not yet written" as "object already died". */
+  c->gfx = g_ram[(uint16)(childBase + 0x0a)];
+  c->rebind_count = 0;
+  c->frame = (uint32_t)snes_frame_counter;
+  c->used = 1;
+  s_ws_chrbind_copy_latches_created++;
+}
+
 /* Called once per frame from RtlDrawPpuFrame (src/main.c), same call site
  * attempt #1 used for its heal sweep. For every live latch: drop it if
  * it's aged out or the object was evidently reused (gfx-index changed);
@@ -1233,14 +1294,47 @@ void MmxWsChrRebindSweep(void) {
   for (int i = 0; i < MMX_WS_CHRBIND_CAP; i++) {
     MmxWsChrBindLatch *l = &s_ws_chrbind_latches[i];
     if (!l->used) continue;
+    /* Eviction. [D+0x0a] equality is NOT usable as the identity test:
+     * for the composite flying-mech family that byte is the animation /
+     * deploy sub-state index and cycles 0x10->0x11->0x12 during the
+     * deploy sequence itself (measured 2026-08-06) -- evicting on any
+     * change silently dropped exactly the latches whose objects were
+     * mid-deploy, which is why deploy-state tiles stayed stale while
+     * idle-state ones healed. Keep only age (bounded lifetime) and
+     * "slot freed" (gfx 0) as eviction causes; per-heal safety against
+     * struct reuse is enforced below at the write itself.
+     *
+     * "Slot freed" must be a live-to-dead TRANSITION (gfx went from
+     * nonzero to zero), not a bare "gfx == 0" snapshot: a WS-CHRBIND-COPY
+     * child latch can be seeded (MmxWsChrBindNoteCopy) BEFORE the spawn
+     * routine gets around to writing the child's own gfx/identity byte
+     * later in the same routine, so its latch legitimately starts with
+     * gfx == 0. A bare "== 0" eviction would drop that latch on the very
+     * next sweep, before it ever got a chance to heal. Instead: while
+     * gfx == 0 and the live byte has since become nonzero, ADOPT it (the
+     * latch gains its identity check once the child finishes
+     * initializing); only evict once a latch that HAD a nonzero identity
+     * sees it go back to zero (the object actually died / slot freed). */
+    uint8_t cur_gfx = g_ram[(uint16)(l->obj_d + 0x0a)];
     if ((now - l->frame) > MMX_WS_CHRBIND_MAX_AGE_FRAMES ||
-        g_ram[(uint16)(l->obj_d + 0x0a)] != l->gfx) {
+        (l->gfx != 0 && cur_gfx == 0)) {
       l->used = 0;
       continue;
     }
+    if (l->gfx == 0 && cur_gfx != 0) {
+      l->gfx = cur_gfx;
+    }
     uint8_t cur = g_ram[0x18200 + l->slot];
     if (cur != l->read_entry) {
-      if (l->rebind_count < MMX_WS_CHRBIND_MAX_REBINDS) {
+      /* Heal only while the object still carries the exact stale value
+       * this latch saw the bind site store: if the game itself re-bound
+       * the object (fresh table read -> already correct), or the struct
+       * was reused by a different object (its own base, not ours),
+       * [D+0x18] no longer equals read_entry and we must not touch it.
+       * This guard replaces the dropped gfx-equality identity test with
+       * a per-write one that cannot stomp a healthy binding. */
+      if (l->rebind_count < MMX_WS_CHRBIND_MAX_REBINDS &&
+          g_ram[(uint16)(l->obj_d + 0x18)] == l->read_entry) {
         /* Mirror the bind site's tile-base store only -- see the
          * function comment above for why the palette store is
          * intentionally never replayed here. */
@@ -1256,3 +1350,5 @@ void MmxWsChrRebindSweep(void) {
 
 uint32_t MmxWsChrBindsSeen(void) { return s_ws_chrbind_binds_seen; }
 uint32_t MmxWsChrRebindsPerformed(void) { return s_ws_chrbind_rebinds_performed; }
+uint32_t MmxWsChrBindCopiesSeen(void) { return s_ws_chrbind_copies_seen; }
+uint32_t MmxWsChrBindCopyLatchesCreated(void) { return s_ws_chrbind_copy_latches_created; }

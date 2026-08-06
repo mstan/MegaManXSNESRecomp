@@ -149,6 +149,63 @@ WS-CHRBIND - observe (never re-derive) the OAM tile-base bind for the
   never touches the wide admission path at all (unlike attempt #1), so
   the WS-SPAWN margin-entry regression it caused cannot recur here.
 
+WS-CHRBIND-COPY - observe the OTHER way an object's tile-base ever gets
+  set: a PLAIN COPY from the currently-executing object's own [D+0x18]
+  into a sibling/child object's [+0x18], indexed by cpu->X (the
+  allocator's returned slot base for the new object -- never re-derived
+  here, same discipline as WS-CHRBIND). This is the 65816 idiom
+  `LDA $18` (direct page) / `STA $0018,X` (absolute indexed in the
+  current data bank), which never touches $7F:8200 at all, so it is
+  invisible to every WS-CHRBIND hook above. If the copying object's own
+  tile-base was itself still the stale/never-written value from the
+  root race (see WS-CHRBIND), the child inherits that stale value
+  PERMANENTLY -- confirmed live 2026-08-06 as the residual garbled
+  flying-mech deploy/spike sub-object, via `bank_87_ECD9_M1X1`
+  (`src/gen/bank87_part0d_v2.c:8548-8554`).
+
+  Anchor: `cpu_read8(cpu, 0x00, (uint16)(cpu->D + 0x0018))`. Because that
+  same expression is also the ordinary "read my own tile-base for
+  whatever reason" idiom used all over the generated code (113 raw
+  occurrences), the anchor alone is not selective enough; the pass
+  additionally verifies the read value is forwarded through the
+  accumulator (`cpu_write_a_m` on the exact anchor variable, immediately
+  next line) and, within a bounded ~12-line window, back out
+  (`cpu_read_a16`) into a `cpu_write8(...)` whose destination contains
+  `0x0018 + (uint32)cpu->X` -- i.e. the generated mirror of `STA
+  $0018,X`. Only that chained shape is injected; a bare read of
+  [D+0x18] that goes anywhere else (there are ~70 of those) is left
+  alone. Like WS-CHRBIND, an anchor is abandoned rather than trusted if
+  cpu->X or cpu->D is reassigned before the chained store completes.
+
+  Scanning all of `src/gen` for this chained shape (2026-08-06) found
+  EXACTLY 42 sites, not the single ECD9 occurrence that motivated the
+  fix -- this "spawn a child, inherit my tile-base by plain copy" idiom
+  recurs throughout the enemy AI across banks 01/81/82/83/87/88 (verified
+  per-site: same accumulator-forwarding shape, no intervening cpu->X/D
+  reassignment, and where cpu->X's own last assignment is visible in the
+  same function -- e.g. `bank_88_D8E3_M1X1`, `bank_88_E2CB_M1X1` -- it is
+  freshly computed from cpu->A just beforehand, i.e. a table-derived
+  slot/object base, the same shape as an allocator handing back a new
+  child's slot; where it is not visible (e.g. ECD9 itself) cpu->X is
+  inherited unmodified from a caller that set it up, exactly as ECD9's
+  own docstring above describes). All 42 are real instances of the same
+  ROM-level operation, not a false-positive cluster, so all 42 get the
+  observability hook -- see EXPECTED_CHRBIND_COPY_SITES below for the
+  full list this was verified against.
+
+  The host (MmxWsChrBindNoteCopy, mmx_rtl.c) does not create a fresh,
+  independent latch: it looks up the most recently active WS-CHRBIND
+  latch whose obj_d equals the COPYING object's D (the parent). If none
+  is active (the parent was never latched, i.e. its own tile-base bind
+  was never suspect, or its latch already retired) the copy is a no-op
+  bookkeeping-wise -- there is nothing to propagate. If the parent does
+  have an active latch, a new latch is created for the CHILD (obj_d =
+  cpu->X, same slot as the parent's, since the child inherited the same
+  VRAM-CHR allocation) so MmxWsChrRebindSweep's existing per-frame heal
+  loop picks it up exactly like any directly-bound object -- no separate
+  sweep or healing path was added; the copy hook only seeds an entry
+  into the SAME ring the direct binds use.
+
 Usage:
     python tools/apply_overrides.py [--gen-dir src/gen] [--check] [-v]
     python tools/apply_overrides.py --restore [--gen-dir src/gen] [-v]
@@ -161,7 +218,7 @@ import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
-           "/*WS-SHADOW*/", "/*WS-CHRBIND*/")
+           "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/")
 
 RE_TRACE = re.compile(r"cpu_trace_block\(cpu, (0x[0-9A-Fa-f]+)\)")
 RE_STORE00 = re.compile(
@@ -569,6 +626,122 @@ def apply_chrbind_generic(lines, verbose):
     return out, n
 
 
+RE_CHRBIND_COPY_ANCHOR = re.compile(
+    r"^\s*uint8 (_v\d+) = cpu_read8\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0018\)\);\s*$")
+RE_CHRBIND_COPY_WRITE_A_M = re.compile(
+    r"^\s*cpu_write_a_m\(cpu, \(uint16\)\((_v\d+)\)\);\s*$")
+RE_CHRBIND_COPY_READ_A16 = re.compile(
+    r"^\s*uint16 (_v\d+) = cpu_read_a16\(cpu\);\s*$")
+RE_CHRBIND_COPY_STORE = re.compile(
+    r"^(\s*)cpu_write8\(cpu, [^;]*0x0018 \+ \(uint32\)cpu->X[^;]*, (_v\d+)\);\s*$")
+
+# Bounded forward-scan window from the anchor to the chained store. Measured
+# across all 42 real sites the store lands 5-6 lines after the anchor (the
+# write_a_m + a fixed few flag-update lines + the read_a16); 12 gives
+# headroom for regen drift without being large enough to wander into an
+# unrelated store that happens to share the "0x0018 + cpu->X" destination.
+CHRBIND_COPY_WINDOW = 12
+# Verified 2026-08-06 by scanning all of src/gen for the anchor -> chained
+# accumulator forward -> "0x0018 + cpu->X" store shape, then per-site
+# inspection of every match (see the module docstring's WS-CHRBIND-COPY
+# section): exactly 42 real sites, none excluded as false positives.
+EXPECTED_CHRBIND_COPY_SITES = 42
+EXPECTED_CHRBIND_COPY_SITE_NAMES = (
+    "bank_01_C20A_M1X1", "bank_81_A979_M1X1", "bank_81_C20A_M1X1",
+    "bank_81_C39F_M1X1", "bank_81_C3CB_M1X1", "bank_81_DB73_M1X1",
+    "bank_81_DBA5_M1X1", "bank_81_DBD7_M1X1", "bank_81_E2F0_M1X1",
+    "bank_82_9AF4_M1X1", "bank_82_C331_M1X1", "bank_82_CBBB_M1X1",
+    "bank_82_CCEB_M1X1", "bank_82_DE94_M1X1", "bank_82_E1B9_M1X1",
+    "bank_83_AE95_M1X1", "bank_83_B109_M1X1", "bank_83_C316_M1X1",
+    "bank_83_C4C0_M1X1", "bank_83_C4CE_M1X1", "bank_83_D9AF_M1X1",
+    "bank_83_DA2E_M1X1", "bank_83_E6C4_M1X1", "bank_87_9A90_M1X0",
+    "bank_87_9ADB_M1X0", "bank_87_B3D7_M1X1", "bank_87_BB6F_M1X1",
+    "bank_87_BF17_M1X1", "bank_87_CA3F_M1X1", "bank_87_D492_M1X1",
+    "bank_87_D7F7_M1X1", "bank_87_DFCD_M1X1", "bank_87_E62A_M1X1",
+    "bank_87_ECD9_M1X1", "bank_88_8413_M1X1", "bank_88_84B0_M1X1",
+    "bank_88_B17E_M1X1", "bank_88_BB21_M1X1", "bank_88_BE06_M1X1",
+    "bank_88_D8E3_M1X1", "bank_88_DF08_M1X1", "bank_88_E2CB_M1X1",
+)
+
+
+def chrbind_copy_snippet(indent):
+    return (f"{indent}/*WS-CHRBIND-COPY*/ {{ extern void "
+            f"MmxWsChrBindNoteCopy(uint16, uint16); "
+            f"MmxWsChrBindNoteCopy(cpu->D, cpu->X); }}\n")
+
+
+def apply_chrbind_copy_generic(lines, verbose):
+    """Pattern-based WS-CHRBIND-COPY pass: find every inlined "copy my own
+    tile-base to a sibling/child object" idiom (LDA [D+0x18] / STA
+    0x0018,X, verified via the accumulator-forwarding chain, not just the
+    bare anchor read -- see the module docstring's WS-CHRBIND-COPY section
+    for why the bare anchor alone is not selective enough) and inject the
+    host observability hook immediately after that same chain's store."""
+    out = []
+    n = 0
+    i = 0
+    L = len(lines)
+    while i < L:
+        line = lines[i]
+        m = RE_CHRBIND_COPY_ANCHOR.match(line)
+        if not m:
+            out.append(line)
+            i += 1
+            continue
+        anchor_var = m.group(1)
+        if i + 1 >= L:
+            out.append(line)
+            i += 1
+            continue
+        mw = RE_CHRBIND_COPY_WRITE_A_M.match(lines[i + 1])
+        if not (mw and mw.group(1) == anchor_var):
+            out.append(line)
+            i += 1
+            continue
+        # Bounded forward scan for the read_a16 -> chained store, abandoning
+        # if cpu->X/cpu->D get reassigned before the store completes (same
+        # regen-drift safety as WS-CHRBIND).
+        accum_var = None
+        store_idx = None
+        abandon = False
+        limit = min(i + 1 + CHRBIND_COPY_WINDOW, L)
+        for j in range(i + 2, limit):
+            ln = lines[j]
+            if RE_CHRBIND_X_ASSIGN.search(ln) or RE_CHRBIND_D_ASSIGN.search(ln):
+                abandon = True
+                break
+            if accum_var is None:
+                mr = RE_CHRBIND_COPY_READ_A16.match(ln)
+                if mr:
+                    accum_var = mr.group(1)
+                continue
+            ms = RE_CHRBIND_COPY_STORE.match(ln)
+            if ms and ms.group(2) == accum_var:
+                store_idx = j
+                break
+        if abandon or store_idx is None:
+            if verbose:
+                print(f"  WS-CHRBIND-COPY: no chained store found (or "
+                      f"cpu->X/D reassigned) within {CHRBIND_COPY_WINDOW} "
+                      f"lines of the anchor near line {i + 1}; abandoning "
+                      f"this anchor")
+            out.append(line)
+            i += 1
+            continue
+        for k in range(i, store_idx + 1):
+            out.append(lines[k])
+        indent = RE_CHRBIND_COPY_STORE.match(lines[store_idx]).group(1)
+        already = (store_idx + 1 < L and
+                   "/*WS-CHRBIND-COPY*/" in lines[store_idx + 1])
+        if not already:
+            out.append(chrbind_copy_snippet(indent))
+            if verbose:
+                print(f"  WS-CHRBIND-COPY after line {len(out) - 1}")
+        n += 1
+        i = store_idx + 1
+    return out, n
+
+
 def process(path, fn, check, verbose):
     with open(path, "r", encoding="utf-8", newline="") as f:
         lines = f.readlines()
@@ -611,6 +784,7 @@ def main():
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
+        (apply_chrbind_copy_generic, "/*WS-CHRBIND-COPY*/"),
     )
     paths = sorted(glob.glob(os.path.join(args.gen_dir, "bank*_v2.c")))
     if not paths:
@@ -662,6 +836,14 @@ def main():
             f"ERROR: expected exactly {EXPECTED_CHRBIND_SITES} WS-CHRBIND "
             f"anchor hooks, found {chrbind_found}. Expected sites: "
             f"{', '.join(EXPECTED_CHRBIND_SITE_NAMES)}",
+            file=sys.stderr)
+        return 1
+    chrbind_copy_found = effective_counts.get("/*WS-CHRBIND-COPY*/", 0)
+    if not args.restore and chrbind_copy_found != EXPECTED_CHRBIND_COPY_SITES:
+        print(
+            f"ERROR: expected exactly {EXPECTED_CHRBIND_COPY_SITES} "
+            f"WS-CHRBIND-COPY anchor hooks, found {chrbind_copy_found}. "
+            f"Expected sites: {', '.join(EXPECTED_CHRBIND_COPY_SITE_NAMES)}",
             file=sys.stderr)
         return 1
     if not args.restore and total == 0 and patched_files == 0:

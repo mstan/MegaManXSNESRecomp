@@ -982,8 +982,13 @@ static void post_mortem_atexit(void) {
    * widescreen off or outside live stage gameplay. */
   extern uint32_t MmxWsChrBindsSeen(void);
   extern uint32_t MmxWsChrRebindsPerformed(void);
-  fprintf(stderr, "[ws_chrbind] binds_seen=%u rebinds_performed=%u\n",
-          MmxWsChrBindsSeen(), MmxWsChrRebindsPerformed());
+  extern uint32_t MmxWsChrBindCopiesSeen(void);
+  extern uint32_t MmxWsChrBindCopyLatchesCreated(void);
+  fprintf(stderr,
+          "[ws_chrbind] binds_seen=%u rebinds_performed=%u "
+          "copies_seen=%u copy_latches_created=%u\n",
+          MmxWsChrBindsSeen(), MmxWsChrRebindsPerformed(),
+          MmxWsChrBindCopiesSeen(), MmxWsChrBindCopyLatchesCreated());
 }
 
 /* Resolve a relative CLI path against the launch cwd before
