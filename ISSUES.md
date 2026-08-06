@@ -70,6 +70,71 @@
 
 ## Open
 
+### Widescreen margin-enemy garbled CHR — ROOT-CAUSED 2026-08-06; first fix attempt REJECTED (do not re-ship it)
+
+**Symptom (user-reported, faithful savestate repro):** specific early-Highway
+enemies (the large flying mechs near the wrecked cars) render permanently
+garbled when they spawn into the widescreen margin. No self-heal — still
+garbled after seconds idle and after entering the native view. Only SOME
+enemy types garble.
+
+**Root cause (CONFIRMED, measured live 2026-08-06):** same defect class as
+the RESOLVED turtle dash-jump invisibility (see its entry below): the OAM
+tile-base binding `[objD+0x18]` is written ONCE at spawn by
+`bank_02_827D` (gen body emitted as `bank_82_827D_M1X1`,
+`src/gen/bank82_part00_v2.c:14370-14526`) from the VRAM-CHR allocation
+table `[$7F:8200 + slot]` (slot = `ROM[$A5E5 + ((gfx-1)&0xff)*2]`, gfx =
+`[objD+0x0a]`). That table entry is populated only after the enemy's
+region staging trigger fires (native camera timing) and its frame-paced
+streaming reaches the slot. WS-SPAWN (`MmxWsSpawnAnchorRight/Left`,
+`src/mmx_rtl.c`) creates type-3 enemies margin+32px EARLY — for enemies
+placed just past a not-yet-fired trigger line the binder reads a
+still-unpopulated entry, latches tile-base 0, and never re-binds → the
+sprite reads OBJ nametable-1 tiles 0x00-0x2f (whatever already lives
+there) forever. Decisive A/B: `SNESRECOMP_WS_SPAWN=0` alone makes the
+identical slot-7 walk render the same enemies healthy (tiles 0x60-0x8f).
+VRAM at words 0x7000-0x72ff (bytes 0xE000-0xE5FF) is byte-identical
+before/after the garbled spawn — nothing overwrites the enemy's tiles;
+they were never uploaded for it.
+
+**Fix attempt #1 — REJECTED by user verification 2026-08-06, reverted
+(patch preserved at repo root `_ws_chrgate_rejected.patch`). Do NOT
+re-propose as-is.** Shape: gate the wide pass's type-3 admission on
+"CHR ready" = `g_ram[0x18200+slot] != 0` (+ pending-column retry ring
+replayed per column crossing, + a detect-only latch-once heal sweep).
+Verified transcriptions that remain TRUE and reusable: record gfx-index
+byte = record+3 (record ptr at `[D+0x18]`, copy loop starts Y=1 →
+obj+0x08; `src/gen/bank00_part0b_v2.c:7625-7700`), slot lookup as above.
+**Why it failed:** the readiness predicate `entry != 0` cannot
+distinguish "not yet allocated" from "legitimately allocated at page 0"
+(page 0 IS a real, commonly-used tile page — it is exactly what the
+garbled sprites were reading). Every enemy whose true base is page 0
+(and any record whose layout deviates from the transcription) reads
+permanently not-ready → wide admission vetoed → native-pass fallback →
+**all such enemies visibly spawn at 4:3 timing, defeating WS-SPAWN**
+(user-observed regression).
+
+**Requirements for a correct future fix (pick a real readiness signal,
+not the value):**
+1. Track allocation VALIDITY, not the table value: host-side observe the
+   allocator `bank_00_B15B`'s writes to `$7F:8200+slot` (e.g. a WRAM
+   write-watch / host shadow bitmap "slot written since level load") —
+   a written-zero is then distinguishable from never-written.
+2. OR make the binder re-checkable (the complete class fix, also covers
+   any residual vanilla races): re-run the `827D` binding for an object
+   whose bind happened while its slot was never-written, once the slot
+   IS written. Needs the object-iteration/anim-state gate transcribed
+   with certainty — the ISSUES.md turtle-entry call chain
+   (`bank_00_953F/9976/9A6A/…`) no longer maps onto current gen block
+   boundaries; re-derive from `bank_87_EBFE_M1X1`
+   (`src/gen/bank87_part0d_v2.c:6578-6742`) → `bank_87_EC3A_M1X1`
+   (`:7154-7304`) whose `[D+0x0b]` bit0 + `[D+0x01]` state machine gates
+   the one-shot bind.
+3. Any admission-defer variant MUST fail open (admit) on unknown record
+   shapes, and must be validated against "enemies still spawn into the
+   margin, not at the native edge" across a full Highway run — that is
+   the regression that killed attempt #1.
+
 ### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
 
 **Status:** feature stays HIDDEN on MMX (owner decision 2026-07-16) — not

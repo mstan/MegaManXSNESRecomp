@@ -1074,3 +1074,140 @@ uint16 MmxWsStageLineAdjust(uint16 v, uint16 dpage, uint16 xoff) {
   }
   return adj;
 }
+
+/* ------------------------------------------------------------------ */
+/* WS-CHRBIND -- fix attempt #2 for the widescreen margin-enemy garbled
+ * CHR (ISSUES.md "Widescreen margin-enemy garbled CHR"). Fix attempt #1
+ * gated the wide spawn admission on the VRAM-CHR slot's raw *value*
+ * being nonzero, and was rejected: zero is also the legitimate tile-base
+ * for any enemy whose real page happens to be page 0, so that predicate
+ * cannot tell "not yet allocated" from "allocated at page 0", and every
+ * such enemy (or any spawn record whose layout didn't match the
+ * transcription) was permanently vetoed from the wide pass -- undoing
+ * WS-SPAWN's early margin entry for exactly the enemies it was built for.
+ *
+ * This attempt does not touch spawn admission AT ALL. Instead it lets
+ * bank_82_827D_M1X1 (src/gen/bank82_part00_v2.c:14370-14526) run exactly
+ * as before -- including binding a possibly-not-yet-populated tile-base/
+ * palette when it fires too early -- and observes the game's OWN bind
+ * inputs via the injected WS-CHRBIND hook (tools/apply_overrides.py),
+ * placed immediately after 827D's two binding stores:
+ *   cpu_write8(cpu, 0x00, (uint16)(cpu->D + 0x0018), _v12);  // tile-base
+ *   uint8 _v13 = cpu_read8(cpu, ..., 0x7f8300 + cpu->X, ...);
+ *   cpu_write8(cpu, 0x00, (uint16)(cpu->D + 0x0011), _v14);  // palette
+ *   /-*WS-CHRBIND*-/ { ...; MmxWsChrBindNote(cpu->D, cpu->X); }
+ * At that point cpu->D (the spawning object's base) and cpu->X (the VRAM-
+ * CHR slot index -- read unmodified for BOTH the $7F:8200 and $7F:8300
+ * fetches, lines 14484-14499) still hold exactly the values 827D itself
+ * used. No re-derivation of gfx-index -> slot is needed or performed here
+ * (the earlier record+3 / $A5E5 host-side transcription was measured
+ * WRONG for composite mechs -- see ISSUES.md's 2026-08-06 note -- so this
+ * fix deliberately never repeats that derivation).
+ *
+ * The host latches {object base, slot, the slot's WRAM entry at bind
+ * time, the object's gfx-index (to detect the object dying/being reused),
+ * bind frame}. Once per frame (MmxWsChrRebindSweep, called from
+ * RtlDrawPpuFrame same as MmxDisplay_PrepareBg2Shadow) each live latch is
+ * rechecked: if the allocator has since written a DIFFERENT value into
+ * that same slot, the object bound too early and 827D's two stores are
+ * replayed with the fresh value -- this is allocation VALIDITY tracked by
+ * *change*, not by the value's zero-ness, so a legitimate page-0 bind
+ * that never changes is never touched, and an early bind that latched a
+ * stale value snaps to the real one as soon as the allocator writes it. */
+#define MMX_WS_CHRBIND_CAP 24
+#define MMX_WS_CHRBIND_MAX_AGE_FRAMES 600u
+#define MMX_WS_CHRBIND_MAX_REBINDS 3
+
+typedef struct {
+  uint16_t obj_d;        /* object base (cpu->D at bind time) */
+  uint8_t slot;          /* VRAM-CHR allocation slot (cpu->X at bind time) */
+  uint8_t gfx;           /* g_ram[obj_d+0x0a] at bind time; object identity
+                          * check -- if this changes the struct was reused
+                          * by a different object and the latch is stale */
+  uint8_t read_entry;    /* g_ram[0x18200+slot] observed at bind time */
+  uint8_t rebind_count;  /* capped at MMX_WS_CHRBIND_MAX_REBINDS */
+  uint8_t used;
+  uint32_t frame;        /* snes_frame_counter at (re)bind time, for expiry */
+} MmxWsChrBindLatch;
+
+static MmxWsChrBindLatch s_ws_chrbind_latches[MMX_WS_CHRBIND_CAP];
+static int s_ws_chrbind_next;  /* ring cursor: overwrite-oldest on cap */
+static uint32_t s_ws_chrbind_binds_seen;
+static uint32_t s_ws_chrbind_rebinds_performed;
+
+/* Shared gate for both the hook and the sweep, mirroring
+ * MmxDisplay_PrepareBg2Shadow's own in-stage gate: everything here is a
+ * pure no-op (hook is a call+return, sweep is called but exits
+ * immediately) whenever widescreen is inactive or the game isn't in
+ * live stage gameplay, so authentic 4:3 play is unaffected. */
+static int MmxWsChrBindActive(void) {
+  extern bool g_ws_active;
+  extern uint8_t g_ram[0x20000];
+  return g_ws_active && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
+}
+
+/* Called via the WS-CHRBIND injection right after bank_82_827D_M1X1's own
+ * two binding stores. objD/slotX are transcribed directly from cpu->D and
+ * cpu->X at that point -- see the file comment above for why this must
+ * never re-derive them. slotX is masked to 8 bits defensively; the M1X1
+ * variant (the body's only definition) always runs with x_flag=1, so X is
+ * hardware-guaranteed 8-bit here (bank82_part00_v2.c:14447-14456,
+ * 14473-14482 both zero the high byte on load), but the mask keeps this
+ * safe even if a future variant changes that. */
+void MmxWsChrBindNote(uint16 objD, uint16 slotX) {
+  if (!MmxWsChrBindActive()) return;
+  extern uint8_t g_ram[0x20000];
+  uint8_t slot = (uint8_t)(slotX & 0xff);
+  s_ws_chrbind_binds_seen++;
+  MmxWsChrBindLatch *l = &s_ws_chrbind_latches[s_ws_chrbind_next];
+  s_ws_chrbind_next = (s_ws_chrbind_next + 1) % MMX_WS_CHRBIND_CAP;
+  l->obj_d = objD;
+  l->slot = slot;
+  l->gfx = g_ram[(uint16)(objD + 0x0a)];
+  l->read_entry = g_ram[0x18200 + slot];
+  l->rebind_count = 0;
+  l->frame = (uint32_t)snes_frame_counter;
+  l->used = 1;
+}
+
+/* Called once per frame from RtlDrawPpuFrame (src/main.c), same call site
+ * attempt #1 used for its heal sweep. For every live latch: drop it if
+ * it's aged out or the object was evidently reused (gfx-index changed);
+ * otherwise, if the allocator has written a NEW value into the latched
+ * slot since the bind (or since the last rebind), replay 827D's own two
+ * stores with the fresh value -- an exact mirror of
+ * src/gen/bank82_part00_v2.c:14484-14499's binding, not a fabricated one.
+ * A slot can legitimately be written in stages (e.g. tile-base arrives
+ * before palette finishes streaming), so the latch is kept alive across
+ * multiple rebinds rather than retired after the first -- capped at
+ * MMX_WS_CHRBIND_MAX_REBINDS so a slot that pathologically keeps changing
+ * cannot re-stomp the object's binding forever. */
+void MmxWsChrRebindSweep(void) {
+  if (!MmxWsChrBindActive()) return;
+  extern uint8_t g_ram[0x20000];
+  uint32_t now = (uint32_t)snes_frame_counter;
+  for (int i = 0; i < MMX_WS_CHRBIND_CAP; i++) {
+    MmxWsChrBindLatch *l = &s_ws_chrbind_latches[i];
+    if (!l->used) continue;
+    if ((now - l->frame) > MMX_WS_CHRBIND_MAX_AGE_FRAMES ||
+        g_ram[(uint16)(l->obj_d + 0x0a)] != l->gfx) {
+      l->used = 0;
+      continue;
+    }
+    uint8_t cur = g_ram[0x18200 + l->slot];
+    if (cur != l->read_entry) {
+      if (l->rebind_count < MMX_WS_CHRBIND_MAX_REBINDS) {
+        /* Mirror bank_82_827D_M1X1's own two stores exactly. */
+        g_ram[(uint16)(l->obj_d + 0x18)] = cur;
+        g_ram[(uint16)(l->obj_d + 0x11)] = g_ram[0x18300 + l->slot];
+        s_ws_chrbind_rebinds_performed++;
+        l->rebind_count++;
+        l->frame = now;
+      }
+      l->read_entry = cur;
+    }
+  }
+}
+
+uint32_t MmxWsChrBindsSeen(void) { return s_ws_chrbind_binds_seen; }
+uint32_t MmxWsChrRebindsPerformed(void) { return s_ws_chrbind_rebinds_performed; }

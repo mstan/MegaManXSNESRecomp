@@ -640,6 +640,12 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
 
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
   MmxDisplay_PrepareBg2Shadow();
+  /* WS-CHRBIND heal sweep: re-run bank_82_827D_M1X1's OAM tile-base/
+   * palette bind for any object that latched it before its VRAM-CHR slot
+   * was populated (see mmx_rtl.c and ISSUES.md "Widescreen margin-enemy
+   * garbled CHR" fix attempt #2). No-op unless widescreen is active and
+   * in-stage. */
+  { extern void MmxWsChrRebindSweep(void); MmxWsChrRebindSweep(); }
   g_rtl_game_info->draw_ppu_frame();
   if (g_ws_active)
     MmxWidePreview_Draw(g_my_pixels, g_snes_width, g_snes_height, g_ws_extra);
@@ -971,6 +977,13 @@ static LONG WINAPI seh_handler(EXCEPTION_POINTERS* info) {
 
 static void post_mortem_atexit(void) {
   recomp_post_mortem_dump("atexit", NULL);
+  /* WS-CHRBIND counters (always-on, no env gate; see MmxWsChrBindNote /
+   * MmxWsChrRebindSweep in mmx_rtl.c). Both read 0 on every run with
+   * widescreen off or outside live stage gameplay. */
+  extern uint32_t MmxWsChrBindsSeen(void);
+  extern uint32_t MmxWsChrRebindsPerformed(void);
+  fprintf(stderr, "[ws_chrbind] binds_seen=%u rebinds_performed=%u\n",
+          MmxWsChrBindsSeen(), MmxWsChrRebindsPerformed());
 }
 
 /* Resolve a relative CLI path against the launch cwd before
