@@ -135,6 +135,64 @@ not the value):**
    margin, not at the native edge" across a full Highway run — that is
    the regression that killed attempt #1.
 
+**Fix attempt #2 landed (commit `b8546dc`), PARTIAL — residual root-caused
+and generalized 2026-08-06.** `b8546dc` shipped the change-detection latch
+mechanism described above (requirement 2's shape, without needing the
+turtle-entry state-machine re-derivation), but hooked only
+`bank_82_827D_M1X1` by function name. User-verified: enemy BODIES healed
+(0x00→0x60 rebinds measured), but their hanging spike/crusher sub-objects
+stayed garbled on the same two slot-7 instances.
+
+Root cause of the residual (live capture, ~4,300 frames covering the
+actual composite mech's gfx 0x10/0x11/0x12 objects binding and settling):
+**zero `MmxWsChrBindNote` events ever fired for those gfx values** — the
+hook is structurally blind to this enemy family, independent of race
+timing. Static confirmation: the OAM tile-base/palette bind sequence (read
+`$7F:8200+X` → store `[D+0x18]`; read `$7F:8300+X` → store `[D+0x11]`) is
+**inlined independently in at least 9 ROM routines** across banks
+82/83/87/88 — `bank_82_827D_M1X1` is only one of them
+(`bank_82_EDA5/F554`, `bank_83_F945`, `bank_87_B824/F42A/F477`,
+`bank_88_EAA4` are the other 8 — see `tools/apply_overrides.py`'s
+WS-CHRBIND docstring for exact file:line and the two excluded
+palette-only lookalikes, `bank_87_ABAE`/`bank_87_D01D`, which never touch
+`$7F:8200` at all). This is a property of the original 65816 code, not a
+recompiler defect: each enemy type's hand-written spawn/init routine
+repeats the same short sequence rather than calling a shared subroutine,
+and the recompiler correctly emits one C function per ROM routine.
+
+**Fix (generalized, same commit family, 2026-08-06):** `tools/
+apply_overrides.py`'s WS-CHRBIND pass is now pattern-based instead of
+name-based — it scans every generated translation unit for the tile-base
+*read* (`0x7f8200 + cpu->X`) and injects the hook immediately after that
+bind's tile-base *store* (`[D+0x18]`), wherever the ROM repeats the
+sequence. Verified by inspection: all 9 sites reach that store with
+`cpu->X`/`cpu->D` unmodified since the anchor (injector self-checks this
+per site and abandons an anchor rather than risk a wrong observation).
+The palette half (`[D+0x11]`) is NOT uniform across sites — 3 do a plain
+overwrite, but 6 build it as a hand-written read-modify-write that
+preserves OTHER bits packed into the same byte (mask constants differ per
+site; `bank_88_EAA4` combines from an entirely different source byte).
+Rather than risk clobbering those preserved bits with one generic replay
+formula, `MmxWsChrRebindSweep` (`src/mmx_rtl.c`) now heals ONLY the
+tile-base on rebind — confirmed safe (a plain copy) at every site — and
+never replays a raw palette byte. `EXPECTED_CHRBIND_SITES = 8` in the
+injector (827D + 7 siblings; `bank_87_F42A`/`F477` are two sites in one
+file) is asserted at build time so a future regen silently losing a site
+fails loudly instead of quietly regressing coverage.
+
+**Verified 2026-08-06:** fresh `--restore` + reapply of the generalized
+injector against pristine `src/gen` matches exactly 8/8 expected sites
+(injector's own count assertion passes); `build-trace-fix` builds clean;
+a live walk (loadstate 7, same Highway wrecked-cars encounter) shows no
+crash/regression and the mech family renders healthy. The specific
+garbled-spike race is timing-sensitive and did NOT reproduce in this
+session's scripted walk (same as the original body-only bug before
+`SNESRECOMP_WS_SPAWN`/margin-timing conditions are hit exactly), so the
+generalized fix's effect on the ACTUAL garbled-spike screenshot is not yet
+re-confirmed against the user's exact save-state repro — that is the one
+remaining verification step for a future session (or the next time the
+user plays the slot-7 walk with this build).
+
 ### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
 
 **Status:** feature stays HIDDEN on MMX (owner decision 2026-07-16) — not

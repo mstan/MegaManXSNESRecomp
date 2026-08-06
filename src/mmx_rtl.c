@@ -1086,35 +1086,63 @@ uint16 MmxWsStageLineAdjust(uint16 v, uint16 dpage, uint16 xoff) {
  * transcription) was permanently vetoed from the wide pass -- undoing
  * WS-SPAWN's early margin entry for exactly the enemies it was built for.
  *
- * This attempt does not touch spawn admission AT ALL. Instead it lets
- * bank_82_827D_M1X1 (src/gen/bank82_part00_v2.c:14370-14526) run exactly
- * as before -- including binding a possibly-not-yet-populated tile-base/
- * palette when it fires too early -- and observes the game's OWN bind
- * inputs via the injected WS-CHRBIND hook (tools/apply_overrides.py),
- * placed immediately after 827D's two binding stores:
+ * This attempt does not touch spawn admission AT ALL. Instead it lets the
+ * game's own inlined OAM tile-base binders run exactly as before --
+ * including binding a possibly-not-yet-populated tile-base when one
+ * fires too early -- and observes their bind inputs via the injected
+ * WS-CHRBIND hook (tools/apply_overrides.py). The bind sequence (read
+ * WRAM $7F:8200+X -> store [D+0x18]; read $7F:8300+X -> store [D+0x11])
+ * is INLINED per enemy type, not a single shared function:
+ * bank_82_827D_M1X1 (src/gen/bank82_part00_v2.c:14370-14526) is only ONE
+ * of 8 verified inlined copies (bank_82_EDA5/F554, bank_83_F945,
+ * bank_87_B824/F42A/F477, bank_88_EAA4 are the others -- see
+ * tools/apply_overrides.py's WS-CHRBIND docstring for the full per-site
+ * list). The flying-mech family (gfx 0x10/0x11/0x12, the original
+ * residual garbled-spike symptom) binds through one of the non-827D
+ * copies, never through 827D -- why the single-site fix was partial.
+ *
+ * The generalized injector (tools/apply_overrides.py) anchors on the
+ * tile-base *read* (`0x7f8200 + cpu->X`, identical at every site) and
+ * injects immediately after that same bind's tile-base *store*:
  *   cpu_write8(cpu, 0x00, (uint16)(cpu->D + 0x0018), _v12);  // tile-base
- *   uint8 _v13 = cpu_read8(cpu, ..., 0x7f8300 + cpu->X, ...);
- *   cpu_write8(cpu, 0x00, (uint16)(cpu->D + 0x0011), _v14);  // palette
  *   /-*WS-CHRBIND*-/ { ...; MmxWsChrBindNote(cpu->D, cpu->X); }
- * At that point cpu->D (the spawning object's base) and cpu->X (the VRAM-
- * CHR slot index -- read unmodified for BOTH the $7F:8200 and $7F:8300
- * fetches, lines 14484-14499) still hold exactly the values 827D itself
- * used. No re-derivation of gfx-index -> slot is needed or performed here
- * (the earlier record+3 / $A5E5 host-side transcription was measured
- * WRONG for composite mechs -- see ISSUES.md's 2026-08-06 note -- so this
- * fix deliberately never repeats that derivation).
+ * NOT after the palette store: per-site inspection found the palette
+ * half is NOT uniform across sites -- most do a plain store, but three
+ * (bank_82_EDA5, bank_83_F945, bank_87_F42A) instead do an ORA-style
+ * read-modify-write (`_m = read[D+0x11]; write[D+0x11] = _m | A`) that
+ * merges the table's palette nibble into pre-existing high bits of that
+ * byte (other object flags share D+0x11 with the palette-select nibble
+ * on those three). Replaying a raw palette table byte on rebind would
+ * stomp those bits, so this mechanism only ever heals the tile-base --
+ * see MmxWsChrRebindSweep below.
+ *
+ * At the injection point cpu->D (the spawning object's base) and cpu->X
+ * (the VRAM-CHR slot index) still hold exactly the values the bind
+ * itself used (tools/apply_overrides.py verifies per-site, and at
+ * pattern-match time, that nothing between the anchor and the tile-base
+ * store reassigns cpu->X or cpu->D). No re-derivation of gfx-index ->
+ * slot is needed or performed here (the earlier record+3 / $A5E5
+ * host-side transcription was measured WRONG for composite mechs -- see
+ * ISSUES.md's 2026-08-06 note -- so this fix deliberately never repeats
+ * that derivation).
  *
  * The host latches {object base, slot, the slot's WRAM entry at bind
  * time, the object's gfx-index (to detect the object dying/being reused),
  * bind frame}. Once per frame (MmxWsChrRebindSweep, called from
  * RtlDrawPpuFrame same as MmxDisplay_PrepareBg2Shadow) each live latch is
  * rechecked: if the allocator has since written a DIFFERENT value into
- * that same slot, the object bound too early and 827D's two stores are
+ * that same slot, the object bound too early and the tile-base store is
  * replayed with the fresh value -- this is allocation VALIDITY tracked by
  * *change*, not by the value's zero-ness, so a legitimate page-0 bind
  * that never changes is never touched, and an early bind that latched a
  * stale value snaps to the real one as soon as the allocator writes it. */
-#define MMX_WS_CHRBIND_CAP 24
+#define MMX_WS_CHRBIND_CAP 48  /* was 24: 8 inlined bind sites (up from the
+                                 * single 827D site) mean more concurrent
+                                 * latch traffic across a margin encounter;
+                                 * doubled for eviction headroom so a busy
+                                 * screen doesn't recycle a still-live latch
+                                 * out from under an object before its
+                                 * MAX_AGE_FRAMES/MAX_REBINDS budget is spent. */
 #define MMX_WS_CHRBIND_MAX_AGE_FRAMES 600u
 #define MMX_WS_CHRBIND_MAX_REBINDS 3
 
@@ -1146,14 +1174,15 @@ static int MmxWsChrBindActive(void) {
   return g_ws_active && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
 }
 
-/* Called via the WS-CHRBIND injection right after bank_82_827D_M1X1's own
- * two binding stores. objD/slotX are transcribed directly from cpu->D and
+/* Called via the WS-CHRBIND injection right after each inlined bind site's
+ * own tile-base store. objD/slotX are transcribed directly from cpu->D and
  * cpu->X at that point -- see the file comment above for why this must
- * never re-derive them. slotX is masked to 8 bits defensively; the M1X1
- * variant (the body's only definition) always runs with x_flag=1, so X is
- * hardware-guaranteed 8-bit here (bank82_part00_v2.c:14447-14456,
- * 14473-14482 both zero the high byte on load), but the mask keeps this
- * safe even if a future variant changes that. */
+ * never re-derive them. slotX is masked to 8 bits defensively; every one
+ * of the 8 verified sites reaches its tile-base read with x_flag=1 (each
+ * zeros X's high byte on load just before the read -- see
+ * tools/apply_overrides.py's WS-CHRBIND docstring), so X is
+ * hardware-guaranteed 8-bit here, but the mask keeps this safe even if a
+ * future variant changes that. */
 void MmxWsChrBindNote(uint16 objD, uint16 slotX) {
   if (!MmxWsChrBindActive()) return;
   extern uint8_t g_ram[0x20000];
@@ -1174,14 +1203,29 @@ void MmxWsChrBindNote(uint16 objD, uint16 slotX) {
  * attempt #1 used for its heal sweep. For every live latch: drop it if
  * it's aged out or the object was evidently reused (gfx-index changed);
  * otherwise, if the allocator has written a NEW value into the latched
- * slot since the bind (or since the last rebind), replay 827D's own two
- * stores with the fresh value -- an exact mirror of
- * src/gen/bank82_part00_v2.c:14484-14499's binding, not a fabricated one.
+ * slot since the bind (or since the last rebind), replay the tile-base
+ * store with the fresh value -- an exact mirror of the bind site's own
+ * `cpu_write8(cpu, 0x00, cpu->D + 0x0018, ...)`, not a fabricated one.
  * A slot can legitimately be written in stages (e.g. tile-base arrives
  * before palette finishes streaming), so the latch is kept alive across
  * multiple rebinds rather than retired after the first -- capped at
  * MMX_WS_CHRBIND_MAX_REBINDS so a slot that pathologically keeps changing
- * cannot re-stomp the object's binding forever. */
+ * cannot re-stomp the object's binding forever.
+ *
+ * Deliberately heals ONLY the tile-base (D+0x18), never the palette
+ * (D+0x11): per-site inspection (2026-08-06, generalizing this pass from
+ * the single 827D site to all 8 real bind sites -- see
+ * tools/apply_overrides.py's WS-CHRBIND docstring) found the palette half
+ * is not a uniform raw copy everywhere. Three sites (bank_82_EDA5,
+ * bank_83_F945, bank_87_F42A) build D+0x11 as `old_D11 | palette_nibble`,
+ * i.e. the byte also carries other per-object bits (priority/flags) that
+ * legitimately share it with the palette-select nibble. A raw
+ * `g_ram[objD+0x11] = g_ram[0x18300+slot]` replay here would blow away
+ * those bits on those objects. The tile-base field has no such sharing at
+ * any site (always a plain copy), so it is the only half that is always
+ * safe to replay this way; the palette table value is still recorded in
+ * the latch (read_entry mirrors the tile-base table, not the palette
+ * one) purely for the change-detection trigger, not for replay. */
 void MmxWsChrRebindSweep(void) {
   if (!MmxWsChrBindActive()) return;
   extern uint8_t g_ram[0x20000];
@@ -1197,9 +1241,10 @@ void MmxWsChrRebindSweep(void) {
     uint8_t cur = g_ram[0x18200 + l->slot];
     if (cur != l->read_entry) {
       if (l->rebind_count < MMX_WS_CHRBIND_MAX_REBINDS) {
-        /* Mirror bank_82_827D_M1X1's own two stores exactly. */
+        /* Mirror the bind site's tile-base store only -- see the
+         * function comment above for why the palette store is
+         * intentionally never replayed here. */
         g_ram[(uint16)(l->obj_d + 0x18)] = cur;
-        g_ram[(uint16)(l->obj_d + 0x11)] = g_ram[0x18300 + l->slot];
         s_ws_chrbind_rebinds_performed++;
         l->rebind_count++;
         l->frame = now;

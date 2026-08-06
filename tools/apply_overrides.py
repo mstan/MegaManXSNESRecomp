@@ -80,33 +80,74 @@ WS-SHOT-CULL - widen X's projectile lifetime window (X axis only).
   MmxWsShotCullVerdictX, widening both sides by the live margin while
   remaining equivalent in 4:3. Its Y-axis test is untouched.
 
-WS-CHRBIND - observe (never re-derive) the OAM tile-base/palette bind for
-  the margin-enemy garbled-CHR fix (see ISSUES.md "Widescreen margin-enemy
-  garbled CHR", fix attempt #2). bank_82_827D_M1X1
-  (src/gen/bank82_part00_v2.c:14370-14526) reads VRAM-CHR allocation table
-  entries at WRAM $7F:8200+X (tile-base) and $7F:8300+X (palette) and binds
-  them into the spawning object at [D+0x18]/[D+0x11] exactly ONCE. If the
-  bind fires before the allocator has written that slot for this level
-  section, the object latches a stale/zero tile-base forever (the confirmed
-  root cause of the garbled margin mechs). Fix attempt #1 tried to gate
+WS-CHRBIND - observe (never re-derive) the OAM tile-base bind for the
+  margin-enemy garbled-CHR fix (see ISSUES.md "Widescreen margin-enemy
+  garbled CHR", fix attempt #2). The OAM tile-base/palette bind sequence
+  -- read WRAM $7F:8200+X (tile-base) -> store [D+0x18]; read $7F:8300+X
+  (palette) -> store [D+0x11] -- is INLINED per enemy type across the
+  generated code, not a single shared function: bank_82_827D_M1X1
+  (src/gen/bank82_part00_v2.c:14370-14526) is only ONE of (verified by
+  inspection, 2026-08-06) 8 such inlined copies:
+    bank_82_827D_M1X1  bank82_part00_v2.c
+    bank_82_EDA5_M1X1  bank82_part0d_v2.c
+    bank_82_F554_M1X1  bank82_part0e_v2.c
+    bank_83_F945_M1X1  bank83_part0f_v2.c
+    bank_87_B824_M1X1  bank87_part07_v2.c
+    bank_87_F42A_M1X1  bank87_part0e_v2.c
+    bank_87_F477_M1X1  bank87_part0e_v2.c (stores complete before its
+                        tail-call into bank_84_8F07_M1X1 -- the bind is
+                        NOT split across the call)
+    bank_88_EAA4_M1X1  bank88_part0d_v2.c
+  If the bind fires before the allocator has written that slot for this
+  level section, the object latches a stale/zero tile-base forever (the
+  confirmed root cause of the garbled margin mechs, including the
+  flying-mech family gfx 0x10/0x11/0x12 which binds through one of the
+  non-827D inlined copies above -- never through 827D, which is why the
+  original single-site fix was partial). Fix attempt #1 tried to gate
   admission on the *value* at the slot and was rejected: zero is a real,
   legitimate tile-base (page 0), so "not yet written" and "written zero"
   are indistinguishable from the value alone, and every enemy whose real
   base is page 0 (or any spawn record whose layout didn't match the
   transcription) was permanently vetoed from the wide spawn pass, undoing
   WS-SPAWN's whole point.
-  This pass injects ONE host call immediately after 827D's second binding
-  store (palette, D+0x11) -- at that point cpu->D (the object base) and
-  cpu->X (the game's own VRAM-CHR slot index, used unmodified for BOTH
-  binding reads) still hold the exact values the game itself used. The
-  host (MmxWsChrBindNote/MmxWsChrRebindSweep, mmx_rtl.c) latches those
-  values plus the slot's WRAM entry at bind time, and once per frame
-  checks whether the allocator has since written a *different* value into
-  that slot; if so, it replays 827D's own two stores with the new value.
-  This tracks allocation VALIDITY via change-detection instead of the
-  value's zero-ness, so it never misclassifies a legitimate page-0 bind,
-  and it never touches the wide admission path at all (unlike attempt #1),
-  so the WS-SPAWN margin-entry regression it caused cannot recur here.
+
+  This pass is pattern-based, not per-function-name: it anchors on the
+  tile-base *read* itself (`cpu_read8(cpu, ..., 0x7f8200 + cpu->X, ...)`,
+  emitted identically at every site) and scans forward a bounded window
+  for that same bind's tile-base *store* (`cpu->D + 0x0018`), injecting
+  the host call immediately after the store. Per-site inspection found
+  the sequence is uniform through the tile-base store but NOT beyond it:
+  most sites do a plain palette store, but bank_82_EDA5, bank_83_F945 and
+  bank_87_F42A instead do an ORA-style read-modify-write for the palette
+  half (`_m = read[D+0x11]; write[D+0x11] = _m | A`), merging the table's
+  palette nibble into pre-existing high bits of that byte (other object
+  flags share D+0x11). Because of that, this pass anchors and injects on
+  the tile-base store ONLY -- see MmxWsChrRebindSweep (mmx_rtl.c) for why
+  the host mechanism was correspondingly changed to heal only the
+  tile-base and never replays a raw palette byte.
+
+  Excluded on purpose: bank_87_ABAE_M1X1 (bank87_part05_v2.c) and
+  bank_87_D01D_M1X1 (bank87_part0a_v2.c) each read the $7F:8300 palette
+  table but NEVER $7F:8200 (verified: neither file contains a 0x7f8200
+  read at all) -- they are palette-only refreshers with no tile-base
+  store to latch, so the tile-base-read anchor naturally never matches
+  them; they must not get a latch (nothing to heal, and latching a
+  palette-only refresh would just be dead weight).
+
+  At the injection point cpu->D (the object base) and cpu->X (the game's
+  own VRAM-CHR slot index, used unmodified for the tile-base read) still
+  hold the exact values the game itself used for this bind -- verified
+  per-site that nothing between the anchor and the tile-base store
+  reassigns cpu->X or cpu->D (the pass also checks this live and abandons
+  an anchor if it ever finds otherwise, for regen-drift safety). The host
+  (MmxWsChrBindNote/MmxWsChrRebindSweep, mmx_rtl.c) latches those values
+  plus the slot's WRAM entry at bind time, and once per frame checks
+  whether the allocator has since written a *different* value into that
+  slot; if so, it replays the tile-base store with the new value. This
+  tracks allocation VALIDITY via change-detection instead of the value's
+  zero-ness, so it never misclassifies a legitimate page-0 bind, and it
+  never touches the wide admission path at all (unlike attempt #1), so
+  the WS-SPAWN margin-entry regression it caused cannot recur here.
 
 Usage:
     python tools/apply_overrides.py [--gen-dir src/gen] [--check] [-v]
@@ -448,12 +489,33 @@ def apply_bank82_activation(lines, verbose):
     return out, n
 
 
-RE_CHRBIND_ENTRY = re.compile(
-    r"^RecompReturn bank_82_827D_M1X1\(CpuState \*cpu\) \{\s*$")
+RE_CHRBIND_ANCHOR = re.compile(
+    r"^\s*uint8 (_v\d+) = cpu_read8\(cpu, \(uint8\)\(\(\(\(uint32\)0x7f8200 "
+    r"\+ \(uint32\)cpu->X\)\) >> 16\), \(uint16\)\(\(\(uint32\)0x7f8200 \+ "
+    r"\(uint32\)cpu->X\)\)\);\s*$")
 RE_CHRBIND_STORE_D18 = re.compile(
     r"^(\s*)cpu_write8\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0018\), _v\d+\);\s*$")
-RE_CHRBIND_STORE_D11 = re.compile(
-    r"^(\s*)cpu_write8\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0011\), _v\d+\);\s*$")
+# Defensive regen-drift guards: if cpu->X or cpu->D get reassigned between
+# the anchor and the tile-base store, the injection point's premise (X/D
+# still hold this bind's own values) is broken and the anchor must be
+# abandoned rather than silently injecting a wrong observation.
+RE_CHRBIND_X_ASSIGN = re.compile(r"cpu->X\s*=[^=]")
+RE_CHRBIND_D_ASSIGN = re.compile(r"cpu->D\s*=[^=]")
+
+# Bounded forward-scan window (lines) from the anchor to the tile-base
+# store. Measured across all 8 real sites the store lands 6-7 lines after
+# the anchor (a fixed few flag-update lines emitted for the LDA and the
+# STA); ~40 gives generous headroom for regen drift without being large
+# enough to wander into an unrelated store.
+CHRBIND_WINDOW = 40
+# Verified 2026-08-06 by per-site inspection (see the module docstring):
+# exactly 8 real tile-base bind sites match the anchor across src/gen.
+EXPECTED_CHRBIND_SITES = 8
+EXPECTED_CHRBIND_SITE_NAMES = (
+    "bank_82_827D_M1X1", "bank_82_EDA5_M1X1", "bank_82_F554_M1X1",
+    "bank_83_F945_M1X1", "bank_87_B824_M1X1", "bank_87_F42A_M1X1",
+    "bank_87_F477_M1X1", "bank_88_EAA4_M1X1",
+)
 
 
 def chrbind_snippet(indent):
@@ -461,45 +523,49 @@ def chrbind_snippet(indent):
             f"uint16); MmxWsChrBindNote(cpu->D, cpu->X); }}\n")
 
 
-def apply_bank82_chrbind(lines, verbose):
-    """Inject one host observability hook right after bank_82_827D_M1X1's
-    two OAM-bind stores (tile-base at [D+0x18], palette at [D+0x11]), while
-    cpu->D (object base) and cpu->X (the game's own VRAM-CHR slot index --
-    unmodified between both binding reads at $7F:8200+X / $7F:8300+X) still
-    hold the exact values the game used. The function body is emitted
-    exactly once in the whole gen tree (src/gen/bank82_part00_v2.c); every
-    other occurrence of its name is a forward declaration or a dispatch
-    call site (`case 3: _r = bank_82_827D_M1X1(cpu);`), so this state
-    machine only ever fires on that one real definition. See ISSUES.md
-    "Widescreen margin-enemy garbled CHR" fix attempt #2 for why this
-    observes rather than re-derives gfx/slot host-side."""
+def apply_chrbind_generic(lines, verbose):
+    """Pattern-based WS-CHRBIND pass: find every inlined OAM tile-base bind
+    (the `0x7f8200 + cpu->X` read, common to all 8 verified sites) and
+    inject the host observability hook immediately after that same bind's
+    tile-base store (`cpu->D + 0x0018`). See the module docstring's
+    WS-CHRBIND section for why the injection point is the tile-base store
+    and not the (non-uniform) palette store."""
     out = []
-    # 0 = not yet in the target function, 1 = in it awaiting the D+0x18
-    # store, 2 = saw D+0x18 awaiting the D+0x11 store, 3 = injected (done;
-    # only one site is ever expected, so stop looking after it fires).
-    state = 0
     n = 0
-    for line in lines:
+    pending_var = None
+    pending_age = 0
+    for idx, line in enumerate(lines):
         out.append(line)
-        if state == 0:
-            if RE_CHRBIND_ENTRY.match(line):
-                state = 1
-            continue
-        if state == 1:
-            if RE_CHRBIND_STORE_D18.match(line):
-                state = 2
-            continue
-        if state == 2:
-            m = RE_CHRBIND_STORE_D11.match(line)
-            if m:
-                out.append(chrbind_snippet(m.group(1)))
-                n += 1
+        if pending_var is not None:
+            pending_age += 1
+            if RE_CHRBIND_X_ASSIGN.search(line) or RE_CHRBIND_D_ASSIGN.search(line):
                 if verbose:
-                    print(f"  WS-CHRBIND after line {len(out) - 1} "
-                          f"(bank_82_827D_M1X1)")
-                state = 3
-            continue
-        # state == 3: done.
+                    print(f"  WS-CHRBIND: cpu->X/D reassigned before the "
+                          f"tile-base store near line {idx + 1}; abandoning "
+                          f"this anchor")
+                pending_var = None
+            elif pending_age > CHRBIND_WINDOW:
+                if verbose:
+                    print(f"  WS-CHRBIND: no tile-base store found within "
+                          f"{CHRBIND_WINDOW} lines of the anchor near line "
+                          f"{idx + 1}; abandoning this anchor")
+                pending_var = None
+            else:
+                m = RE_CHRBIND_STORE_D18.match(line)
+                if m:
+                    already = (idx + 1 < len(lines) and
+                               "/*WS-CHRBIND*/" in lines[idx + 1])
+                    if not already:
+                        out.append(chrbind_snippet(m.group(1)))
+                        if verbose:
+                            print(f"  WS-CHRBIND after line {len(out) - 1}")
+                    n += 1
+                    pending_var = None
+        if pending_var is None:
+            m = RE_CHRBIND_ANCHOR.match(line)
+            if m:
+                pending_var = m.group(1)
+                pending_age = 0
     return out, n
 
 
@@ -544,7 +610,7 @@ def main():
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
         (apply_bank03, "/*WS-STAGE*/"),
-        (apply_bank82_chrbind, "/*WS-CHRBIND*/"),
+        (apply_chrbind_generic, "/*WS-CHRBIND*/"),
     )
     paths = sorted(glob.glob(os.path.join(args.gen_dir, "bank*_v2.c")))
     if not paths:
@@ -590,10 +656,12 @@ def main():
             f"{effective_counts.get('/*WS-SPAWN*/', 0)}",
             file=sys.stderr)
         return 1
-    if not args.restore and effective_counts.get("/*WS-CHRBIND*/", 0) != 1:
+    chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
+    if not args.restore and chrbind_found != EXPECTED_CHRBIND_SITES:
         print(
-            "ERROR: expected exactly 1 WS-CHRBIND anchor hook, found "
-            f"{effective_counts.get('/*WS-CHRBIND*/', 0)}",
+            f"ERROR: expected exactly {EXPECTED_CHRBIND_SITES} WS-CHRBIND "
+            f"anchor hooks, found {chrbind_found}. Expected sites: "
+            f"{', '.join(EXPECTED_CHRBIND_SITE_NAMES)}",
             file=sys.stderr)
         return 1
     if not args.restore and total == 0 and patched_files == 0:

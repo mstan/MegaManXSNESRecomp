@@ -1419,11 +1419,30 @@ int main(int argc, char** argv) {
     extern void debug_server_set_ram(uint8_t *ram, uint32_t ram_size);
     /* Per-game debug server port: 4377 SMW, 4378 Zelda LttP, 4379 MMX.
      * Lets all three sibling games run concurrently on the same host
-     * without TCP-bind collisions. */
-    if (debug_server_init(4379) == 0) {
+     * without TCP-bind collisions. SNESRECOMP_DEBUG_PORT overrides the
+     * default for this process only -- useful when 4379 is already held
+     * by an unrelated listener (observed 2026-08-06: a leftover WSL
+     * port-forward via wslrelay.exe squatted 4379 with no relation to any
+     * MMX build at all; every MMX process's own bind() failed silently
+     * and its debug server was simply absent, which is easy to mistake
+     * for "talking to a different build" if you don't check for the
+     * "[main] Debug server ready" line first). */
+    int dbg_port = 4379;
+    {
+      const char *port_env = getenv("SNESRECOMP_DEBUG_PORT");
+      if (port_env && *port_env) {
+        int parsed = atoi(port_env);
+        if (parsed > 0 && parsed < 65536) dbg_port = parsed;
+      }
+    }
+    if (debug_server_init(dbg_port) == 0) {
 #if SNESRECOMP_TRACE
-      fprintf(stderr, "[main] Debug server ready on port 4379\n");
+      fprintf(stderr, "[main] Debug server ready on port %d\n", dbg_port);
 #endif
+    } else {
+      fprintf(stderr, "[main] Debug server FAILED to bind port %d (already "
+              "in use?) -- TCP debug control is unavailable this run\n",
+              dbg_port);
     }
     if (start_paused) {
       debug_server_start_paused();
