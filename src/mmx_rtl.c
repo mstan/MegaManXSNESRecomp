@@ -1179,6 +1179,42 @@ static int MmxWsChrBindActive(void) {
   return g_ws_active && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
 }
 
+/* Residual Highway crusher repair. The crusher body owns the CHR binding;
+ * its attack/extension renderer object points back to that body in +$0c.
+ * The first widescreen-spawned pair reaches bank_00_D6A7 with the parent
+ * correctly rebound but the render child still carrying a stale +$18 byte.
+ * The later vanilla-timed pair proves the intended invariant for this exact
+ * child: its render base must match the parent. Reconcile at D6A7's handoff
+ * before the value is copied into render scratch +$10. This also works after
+ * loading an old save, where host-only bind latches do not exist.
+ *
+ * Keep this a render-only correction: changing the guest child field would
+ * broaden the fix to later consumers without evidence that they are wrong.
+ * Do not infer validity from zero, because page 0 is legitimate. Accept the
+ * parent only for Highway stage 0 and the fully measured crusher signature:
+ * child gfx $09 with behavior pointers $b357/$9420 -> live parent gfx $0f. */
+uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
+                                uint8 childBase) {
+  if (!MmxWsChrBindActive()) return childBase;
+  extern uint8_t g_ram[0x20000];
+  if (g_ram[0x1f7a] != 0x00) return childBase;
+  uint16 child = (uint16)(scratchD + objectX);
+  if ((child & 0x003f) != 0x0028 ||
+      g_ram[(uint16)(child + 0x0a)] != 0x09 ||
+      (uint16)(g_ram[(uint16)(child + 0x14)] |
+                 ((uint16)g_ram[(uint16)(child + 0x15)] << 8)) != 0xb357 ||
+      (uint16)(g_ram[(uint16)(child + 0x16)] |
+                 ((uint16)g_ram[(uint16)(child + 0x17)] << 8)) != 0x9420)
+    return childBase;
+  uint16 parent = (uint16)(g_ram[(uint16)(child + 0x0c)] |
+                            ((uint16)g_ram[(uint16)(child + 0x0d)] << 8));
+  if ((parent & 0x003f) != 0x0028 ||
+      g_ram[parent] == 0 || g_ram[(uint16)(parent + 0x0a)] != 0x0f)
+    return childBase;
+  uint8 parentBase = g_ram[(uint16)(parent + 0x18)];
+  return parentBase;
+}
+
 /* Called via the WS-CHRBIND injection right after each inlined bind site's
  * own tile-base store. objD/slotX are transcribed directly from cpu->D and
  * cpu->X at that point -- see the file comment above for why this must

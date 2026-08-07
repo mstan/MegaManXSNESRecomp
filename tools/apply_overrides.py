@@ -206,6 +206,19 @@ WS-CHRBIND-COPY - observe the OTHER way an object's tile-base ever gets
   sweep or healing path was added; the copy hook only seeds an entry
   into the SAME ring the direct binds use.
 
+WS-CHRBIND-PARENT - reconcile the residual Highway crusher render child at
+  the authoritative render handoff. bank_00_D6A7_M1X0 copies an object's
+  tile base from `[D+X+$18]` into render scratch `[D+$10]`. Matched F8/F9
+  traces prove the malformed pair's actual objects ($1428/$1468) point to
+  correctly rebound parents ($0E68/$0EA8) in child+$0C, but retain stale
+  child+$18=$00; the healthy control has parent+$18 == child+$18 == $60.
+  Inject immediately after the unique D6A7 byte read and let
+  MmxWsChrBindResolveParent validate Highway stage 0 plus the complete traced
+  crusher signature (gfx and behavior pointers), then return the live
+  parent's value for this same render. It deliberately does not mutate guest
+  WRAM. No tile base or object address is hardcoded, and a legitimate page-0
+  allocation remains page 0 when the parent says so.
+
 Usage:
     python tools/apply_overrides.py [--gen-dir src/gen] [--check] [-v]
     python tools/apply_overrides.py --restore [--gen-dir src/gen] [-v]
@@ -218,7 +231,8 @@ import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
-           "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/")
+           "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
+           "/*WS-CHRBIND-PARENT*/")
 
 RE_TRACE = re.compile(r"cpu_trace_block\(cpu, (0x[0-9A-Fa-f]+)\)")
 RE_STORE00 = re.compile(
@@ -742,6 +756,42 @@ def apply_chrbind_copy_generic(lines, verbose):
     return out, n
 
 
+RE_CHRBIND_PARENT_ANCHOR = re.compile(
+    r"^(\s*)uint8 (_v\d+) = cpu_read8\(cpu, 0x00, "
+    r"\(uint16\)\(cpu->D \+ 0x0018 \+ cpu->X\)\);\s*$")
+EXPECTED_CHRBIND_PARENT_SITES = 1
+
+
+def apply_chrbind_parent(lines, verbose):
+    """Hook D6A7_M1X0's unique object+$18 -> render-scratch+$10 read."""
+    out = []
+    n = 0
+    current_func = None
+    for i, line in enumerate(lines):
+        out.append(line)
+        fm = re.match(r"^RecompReturn (\w+)\(CpuState \*cpu\) \{\s*$", line)
+        if fm:
+            current_func = fm.group(1)
+        if current_func != "bank_00_D6A7_M1X0":
+            continue
+        m = RE_CHRBIND_PARENT_ANCHOR.match(line)
+        if not m:
+            continue
+        already = (i + 1 < len(lines) and
+                   "/*WS-CHRBIND-PARENT*/" in lines[i + 1])
+        if not already:
+            indent, var = m.groups()
+            out.append(
+                f"{indent}/*WS-CHRBIND-PARENT*/ {{ extern uint8 "
+                f"MmxWsChrBindResolveParent(uint16, uint16, uint8); "
+                f"{var} = MmxWsChrBindResolveParent(cpu->D, cpu->X, "
+                f"{var}); }}\n")
+            if verbose:
+                print(f"  WS-CHRBIND-PARENT after line {len(out) - 1}")
+        n += 1
+    return out, n
+
+
 def process(path, fn, check, verbose):
     with open(path, "r", encoding="utf-8", newline="") as f:
         lines = f.readlines()
@@ -785,6 +835,7 @@ def main():
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
         (apply_chrbind_copy_generic, "/*WS-CHRBIND-COPY*/"),
+        (apply_chrbind_parent, "/*WS-CHRBIND-PARENT*/"),
     )
     paths = sorted(glob.glob(os.path.join(args.gen_dir, "bank*_v2.c")))
     if not paths:
@@ -844,6 +895,13 @@ def main():
             f"ERROR: expected exactly {EXPECTED_CHRBIND_COPY_SITES} "
             f"WS-CHRBIND-COPY anchor hooks, found {chrbind_copy_found}. "
             f"Expected sites: {', '.join(EXPECTED_CHRBIND_COPY_SITE_NAMES)}",
+            file=sys.stderr)
+        return 1
+    chrbind_parent_found = effective_counts.get("/*WS-CHRBIND-PARENT*/", 0)
+    if not args.restore and chrbind_parent_found != EXPECTED_CHRBIND_PARENT_SITES:
+        print(
+            f"ERROR: expected exactly {EXPECTED_CHRBIND_PARENT_SITES} "
+            f"WS-CHRBIND-PARENT anchor hook, found {chrbind_parent_found}.",
             file=sys.stderr)
         return 1
     if not args.restore and total == 0 and patched_files == 0:

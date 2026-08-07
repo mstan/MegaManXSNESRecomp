@@ -70,7 +70,7 @@
 
 ## Open
 
-### Widescreen margin-enemy garbled CHR — ROOT-CAUSED 2026-08-06; first fix attempt REJECTED (do not re-ship it)
+### Widescreen margin-enemy garbled CHR — PARTIALLY FIXED; crusher residual OPEN (2026-08-06)
 
 **Symptom (user-reported, faithful savestate repro):** specific early-Highway
 enemies (the large flying mechs near the wrecked cars) render permanently
@@ -180,7 +180,7 @@ injector (827D + 7 siblings; `bank_87_F42A`/`F477` are two sites in one
 file) is asserted at build time so a future regen silently losing a site
 fails loudly instead of quietly regressing coverage.
 
-**Verified 2026-08-06:** fresh `--restore` + reapply of the generalized
+**Earlier verification, SUPERSEDED 2026-08-06:** fresh `--restore` + reapply of the generalized
 injector against pristine `src/gen` matches exactly 8/8 expected sites
 (injector's own count assertion passes); `build-trace-fix` builds clean;
 a live walk (loadstate 7, same Highway wrecked-cars encounter) shows no
@@ -192,6 +192,148 @@ generalized fix's effect on the ACTUAL garbled-spike screenshot is not yet
 re-confirmed against the user's exact save-state repro — that is the one
 remaining verification step for a future session (or the next time the
 user plays the slot-7 walk with this build).
+
+#### Residual crusher-extension corruption — RESOLVED 2026-08-06; `$87:ED46` hypothesis rejected
+
+**Status: RESOLVED. Beads: `beads-8wg.1.1` under
+`SNES -> Mega Man X`.** The generalized direct-bind and
+copy-inheritance fixes are real and remain required, but they do **not** fix
+the first Highway crusher pair's attack/extension component. The earlier
+"renders healthy" observation above did not exercise the exact visible
+failure and must not be treated as user validation. The user subsequently
+reproduced the corruption both from the deterministic savestate and during a
+completely fresh, no-savestate playthrough, disproving the temporary theory
+that absent/non-serialized host latch state was the root cause.
+
+**Authoritative compare/contrast:**
+
+- **Malformed:** press **F8** (debug slot **7**), then walk right. The first
+  two flying crushers beside the wrecked cars look correct while hovering,
+  but their spike/attack component becomes malformed when they descend and
+  extend. Crushers eventually exhaust the destructible terrain and stop
+  attacking, so this savestate is the preferred repeatable repro.
+- **Healthy control:** press **F9** (debug slot **8**), then walk right. Two
+  later instances of the same crusher enemy in a different part of the
+  Highway stage descend and extend without corruption.
+- A fresh-from-boot Highway playthrough still corrupts the first pair, so
+  F8 is a convenience, not a prerequisite for the bug.
+
+**Exact rendered divergence (independent xhigh audit, matched extension
+frames):** the malformed F8 attack component emits OAM tile numbers
+`$1A/$2F/$2E/$0E`; the healthy F9 component emits
+`$7A/$8F/$8E/$6E`. Every bad value is exactly **`$60` too low**. Other tiles
+belonging to the same composite enemy, including the repeated extension tile
+`$8B`, match. The relevant OBJ VRAM bytes also match between the bad and good
+runs. Therefore this residual is not corrupt CHR payload, a VRAM overwrite,
+or an entirely wrong metasprite: one allocated attack child reaches OAM
+without the parent's `$60` tile-base contribution.
+
+**Rejected static hypothesis about why commits `b8546dc`, `60b6d30`, and
+`dbf7fff` miss this path:** the eight
+WS-CHRBIND hooks observe only an explicit
+`$7F:8200+slot -> [object+$18]` table bind. The 42 WS-CHRBIND-COPY hooks
+observe only an explicit `[parent+$18] -> [child+$18]` store. In
+`bank_87_ECD9_M1X1`, however, the two successful child-allocation branches
+are asymmetric:
+
+- `$87:ECF9` explicitly copies parent `$18` to child `$18`; this path is
+  already recognized by WS-CHRBIND-COPY.
+- `$87:ED46` creates the gfx-`$10` attack child but performs **no child
+  `$18` initialization at all**. There is neither a table bind nor a copy
+  store for either existing pattern to observe, so all 50 hooks are
+  structurally silent on this branch.
+
+That asymmetry suggested that F8 might expose an uninitialized/stale slot
+value while F9 happened to reuse a child slot already containing `$60`.
+Earlier attention on an object observed at `D=$1D08` (`gfx=$11`, base `$80`)
+was also a false lead: both saves contain that unrelated object, and its base
+does not explain the four exact OAM deltas.
+
+**Rejected experiment — do not reinstate without new evidence:** a local,
+address-anchored generated override covered the unique `$87:ED46` success
+branch. Immediately after the allocator returned the child and before the
+branch's first instruction made the child live, it:
+
+1. copy `[parent D+$18]` into `[child X+$18]`, mirroring the sibling
+   `$87:ECF9` branch;
+2. call `MmxWsChrBindNoteCopy(D, X)` so any later allocator-table change is
+   handled by the existing latch/sweep mechanism.
+
+The experiment was deliberately narrow, widescreen-gated, and did not
+hardcode `$60` or gfx `$10`. It generated and built successfully. The user
+then performed the authoritative A/B test on that exact executable:
+**F8 remained malformed and F9 remained healthy.** Therefore missing child
+initialization at `$87:ED46` is not causal for the visible residual. The
+helper, injector, assertion, and generated call were removed. Compile success
+is not visual validation and this experiment must not be described as a fix.
+
+**Confirmed residual root cause (matched F8/F9 live traces, 2026-08-06):**
+the actual attack render objects are **not** the `$87:ED46` child. At
+`bank_00_D6A7_M1X0`, the renderer copies each object's tile-base byte from
+`[D+X+$18]` into render scratch `[D+$10]`. The two malformed F8 components
+arrive through the Highway OAM loops at `$80:D61D` and `$80:D64C` as object
+slots **`$1428` and `$1468`**. Both have `$18=$00`, and the render scratch
+therefore has `$10=$00`. Their `$0C` parent pointers are respectively
+**`$0E68` and `$0EA8`**; both live parents already have the correct
+`$18=$60`. In the healthy F9 control, the same child/parent relationship has
+child `$18 == parent $18 == $60`.
+
+The A/B trace also corrected an earlier interpretation of `$00:D76A`:
+scratch `$02` is packed screen-Y arithmetic, not the missing CHR source. The
+single byte that changes the four tile numbers is scratch **`$10`**, populated
+directly from the render object's `$18`. Both saves use the same metasprite
+sequence (`$8E:8FFC` through `$8E:9070`) and matching OBJ VRAM data. Thus the
+causal chain is:
+
+`parent +$18 ($60)` -> **stale child +$18 ($00)** -> D6A7 scratch `$10`
+`($00)` -> malformed `$1A/$2F/$2E/$0E`.
+
+The deterministic runner initially produced no samples because it loaded the
+savestate on frame 1, before MMX's first-call reset gate; the following frame
+reset the restored state. All authoritative automated replays now wait 180
+boot frames before `loadstate`, then enter the trigger zone and stand still.
+
+**Implemented candidate — `WS-CHRBIND-PARENT`:** the override
+generator now injects exactly once, immediately after D6A7_M1X0's unique
+`[D+X+$18]` byte read. `MmxWsChrBindResolveParent` validates active
+widescreen stage play, **Highway stage 0**, object-pool alignment, and the
+complete measured crusher signature (child gfx `$09`, behavior pointers
+`$B357/$9420`, pointing through `$0C` to a live parent gfx `$0F`). If child
+and parent tile bases differ, it returns the live parent's `$18` for the
+**same** render call. It deliberately does **not** mutate the guest child:
+later consumers remain untouched unless they reach this proven render sink.
+This makes the repair first-frame and savestate-proof. It does not hardcode
+`$60`, does not infer allocation validity from zero, and leaves a legitimate
+page-0 binding untouched whenever the parent also says page 0. F9's already
+equal pair is a no-op.
+
+Python syntax, one-site assertion (the first broad scan correctly rejected an
+unrelated bank-83 shape), injector idempotence, `mmx_display_test`, and the
+Release build passed for the initial candidate. A post-build automated F8
+replay proved the resolver matched exactly the intended `$1428/$1468`
+children and selected `$60` from `$0E68/$0EA8`. A critical follow-up audit
+then narrowed the final predicate to Highway plus the measured behavior
+pointers and removed the unnecessary child-WRAM write. The narrowed form was
+rebuilt successfully and returns the same measured parent base at the same
+D6A7 render handoff without changing guest state.
+
+**Closure evidence:**
+
+1. The user validated the exact initial D6A7 parent-base candidate with the
+   authoritative F8/slot-7 walk and confirmed the malformed attack behavior
+   was gone throughout the visible encounter.
+2. The healthy F9 control already has child `$18 == parent $18 == $60`, so the
+   resolver returns the original value and is a numerical no-op there.
+3. The fresh-play repro had established that the failure was not caused by
+   savestate serialization; the final correction operates at the live render
+   handoff on every matching frame and carries no host-only latch state.
+4. The correction changes only the tile-base byte returned to D6A7 scratch
+   `$10`. Metasprite selection, common `$8B` tiles, palette/priority bits,
+   positions, and OBJ VRAM are untouched.
+5. Widescreen-off behavior is unchanged by the existing
+   `MmxWsChrBindActive()` gate. The final predicate is additionally limited
+   to Highway stage 0 and child `$09` behavior `$B357/$9420` -> live parent
+   `$0F`, addressing the independent audit's overbreadth concern.
 
 ### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
 
