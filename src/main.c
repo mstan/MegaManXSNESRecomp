@@ -320,7 +320,6 @@ static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
    * is already handled exactly by WsShadowSetPeriodicFold, so leave these
    * margins unseeded for the upper roof only. */
   uint8_t stage = g_ram[0x1f7a];
-  uint16_t camera_x = (uint16_t)(g_ram[0x1e4d] | (g_ram[0x1e4e] << 8));
   uint16_t camera_y = (uint16_t)(g_ram[0x1e50] | (g_ram[0x1e51] << 8));
   if (stage == 5 && camera_y >= 0x0300)
     return;
@@ -362,20 +361,18 @@ static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
         uint32_t world_ty = (uint32_t)(guest_ty + shadow_tile_dy);
         uint16_t entry = MmxDisplay_ResolveBg2Tile((uint16_t)sample_tx,
                                                    (uint16_t)guest_ty);
-        /* At 16:9, Highway's opening leading gutter reaches farther than the
-         * streamer's prepared half. OnVramWrite can therefore mark circular
+        /* At 16:9, Highway's leading gutter reaches farther than the prepared
+         * half of its rolling BG2 map. OnVramWrite can therefore mark circular
          * VRAM contents as authoritative world history before those cells are
-         * genuinely staged; Prefill correctly refuses to replace them, and a
-         * dark vertical BG2 block grows at the far right until camera $0180.
-         * The retained Highway map is exact and static here, so override only
-         * the far leading opening margin. Keep the first two gutter tiles on
-         * normal history/fold: the renderer deliberately treats a fine-scroll
-         * chunk which straddles x=255 as one shadow lookup, and forcing that
-         * key could change the final authentic pixel. Once the next half is
-         * naturally live, return to the history-first policy used elsewhere. */
+         * genuinely staged; Prefill correctly refuses to replace them. The
+         * first attempted fix forced only x>=272 before camera $0180. Live
+         * testing exposed both artificial boundaries: an interior dead strip
+         * at x=256..271 and flat purple cells returning near the first pit.
+         * Highway's retained BG2 map is exact and static, so make it the
+         * authoritative source for the complete leading gutter throughout
+         * stage 0. Other stages and the trailing gutter remain history-first. */
         int screen_tile_x = (int)(world_tx << 3) - (int)shadow_x;
-        if (stage == 0 && range == 1 && camera_x < 0x0180 &&
-            screen_tile_x >= 272)
+        if (stage == 0 && range == 1 && screen_tile_x >= 256)
           WsShadowForceTile(1, world_tx, world_ty, entry);
         else
           WsShadowPrefillTile(1, world_tx, world_ty, entry);

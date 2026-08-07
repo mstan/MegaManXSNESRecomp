@@ -4,9 +4,9 @@
 > 1. **Highway opening far-right BG2 gap (2026-08-06):** automated 16:9
 >    reproduction is fixed; awaiting live confirmation. A premature circular
 >    VRAM history entry blocked the exact retained-map prefill while the
->    72-pixel leading gutter outran Highway's prepared BG2 half. The targeted
->    replacement preserves every native and left-gutter pixel. See the full
->    evidence under "Open".
+>    72-pixel leading gutter outran Highway's prepared BG2 half. The revised
+>    candidate makes Highway's exact retained map authoritative across its
+>    complete leading gutter. See the full evidence under "Open".
 > 2. **Widescreen margin spawn/cull, WIP (2026-07-16):** static-coverage
 >    promotion landed (32 → 4,552 AOT variants) and the WS-SPAWN/WS-CULL/
 >    WS-STAGE injections are live for the first time, but playtest shows
@@ -129,21 +129,28 @@ right region. Disabling BG2 prefill also matched the defect because the blocked
 prefill was never winning; disabling fold revealed that BG2 shadow/fold is the
 path carrying the affected gutter.
 
-**Fix.** During Highway only, while camera X is below `$0180`, exact retained
-BG2 words now use `WsShadowForceTile` for the far leading margin. The first two
-gutter tiles (`screen tile x < 272`) remain on normal history/fold because the
-renderer treats a fine-scroll chunk straddling x=255 as one shadow lookup; this
-guard guarantees no authentic pixel can be replaced. The left gutter, all
-native columns, later Highway, and every other stage retain the existing
-history-first policy.
+**Rejected boundary-limited candidate (`dddd905`).** The first implementation
+forced only screen tile x >= 272 while camera X was below `$0180`. Live testing
+correctly rejected it: the untouched x=256..271 band became an interior dead
+line at the start, and ending the policy at `$0180` let flat purple BG2 cells
+return around the first pit and fill only as X advanced. Both were artificial
+boundaries introduced by the candidate, not new game behavior.
+
+**Revised fix.** Highway's retained BG2 map is exact and static, so it now uses
+`WsShadowForceTile` for the **complete leading gutter throughout stage 0**
+(screen tile x >= 256, no camera cutoff). The trailing gutter and every other
+stage retain normal history-first behavior. Because the fast renderer treats a
+fine-scroll chunk straddling x=255 as one shadow lookup, one diagnostic frame
+can also source the final native-edge column from the exact retained entry;
+widescreen-disabled output remains entirely outside this path.
 
 **Automated validation.** `mmx_display_test.exe` passes. The deterministic
-pit-death/respawn run was captured every 30 frames from 1260 through 1710 at a
-72-pixel margin. Across 12 representative frames, ImageMagick AE was **0 for
-all native 256 columns** and **0 for the complete left gutter** versus the
-pre-fix path, while the old far-right dark window remained `#52394A` at every
-sample. The right-then-left script also returned to a continuous opening
-background. Final status awaits the user's live-window confirmation.
+pit-death/respawn run was captured every 30 frames from 1260 through 2160 at a
+72-pixel margin. The revised output removes the initial interior band and keeps
+city/highway BG2 populated across the first-pit frames (1800, 1890, 1980)
+instead of exposing flat purple that fills late. The right-then-left script
+also returns to a continuous opening background. Final status awaits another
+live-window pass.
 
 ### Widescreen margin-enemy garbled CHR — PARTIALLY FIXED; crusher residual OPEN (2026-08-06)
 
