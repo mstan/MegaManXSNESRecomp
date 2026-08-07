@@ -1,13 +1,12 @@
 # Issues — MegamanXRecomp
 
-> **OPEN:** three issue classes.
-> 1. **Highway opening right-margin BG1 gap (2026-08-06):** the opening
->    aircraft/overpass layer ends inside the widened right viewport, exposing
->    a visibly different purple strip before later opaque Highway art enters.
->    Root-caused to transparent BG1 stage-map pixels being handled by an
->    additive, post-composite margin enhancer that cannot replace transparency.
->    This is spatial, not a delayed load/cache: returning to camera X=0 is
->    pixel-identical to the first visit. See the full evidence under "Open".
+> **OPEN:** two issue classes plus one live-validation candidate.
+> 1. **Highway opening far-right BG2 gap (2026-08-06):** automated 16:9
+>    reproduction is fixed; awaiting live confirmation. A premature circular
+>    VRAM history entry blocked the exact retained-map prefill while the
+>    72-pixel leading gutter outran Highway's prepared BG2 half. The targeted
+>    replacement preserves every native and left-gutter pixel. See the full
+>    evidence under "Open".
 > 2. **Widescreen margin spawn/cull, WIP (2026-07-16):** static-coverage
 >    promotion landed (32 → 4,552 AOT variants) and the WS-SPAWN/WS-CULL/
 >    WS-STAGE injections are live for the first time, but playtest shows
@@ -77,94 +76,74 @@
 
 ## Open
 
-### Highway opening right-margin BG1 transparency/color-math gap — OPEN, root-caused (2026-08-06; Beads `beads-8wg.1.2`)
+### Highway opening far-right BG2 prepared-half gap — FIXED, awaiting live validation (2026-08-06; Beads `beads-8wg.1.2`)
 
-**User-visible symptom.** On a new game at the opening Highway spawn, the
-aircraft/overpass art in the widened right side stops early and exposes a
-discolored purple vertical region. Walking right makes the exposed region look
-darker before later Highway art occupies the margin; by the end of the first
-roadway (before the first pit/jump), the right side looks continuous for the
-rest of the stage. Falling into that pit and respawning shows the opening gap
-again. The three reference captures are
+**User-visible symptom.** On a new game at the opening Highway spawn, the far
+right widened background becomes a discolored purple vertical region. Walking
+right makes it progressively darker; around the end of the first roadway it
+becomes continuous for the rest of the stage. Falling into the first pit and
+respawning shows the opening gap again. Reference captures:
 `MegaManXSNESRecomp_riXcMB4bcM.png`,
 `MegaManXSNESRecomp_PFH4mPjYvs.png`, and
 `MegaManXSNESRecomp_pfokWbsZAh.png`.
 
-**Deterministic reproduction.** `save0` plus a scripted right hold reproduces
-the sequence and pit death/respawn without timing variation. The diagnostic
-scripts were `_triage/highway-bg-respawn.script` and
-`_triage/highway-bg-backtrack.script`; captures under ignored
-`_triage/highway-bg-*` directories are evidence, not product inputs.
+**Deterministic reproduction.** `save0` plus
+`_triage/highway-bg-respawn.script` runs right into the first pit, then keeps
+holding right after death. This re-arms the opening condition without a clean
+manual playthrough. `_triage/highway-bg-backtrack.script` is the non-death
+return-path check. Ignored `_triage/highway-bg-*` captures are evidence, not
+product inputs.
 
-| Capture frame | BG1 camera X | host-only right-margin world X |
+The decisive correction to the original audit was margin width. The user's
+16:9 window exposes about **72 pixels per side**. The first probe pinned only
+43 pixels, which ended before the bad columns and falsely made BG2 A/B runs
+look identical. At 72 pixels the defect is unambiguous after respawn:
+
+| Capture frame | camera X | old far-right sky (`x=390,y=50`) |
 |---:|---:|---:|
-| 270 | 37 | 293..340 |
-| 360 | 169 | 425..472 |
-| 450 | 302 | 558..605 |
-| 630 | 500 | 756..803 |
+| 1470 | 167 | `#422942` |
+| 1500 | 211 | `#210831` |
+| 1530 | 255 | `#180031` |
+| 1590 | ~344 | `#422942` |
+| 1620 | ~388 | `#52394A` (naturally recovered) |
 
-The changing appearance follows those world coordinates. A right-then-left
-backtrack to camera X=0 produced a BG1-only frame with **zero differing pixels**
-from the first camera-X=0 frame (`ImageMagick compare -metric AE` = 0). The
-margin is therefore not a host cache that becomes permanently populated. A
-later savestate looks fixed because it preserves the later camera position;
-death returns the camera to the opening span and exposes the same gap again.
+The correct retained-map sky is `#52394A`. The progressively darker rectangle
+starts only in the far-right gutter while native BG1/aircraft and the lower
+road remain valid. A later savestate looks fixed because it preserves a camera
+position after the next streamed half is live; death returns the camera to the
+opening preparation window.
 
-**Layer and mechanism isolation.** `SNESRECOMP_LAYER_MASK=1` carries the
-aircraft/overpass silhouette and reproduces its termination;
-`SNESRECOMP_LAYER_MASK=2` shows the purple/city BG2 underneath. Disabling the
-BG2 CPU-map prefill (`SNESRECOMP_WS_BG2_PREFILL=0`) or the entire BG2
-fold/shadow path (`SNESRECOMP_WS_BG2_FOLD=0`) leaves matched frames unchanged.
-Temporary probes compared first-visit and backtrack data:
+**Root cause.** Highway BG2 is a two-half rolling tilemap. At 16:9, the far
+leading gutter reaches past the half genuinely prepared by the guest during
+camera X `$00A7..$017F`. `WsShadowOnVramWrite` can see a circular VRAM value for
+one of those future columns and mark that world key as authoritative before
+the intended half is staged. `MmxDisplay_PrefillBg2Shadow` resolves the correct
+word from MMX's retained `$EC00/$A600` map, but `WsShadowPrefillTile`
+deliberately refuses to replace an authoritative entry. The renderer serves
+the stale circular-map cell until normal camera streaming catches up near
+`$0180`.
 
-- BG2 prefill tile words equal the later authoritative VRAM-captured words;
-  its tile-word and referenced 4bpp CHR hashes repeat at matching scrolls.
-- BG1's retained `StageTileWord` results and the live BG1 CHR data those words
-  reference also repeat at every matching opening camera X.
-- `SNESRECOMP_WS_STAGE=1` does not change matched opening frames. It is not a
-  viable fix anyway: region staging also swaps shared OBJ graphics and is
-  intentionally default-off after earlier enemy-garble regressions.
+The first audit's BG1 transparency theory was disproved by implementing its
+proposed renderer path: exact retained BG1 words made no change in the reported
+right region. Disabling BG2 prefill also matched the defect because the blocked
+prefill was never winning; disabling fold revealed that BG2 shadow/fold is the
+path carrying the affected gutter.
 
-This rules out late decompression, a bad savestate, missing BG2 history, CHR
-upload timing, and the old dropped-`$89DB` Highway blanking bug.
+**Fix.** During Highway only, while camera X is below `$0180`, exact retained
+BG2 words now use `WsShadowForceTile` for the far leading margin. The first two
+gutter tiles (`screen tile x < 272`) remain on normal history/fold because the
+renderer treats a fine-scroll chunk straddling x=255 as one shadow lookup; this
+guard guarantees no authentic pixel can be replaced. The left gutter, all
+native columns, later Highway, and every other stage retain the existing
+history-first policy.
 
-**Root cause.** The BG1 margin feature is not a true tilemap replacement.
-`MmxWidePreview_EnhancePpuLine` reconstructs off-native BG1 words from the
-expanded stage layout (`$E800` screen layout, `$2000` expanded screens, live
-`$0B95-$0B97` tile16 table), then calls `BackgroundTilePixel`. But the shared
-PPU invokes this enhancer only **after** `PpuDrawBackgrounds` has composited
-BG1, BG2, BG3, OBJ, priority, windows, and subscreen color math into one
-priority buffer. It can add an opaque reconstructed BG1 pixel, but its
-transparent case is simply:
-
-```c
-if (!pixel) continue;
-```
-
-A transparent pixel in the true future BG1 map therefore cannot replace the
-already-composited circular-map BG1 contribution or recompute what should show
-through from BG2/subscreen color math. The opening Highway contains a spatial
-run of these transparent BG1 cells between the aircraft/overpass and later
-opaque roadside content. Native 4:3 never displays that run at the right edge;
-widescreen does. The purple strip is a host-composition hole exposed by
-widening, not normal game behavior and not a load that finishes late.
-
-**Fix contract (do not paper over with a color rectangle or early guest
-staging).** BG1 margin reconstruction must participate at the tile/layer stage
-*before* final priority/color composition, including transparent pixels. The
-clean shapes are either a renderer tile-word override for BG1 margin fetches,
-or a BG1 world-shadow/prefill registration that makes the ordinary PPU fetch
-the exact `StageTileWord` entry. Either approach must:
-
-1. replace the margin tile word before pixel decode so color index 0 naturally
-   reveals BG2/backdrop and subscreen math;
-2. preserve native columns, OBJ/BG priority, windows, HDMA scroll, and color
-   math exactly;
-3. avoid advancing guest camera/staging triggers or shared OBJ-CHR transitions;
-4. validate fresh New Game, pit-death respawn, exact X=0 backtrack, and later
-   Highway sections at both 16:9 and the maximum supported margin; and
-5. regression-test Launch Octopus's dynamic submarine exception and vertical
-   camera movement before enabling the path for every stage.
+**Automated validation.** `mmx_display_test.exe` passes. The deterministic
+pit-death/respawn run was captured every 30 frames from 1260 through 1710 at a
+72-pixel margin. Across 12 representative frames, ImageMagick AE was **0 for
+all native 256 columns** and **0 for the complete left gutter** versus the
+pre-fix path, while the old far-right dark window remained `#52394A` at every
+sample. The right-then-left script also returned to a continuous opening
+background. Final status awaits the user's live-window confirmation.
 
 ### Widescreen margin-enemy garbled CHR — PARTIALLY FIXED; crusher residual OPEN (2026-08-06)
 

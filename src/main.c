@@ -320,6 +320,7 @@ static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
    * is already handled exactly by WsShadowSetPeriodicFold, so leave these
    * margins unseeded for the upper roof only. */
   uint8_t stage = g_ram[0x1f7a];
+  uint16_t camera_x = (uint16_t)(g_ram[0x1e4d] | (g_ram[0x1e4e] << 8));
   uint16_t camera_y = (uint16_t)(g_ram[0x1e50] | (g_ram[0x1e51] << 8));
   if (stage == 5 && camera_y >= 0x0300)
     return;
@@ -357,11 +358,27 @@ static void MmxDisplay_PrefillBg2Shadow(uint16_t h, uint16_t v,
        * past the widescreen margin. This mirrors BG1's edge policy. */
       int sample_tx = guest_tx < 0 ? -guest_tx - 1 : guest_tx;
       for (int guest_ty = guest_ty0; guest_ty <= guest_ty1; guest_ty++) {
-        WsShadowPrefillTile(1,
-            (uint32_t)(guest_tx + shadow_tile_dx),
-            (uint32_t)(guest_ty + shadow_tile_dy),
-            MmxDisplay_ResolveBg2Tile((uint16_t)sample_tx,
-                                     (uint16_t)guest_ty));
+        uint32_t world_tx = (uint32_t)(guest_tx + shadow_tile_dx);
+        uint32_t world_ty = (uint32_t)(guest_ty + shadow_tile_dy);
+        uint16_t entry = MmxDisplay_ResolveBg2Tile((uint16_t)sample_tx,
+                                                   (uint16_t)guest_ty);
+        /* At 16:9, Highway's opening leading gutter reaches farther than the
+         * streamer's prepared half. OnVramWrite can therefore mark circular
+         * VRAM contents as authoritative world history before those cells are
+         * genuinely staged; Prefill correctly refuses to replace them, and a
+         * dark vertical BG2 block grows at the far right until camera $0180.
+         * The retained Highway map is exact and static here, so override only
+         * the far leading opening margin. Keep the first two gutter tiles on
+         * normal history/fold: the renderer deliberately treats a fine-scroll
+         * chunk which straddles x=255 as one shadow lookup, and forcing that
+         * key could change the final authentic pixel. Once the next half is
+         * naturally live, return to the history-first policy used elsewhere. */
+        int screen_tile_x = (int)(world_tx << 3) - (int)shadow_x;
+        if (stage == 0 && range == 1 && camera_x < 0x0180 &&
+            screen_tile_x >= 272)
+          WsShadowForceTile(1, world_tx, world_ty, entry);
+        else
+          WsShadowPrefillTile(1, world_tx, world_ty, entry);
       }
     }
   }
