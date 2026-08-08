@@ -1191,8 +1191,10 @@ static int MmxWsChrBindActive(void) {
  * Keep this a render-only correction: changing the guest child field would
  * broaden the fix to later consumers without evidence that they are wrong.
  * Do not infer validity from zero, because page 0 is legitimate. Accept the
- * parent only for Highway stage 0 and the fully measured crusher signature:
- * child gfx $09 with behavior pointers $b357/$9420 -> live parent gfx $0f. */
+ * parent only for Highway stage 0 and the stable, relational crusher
+ * signature: an aligned child gfx $09 pointing through +$0c to a live,
+ * aligned parent gfx $0f. Do not use child +$14/+16 as identity: those are
+ * live behavior-state pointers and change as the crusher descends/extends. */
 uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
                                 uint8 childBase) {
   if (!MmxWsChrBindActive()) return childBase;
@@ -1200,11 +1202,7 @@ uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
   if (g_ram[0x1f7a] != 0x00) return childBase;
   uint16 child = (uint16)(scratchD + objectX);
   if ((child & 0x003f) != 0x0028 ||
-      g_ram[(uint16)(child + 0x0a)] != 0x09 ||
-      (uint16)(g_ram[(uint16)(child + 0x14)] |
-                 ((uint16)g_ram[(uint16)(child + 0x15)] << 8)) != 0xb357 ||
-      (uint16)(g_ram[(uint16)(child + 0x16)] |
-                 ((uint16)g_ram[(uint16)(child + 0x17)] << 8)) != 0x9420)
+      g_ram[(uint16)(child + 0x0a)] != 0x09)
     return childBase;
   uint16 parent = (uint16)(g_ram[(uint16)(child + 0x0c)] |
                             ((uint16)g_ram[(uint16)(child + 0x0d)] << 8));

@@ -275,7 +275,7 @@ re-confirmed against the user's exact save-state repro — that is the one
 remaining verification step for a future session (or the next time the
 user plays the slot-7 walk with this build).
 
-#### Residual crusher-extension corruption — RESOLVED 2026-08-06; `$87:ED46` hypothesis rejected
+#### Residual crusher-extension corruption — RESOLVED 2026-08-07; released predicate was state-dependent
 
 **Status: RESOLVED. Beads: `beads-8wg.1.1` under
 `SNES -> Mega Man X`.** The generalized direct-bind and
@@ -399,7 +399,8 @@ pointers and removed the unnecessary child-WRAM write. The narrowed form was
 rebuilt successfully and returns the same measured parent base at the same
 D6A7 render handoff without changing guest state.
 
-**Closure evidence:**
+**Historical closure evidence (superseded by the 2026-08-07 regression
+below):**
 
 1. The user validated the exact initial D6A7 parent-base candidate with the
    authoritative F8/slot-7 walk and confirmed the malformed attack behavior
@@ -416,6 +417,43 @@ D6A7 render handoff without changing guest state.
    `MmxWsChrBindActive()` gate. The final predicate is additionally limited
    to Highway stage 0 and child `$09` behavior `$B357/$9420` -> live parent
    `$0F`, addressing the independent audit's overbreadth concern.
+
+**2026-08-07 regression and corrected root cause.** The user reproduced the
+same malformed F8 extension in the later Highway-BG2 build. This was not a
+lost commit: `dbeb047` is in the build's ancestry, the generated
+`WS-CHRBIND-PARENT` hook is present, and a deterministic main@`b1e4702`
+capture reproduces F8 while F9 remains healthy.
+
+An environment-gated trace at the D6A7 handoff proved the released resolver
+runs for the exact children and that every structural field still matches:
+children `$1428/$1468`, gfx `$09`, parents `$0E68/$0EA8`, parent gfx `$0F`,
+Highway stage `$00`, and active widescreen play. Both parents initially bind
+slot `$1E` while its table/base is `$00`; at allocator frame 297 the table
+changes to `$60` and the existing sweep correctly heals both parent bases.
+That happens before the visible broken extension and is not the final miss.
+
+The actual release regression is the post-validation "critical narrowing":
+the user validated the broader parent resolver, after which `dbeb047` added
+an exact child `+$14/+$16 == $B357/$9420` predicate and the narrowed binary
+was built but not live-validated. Those fields are behavior-state pointers,
+not identity. During descent/extension they legitimately advance through
+`$B35A/$8F20`, `$B35D/$9820`, and `$B360/$8F20`. The exact idle-state check
+therefore disables the resolver precisely when the extended spikes need the
+parent's `$60` base, returning the stale child `$00` and recreating OAM tiles
+`$1A/$2F/$2E/$0E`.
+
+**Final fix:** remove only the invalid behavior-state predicate.
+Retain the active-widescreen gate, Highway stage 0, aligned child gfx `$09`,
+the child's live `+$0C` parent relation, aligned/live parent validation, and
+parent gfx `$0F`. This is still a narrow relational signature with no object
+address or tile-base constant. It remains a render-only correction; F9 is a
+numerical no-op because its child and parent bases already agree.
+
+**Final validation:** a clean Release rebuild, the one-site generated-hook
+check, `mmx_display_test`, and deterministic 72-pixel-margin F8/F9 captures
+all pass. The user then validated the exact final binary with the
+authoritative F8/slot-7 walk and confirmed both first crushers remain correct
+through their attack/extension behavior.
 
 ### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
 

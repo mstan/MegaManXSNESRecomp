@@ -213,11 +213,14 @@ WS-CHRBIND-PARENT - reconcile the residual Highway crusher render child at
   correctly rebound parents ($0E68/$0EA8) in child+$0C, but retain stale
   child+$18=$00; the healthy control has parent+$18 == child+$18 == $60.
   Inject immediately after the unique D6A7 byte read and let
-  MmxWsChrBindResolveParent validate Highway stage 0 plus the complete traced
-  crusher signature (gfx and behavior pointers), then return the live
-  parent's value for this same render. It deliberately does not mutate guest
-  WRAM. No tile base or object address is hardcoded, and a legitimate page-0
-  allocation remains page 0 when the parent says so.
+  MmxWsChrBindResolveParent validate Highway stage 0 plus the stable relational
+  crusher signature (aligned child gfx $09 pointing through +$0c to a live,
+  aligned parent gfx $0f), then return the live parent's value for this same
+  render. Child +$14/+16 are behavior-state pointers, not identity: they
+  change while the crusher descends and extends and therefore must not gate
+  the repair. The resolver deliberately does not mutate guest WRAM. No tile
+  base or object address is hardcoded, and a legitimate page-0 allocation
+  remains page 0 when the parent says so.
 
 Usage:
     python tools/apply_overrides.py [--gen-dir src/gen] [--check] [-v]
