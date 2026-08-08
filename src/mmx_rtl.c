@@ -1198,8 +1198,12 @@ static int MmxWsChrBindActive(void) {
  * Do not infer validity from zero, because page 0 is legitimate. Accept the
  * parent only for Highway stage 0 and the stable, relational crusher
  * signature: an aligned child gfx $09 pointing through +$0c to a live,
- * aligned parent gfx $0f. Do not use child +$14/+16 as identity: those are
- * live behavior-state pointers and change as the crusher descends/extends. */
+ * aligned parent gfx $0f. The parent live byte is deliberately not part of
+ * the signature: on death the body clears it before the detached crusher
+ * child finishes falling, while the child's parent pointer and the parent's
+ * gfx/base fields remain authoritative. Do not use child +$14/+16 as
+ * identity: those are live behavior-state pointers and change as the crusher
+ * descends/extends. */
 uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
                                 uint8 childBase) {
   if (!MmxWsChrBindActive()) return childBase;
@@ -1212,7 +1216,7 @@ uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
   uint16 parent = (uint16)(g_ram[(uint16)(child + 0x0c)] |
                             ((uint16)g_ram[(uint16)(child + 0x0d)] << 8));
   if ((parent & 0x003f) != 0x0028 ||
-      g_ram[parent] == 0 || g_ram[(uint16)(parent + 0x0a)] != 0x0f)
+      g_ram[(uint16)(parent + 0x0a)] != 0x0f)
     return childBase;
   uint8 parentBase = g_ram[(uint16)(parent + 0x18)];
   return parentBase;

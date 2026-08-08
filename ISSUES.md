@@ -455,6 +455,35 @@ all pass. The user then validated the exact final binary with the
 authoritative F8/slot-7 walk and confirmed both first crushers remain correct
 through their attack/extension behavior.
 
+#### Falling crusher after enemy death — RESOLVED 2026-08-07; Beads `beads-8wg.1.4`
+
+The living-crusher repair had one more lifecycle-dependent gate. Load
+**F2 / slot 1**: X's charged shot is already travelling toward the first
+Highway crusher. When it kills the enemy, the detached crusher assembly falls
+for several frames before disappearing, and those falling frames use the same
+malformed tiles that previously affected the attack extension.
+
+A deterministic F2 capture identifies the exact transition. At frame 185,
+child `$1468` (gfx `$09`, stale base `$00`) points to live parent `$0EA8`
+(gfx `$0F`, base `$60`), so `MmxWsChrBindResolveParent` supplies `$60`. At
+frame 190 the shot clears the parent's live byte, but the child remains active
+and retains the same parent pointer; the parent also retains gfx `$0F` and
+base `$60`. The resolver's `g_ram[parent] != 0` predicate then rejects the
+otherwise-identical relation and returns the stale child base `$00` precisely
+for the detached fall.
+
+**Final fix:** remove only the parent-live-byte test. Retain active
+widescreen stage play, Highway stage 0, aligned child gfx `$09`, its live
+`+$0C` parent relation, parent alignment, and parent gfx `$0F`. This remains a
+render-only correction and does not hardcode `$60` or mutate guest WRAM. The
+parent live byte is lifecycle state, not identity; its retained gfx/base are
+the authoritative binding until the already-active detached child finishes.
+The deterministic F2 A/B changes only the detached-child frames 190-210,
+leaving the pre-impact and post-removal frames pixel-identical; the F8 attack
+control remains pixel-identical across all 67 comparable frames. The generated
+hook check and `mmx_display_test` pass. The user then validated the exact
+candidate binary with F2/slot 1 and confirmed the falling crusher is fixed.
+
 ### Widescreen duplicate enemy spawn after an early kill — RESOLVED (2026-08-07; Beads `beads-8wg.1.3`)
 
 **Symptom and deterministic repro.** In a fresh widescreen Highway run, walk
