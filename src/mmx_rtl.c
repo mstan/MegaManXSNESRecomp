@@ -876,6 +876,22 @@ static int MmxWsSpawnWide(void) {
   return s_on;
 }
 
+/* bank_82_808F is the presentation-object position/OAM dispatcher used by
+ * Highway's opening traffic. Its first (horizontal) test is
+ * carry = (objX - camX + 0x60) >= 0x1c0. Ordinary enemy lifetime already
+ * uses the widened bank_02_806E path, but these kind-1 cars never visit it:
+ * at the early spawn anchor 808F marks them offscreen and their F554 updater
+ * immediately clears the object. Widen only Highway traffic ID $21 here;
+ * every other presentation object retains the exact vanilla verdict. */
+uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
+  extern uint8_t g_ram[0x20000];
+  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  if (!m || g_ram[0x1f7a] != 0x00 ||
+      g_ram[(uint16)(dpage + 0x0a)] != 0x21)
+    return v >= 0x1c0 ? 1 : 0;
+  return ((uint16)(v + m) >= (uint16)(0x1c0 + 2 * m)) ? 1 : 0;
+}
+
 /* bank_00_D76A rejects a metasprite tile when (screenX + 16) reaches
  * vanilla_limit ($010F), which suppresses all ordinary enemy OAM at the
  * native right edge.  Extending the limit exposes the live right margin;
@@ -911,15 +927,15 @@ int MmxWsRealSpawnActive(void) {
   return MmxWsSpawnWide() && MmxWsMargin() > 0;
 }
 
-/* A camera-column update now runs two complementary scans. The normal DCDB
- * call uses the wide anchor and admits only ordinary type-3 enemies; a second
- * host-paired DCDB call uses the unmodified 4:3 anchor and admits only types
- * 0-2. This must be a strict partition, not "native admits everything": an
- * early-spawned type-3 enemy can be killed before its native anchor arrives,
- * which clears the record's live flag and otherwise lets the native pass
- * spawn that same record a second time. Types 0-2 include camera/tile staging
- * and Spark Mandrill's darkness/miniboss controller, so they retain authentic
- * timing. */
+/* A camera-column update runs two scans. The normal DCDB call uses the wide
+ * anchor and admits ordinary type-3 enemies plus narrowly identified Highway
+ * traffic; a second host-paired DCDB call uses the unmodified 4:3 anchor for
+ * kinds 0-2. Type-3 ownership must remain strictly disjoint: an enemy can be
+ * killed before its native anchor and otherwise respawn. Traffic is admitted
+ * by both scans so a state loaded after its one-time wide anchor can catch up
+ * at native timing. Its widened 808F lifetime keeps the early instance live
+ * until then, and the guest record-live flag makes the native scan idempotent.
+ * Camera/tile staging and encounter controllers remain native-timed. */
 static struct {
   uint16 native_anchor;
   uint16 wide_anchor;
@@ -951,6 +967,22 @@ uint16 MmxWsSpawnAnchorLeft(uint16 v) {
   return wide;
 }
 
+/* Highway's opening traffic is presentation/set dressing, but its records are
+ * kind 1 -- the same broad class that also contains timing-sensitive stage
+ * controllers. In bank $85's descriptor layout byte 3 is the object/event ID;
+ * ID $21 identifies these moving truck/car records. Promote only that stable
+ * identity in Highway stage 0. Descriptor addresses are deliberately not
+ * hardcoded, so both ROM variants and every matching traffic record share the
+ * same rule. */
+static int MmxWsSpawnWidePresentation(uint16 dpage, uint8 kind) {
+  extern uint8_t g_ram[0x20000];
+  if (kind != 1 || g_ram[0x1f7a] != 0x00) return 0;
+  uint16 rec = (uint16)(g_ram[(uint16)(dpage + 0x18)] |
+                        ((uint16)g_ram[(uint16)(dpage + 0x19)] << 8));
+  uint8 *descriptor = RomPtr(0x850000u | rec);
+  return descriptor[3] == 0x21;
+}
+
 /* Called from DCDB after it reads the event descriptor's first byte. High
  * bits are difficulty filters; the low nibble is the allocation/event type. */
 int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
@@ -959,7 +991,8 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint16 anchor = (uint16)(g_ram[dpage] |
                            ((uint16)g_ram[(uint16)(dpage + 1)] << 8));
   uint8 kind = type & 0x0f;
-  if (anchor == s_ws_spawn_pass.wide_anchor) return kind == 3;
+  if (anchor == s_ws_spawn_pass.wide_anchor)
+    return kind == 3 || MmxWsSpawnWidePresentation(dpage, kind);
   if (anchor == s_ws_spawn_pass.native_anchor) return kind != 3;
   return 1;
 }

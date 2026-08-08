@@ -22,19 +22,30 @@ WS-CULL — widen the offscreen despawn window (X axis only).
   widescreen margin on both sides; identical to vanilla when off.
   The Y-axis check (0x40/0x160) is untouched.
 
+WS-PRESENTATION-CULL — widen Highway traffic's horizontal OAM/lifetime gate.
+  bank_82_808F is the kind-1 presentation-object position dispatcher. Its
+  first comparison marks an object absent when
+  (objX - cameraX + 0x60) >= 0x1C0; the Highway car updater then clears an
+  absent object immediately. The hook replaces only that carry verdict via
+  MmxWsPresentationCullVerdictX, whose host-side gate requires Highway stage
+  0 and traffic object ID $21. Other presentation objects and the vertical
+  comparison remain vanilla-identical.
+
 WS-SPAWN — shift the enemy spawn-scan anchor into the margins.
   bank_00_DC36 fires per 32px camera column crossing and sets the scan
   anchor $00 for the spawn list-walker (bank_00_DCDB): scrolling right
   anchor = $1E4D + 0x100 (block $00DC78), scrolling left anchor = $1E4D
   (block $00DC62). Snippets re-store the anchor through
   MmxWsSpawnAnchorRight/Left (+margin / -margin, left clamped at 0).
-  Each camera-column update runs strictly complementary record passes: the
-  normal call scans the widescreen anchor and admits only type-3 enemies; a
-  balanced second call scans the native anchor and admits only types 0-2.
-  The strict partition matters when a widened type-3 enemy is killed before
-  native timing: death clears its per-record live flag, so admitting type 3
-  in the native pass would spawn the same record twice. Camera, staging,
-  darkness, and encounter controllers (types 0-2) retain authentic activation.
+  Each camera-column update runs paired record passes: the normal call scans
+  the widescreen anchor and admits ordinary type-3 enemies plus narrowly
+  identified Highway traffic; a balanced second call scans the native anchor
+  and admits kinds 0-2. Enemy ownership stays strictly disjoint because an
+  enemy can die before native timing. Traffic deliberately remains eligible
+  in the native pass so save states made after the one-time wide anchor can
+  catch up; its widened presentation lifetime keeps the early instance live,
+  and the guest record-live flag makes that later scan idempotent. Camera,
+  staging, darkness, and encounter controllers retain authentic activation.
   Spawn bookkeeping self-heals: spawn sets the per-record flag, cull
   clears it via slot+$0C, so early spawn + wide cull keep hysteresis.
   Gated separately (SNESRECOMP_WS_SPAWN, default on) so spawning can
@@ -235,7 +246,7 @@ import os
 import re
 import sys
 
-MARKERS = ("/*WS-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
+MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
            "/*WS-CHRBIND-PARENT*/")
@@ -283,6 +294,13 @@ def shot_cull_snippet(indent, var):
             f"MmxWsShotCullVerdictX((uint16)({var})); }}\n")
 
 
+def presentation_cull_snippet(indent, var):
+    return (f"{indent}/*WS-PRESENTATION-CULL*/ {{ extern uint16 "
+            f"MmxWsPresentationCullVerdictX(uint16, uint16); "
+            f"cpu->_flag_C = MmxWsPresentationCullVerdictX(cpu->D, "
+            f"(uint16)({var})); }}\n")
+
+
 def apply_bank00(lines, verbose):
     out = []
     cur_block = None
@@ -317,7 +335,7 @@ RE_SPAWN_POST_CALL = re.compile(
 
 
 def apply_bank00_spawn_pass(lines, verbose):
-    """Partition DCDB: type 3 at the wide anchor, types 0-2 at native."""
+    """Partition DCDB between wide-owned and native-owned records."""
     out = []
     cur_fn = None
     cur_block = None
@@ -532,6 +550,49 @@ def apply_bank82_shot_cull(lines, verbose):
                     if verbose:
                         print(f"  WS-SHOT-CULL before line {len(out)} "
                               f"(block 0x0280B4, {pend_val})")
+                    state = 0
+        out.append(line)
+    return out, n
+
+
+def apply_bank82_presentation_cull(lines, verbose):
+    """Widen bank_82_808F's first, horizontal presentation-object gate."""
+    out = []
+    cur_fn = None
+    cur_block = None
+    pend_val = None
+    state = 0  # 0 idle, 1 saw 0x1c0 const, 2 have compared value var
+    n = 0
+    for line in lines:
+        m = re.match(r"^RecompReturn (bank_82_808F)_M\dX\d\(CpuState", line)
+        if m:
+            cur_fn = m.group(1)
+            cur_block = None
+            state = 0
+        elif line.startswith("RecompReturn "):
+            cur_fn = None
+            cur_block = None
+            state = 0
+        m = RE_TRACE.search(line)
+        if m:
+            cur_block = canon_pc24(int(m.group(1), 16))
+            state = 0
+        if cur_fn == "bank_82_808F" and cur_block == 0x02808F:
+            if state == 0 and re.match(r"^\s*uint16 (_v\d+) = 0x1c0;\s*$", line):
+                state = 1
+            elif state == 1:
+                mv = RE_READ_A.match(line)
+                if mv:
+                    pend_val = mv.group(1)
+                    state = 2
+            elif state == 2:
+                mb = RE_BRANCH_C.match(line)
+                if mb:
+                    out.append(presentation_cull_snippet(mb.group(1), pend_val))
+                    n += 1
+                    if verbose:
+                        print(f"  WS-PRESENTATION-CULL before line {len(out)} "
+                              f"(block 0x02808F, {pend_val})")
                     state = 0
         out.append(line)
     return out, n
@@ -836,6 +897,7 @@ def main():
         (apply_bank00_oam, "/*WS-OAM*/"),
         (apply_bank00_oam_left, "/*WS-OAM-L*/"),
         (apply_bank02, "/*WS-CULL*/"),
+        (apply_bank82_presentation_cull, "/*WS-PRESENTATION-CULL*/"),
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
         (apply_bank03, "/*WS-STAGE*/"),
@@ -885,6 +947,12 @@ def main():
         print(
             "ERROR: expected exactly 2 WS-SPAWN anchor hooks, found "
             f"{effective_counts.get('/*WS-SPAWN*/', 0)}",
+            file=sys.stderr)
+        return 1
+    if not args.restore and effective_counts.get("/*WS-PRESENTATION-CULL*/", 0) != 3:
+        print(
+            "ERROR: expected exactly 3 WS-PRESENTATION-CULL hooks, found "
+            f"{effective_counts.get('/*WS-PRESENTATION-CULL*/', 0)}",
             file=sys.stderr)
         return 1
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)

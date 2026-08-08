@@ -514,6 +514,55 @@ The rebuilt widescreen binary passed the deterministic save-slot-0 rapid-fire
 reproduction, and the user independently confirmed in live play that the
 second spike-wheel spawn no longer occurs.
 
+### Highway opening vehicle wide activation — RESOLVED 2026-08-07; Beads `beads-8wg.1.5`
+
+**Symptom.** At the very start of Highway, the moving trucks and cars are
+set-dressing rather than ordinary enemies. In widescreen they still activate
+at the native 4:3 anchor, visibly popping into existence well inside the
+expanded viewport instead of entering near its leading edge.
+
+**Measured identity and timing.** An environment-gated diagnosis at DCDB's
+record decision found the four opening descriptors at `$85:82EB`, `$82F3`,
+`$82FB`, and `$830A`. All are kind 1 records with object/event ID `$21` in
+descriptor byte 3. Native activations occurred at frames 264, 336, 445, and
+483 in the deterministic save-0 walk. For the later records, the wide pass
+reached the same descriptor about 109 frames earlier but rejected it under the
+old type-only partition. The adjacent kind 2 `$8302` record is not traffic and
+must remain native-timed.
+
+**Why spawn admission alone failed.** The first prototype accepted those four
+records at the wide anchor, but the cars disappeared completely. A byte watch
+on object page `$1928` proved that the wide `$82FB` instance was live on frame
+336 and cleared on frame 337. The exact write chain was:
+
+`$82:808F` presentation-position test → car updater `$82:F554/$F5C0` →
+generic clear routine `$82:8398`.
+
+`$82:808F` owns a separate kind-1 horizontal presentation gate,
+`(objX - cameraX + $60) >= $1C0`; the enemy-only WS-CULL hook never visits it.
+At early timing the routine therefore wrote zero to object `D+$0E`, and the
+car updater immediately discarded the otherwise valid object.
+
+**Fix.** A new `WS-PRESENTATION-CULL` injection replaces the
+carry verdict at all three generated `$82:808F` M/X variants. Its host helper
+uses the symmetric live widescreen margin only when stage is Highway 0 and
+object ID is `$21`; every other presentation object and the vertical gate are
+vanilla-identical. The wide scan admits only kind-1/ID-`$21` traffic in addition
+to the strictly wide-owned kind-3 enemies. Traffic also remains eligible in
+the native kinds-0–2 pass as save-state catch-up: the expanded presentation
+window keeps the early instance live, so the guest record-live flag makes the
+later scan idempotent. A state loaded after the one-time wide anchor therefore
+gets native traffic instead of permanently suppressing it.
+
+The Release build and injector count checks pass. In a deterministic
+save-0/right WRAM capture, the formerly deleted wide object is live at page
+`$1948` on frame 336 and initialized/visible on frame 350. Pages `$1928`,
+`$1948`, `$1968`, and `$1988` coexist at the expected moments; the paired
+native scans do not allocate second copies. The existing rapid-fire script
+also confirms the first spike wheel dies once and does not return at its
+native anchor. Finally, the user validated a brand-new Highway start in the
+candidate build and confirmed the cars now enter correctly near the wide edge.
+
 ### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
 
 **Status:** feature stays HIDDEN on MMX (owner decision 2026-07-16) — not
