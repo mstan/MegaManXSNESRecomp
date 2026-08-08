@@ -913,10 +913,13 @@ int MmxWsRealSpawnActive(void) {
 
 /* A camera-column update now runs two complementary scans. The normal DCDB
  * call uses the wide anchor and admits only ordinary type-3 enemies; a second
- * host-paired DCDB call uses the unmodified 4:3 anchor and admits every record.
- * Existing per-record flags make already-created type-3 enemies a no-op in
- * the native pass. Types 0-2 include camera/tile staging and Spark Mandrill's
- * darkness/miniboss controller, so they activate at authentic timing. */
+ * host-paired DCDB call uses the unmodified 4:3 anchor and admits only types
+ * 0-2. This must be a strict partition, not "native admits everything": an
+ * early-spawned type-3 enemy can be killed before its native anchor arrives,
+ * which clears the record's live flag and otherwise lets the native pass
+ * spawn that same record a second time. Types 0-2 include camera/tile staging
+ * and Spark Mandrill's darkness/miniboss controller, so they retain authentic
+ * timing. */
 static struct {
   uint16 native_anchor;
   uint16 wide_anchor;
@@ -955,8 +958,10 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   if (!s_ws_spawn_pass.active) return 1;
   uint16 anchor = (uint16)(g_ram[dpage] |
                            ((uint16)g_ram[(uint16)(dpage + 1)] << 8));
-  if (anchor != s_ws_spawn_pass.wide_anchor) return 1;
-  return (type & 0x0f) == 3;
+  uint8 kind = type & 0x0f;
+  if (anchor == s_ws_spawn_pass.wide_anchor) return kind == 3;
+  if (anchor == s_ws_spawn_pass.native_anchor) return kind != 3;
+  return 1;
 }
 
 /* Run DCDB as a balanced synthetic JSR, preserving all guest registers and

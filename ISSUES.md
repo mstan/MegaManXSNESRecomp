@@ -455,6 +455,36 @@ all pass. The user then validated the exact final binary with the
 authoritative F8/slot-7 walk and confirmed both first crushers remain correct
 through their attack/extension behavior.
 
+### Widescreen duplicate enemy spawn after an early kill — RESOLVED (2026-08-07; Beads `beads-8wg.1.3`)
+
+**Symptom and deterministic repro.** In a fresh widescreen Highway run, walk
+right while repeatedly firing uncharged shots. The first spike-wheel enemy is
+created in the leading margin, dies quickly, then the same stage record creates
+a second spike wheel as X continues right. `_triage/highway-duplicate-spawn.script`
+reproduces this with save slot 0 and pulsed Y shots: the first wheel appears at
+frames 540-550 and dies at 560-580; the duplicate appears at 630-650 and dies
+again at 660-680. Vanilla spawns it only once during this traversal.
+
+**Root cause.** `WS-SPAWN-PASS` runs DCDB twice on each camera-column update:
+the widened-anchor pass admits only ordinary type-3 enemies, while the paired
+native-anchor pass previously admitted every record. The code relied on the
+guest record's live flag to make the second type-3 visit a no-op. Killing the
+early instance clears that flag before the native anchor reaches the record,
+so the native pass considers it eligible and creates it again. The observed
+roughly 90-frame gap matches the 104-pixel separation between the widened and
+native anchors at the tested 72-pixel margin plus 32-pixel spawn slack.
+
+**Fix.** Make the two passes a strict ownership partition: the wide
+anchor admits only type 3; the native anchor admits only types 0-2. Camera,
+tile-staging, darkness, and encounter-controller records therefore keep native
+timing, while an ordinary enemy record cannot be consumed by both passes.
+Normal backtracking/death respawn semantics remain guest-owned: once the camera
+recrosses that record's widened anchor it is eligible again. With widescreen
+inactive the split-pass state is inactive and DCDB remains vanilla-identical.
+The rebuilt widescreen binary passed the deterministic save-slot-0 rapid-fire
+reproduction, and the user independently confirmed in live play that the
+second spike-wheel spawn no longer occurs.
+
 ### Widescreen margin spawn/cull — WIP (filed 2026-07-16): coverage promotion landed, injections live, three defects remain
 
 **Status:** feature stays HIDDEN on MMX (owner decision 2026-07-16) — not

@@ -28,12 +28,13 @@ WS-SPAWN — shift the enemy spawn-scan anchor into the margins.
   anchor = $1E4D + 0x100 (block $00DC78), scrolling left anchor = $1E4D
   (block $00DC62). Snippets re-store the anchor through
   MmxWsSpawnAnchorRight/Left (+margin / -margin, left clamped at 0).
-  Each camera-column update runs complementary record passes: the normal
-  call scans the widescreen anchor but admits only type-3 enemies; a
-  balanced second call scans the native anchor and admits every record.
-  Per-record flags make already-created enemies no-ops in the native pass,
-  while camera, staging, darkness, and encounter controllers (types 0-2)
-  retain authentic activation.
+  Each camera-column update runs strictly complementary record passes: the
+  normal call scans the widescreen anchor and admits only type-3 enemies; a
+  balanced second call scans the native anchor and admits only types 0-2.
+  The strict partition matters when a widened type-3 enemy is killed before
+  native timing: death clears its per-record live flag, so admitting type 3
+  in the native pass would spawn the same record twice. Camera, staging,
+  darkness, and encounter controllers (types 0-2) retain authentic activation.
   Spawn bookkeeping self-heals: spawn sets the per-record flag, cull
   clears it via slot+$0C, so early spawn + wide cull keep hysteresis.
   Gated separately (SNESRECOMP_WS_SPAWN, default on) so spawning can
@@ -314,7 +315,7 @@ RE_SPAWN_POST_CALL = re.compile(
 
 
 def apply_bank00_spawn_pass(lines, verbose):
-    """Filter the wide DCDB pass to type-3 enemies, then run a native pass."""
+    """Partition DCDB: type 3 at the wide anchor, types 0-2 at native."""
     out = []
     cur_fn = None
     cur_block = None
