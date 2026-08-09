@@ -20,8 +20,39 @@ static void test_non_door_stack(void) {
   assert(!MmxWidePolicy_IsBossDoorRow(ordinary_wall, 4));
 }
 
+static void test_spawn_cursors_are_independent(void) {
+  MmxWideSpawnCursor cursor = {0};
+
+  assert(MmxWidePolicy_BeginWideSpawnPass(&cursor, 0x9000) == 0x9000);
+  MmxWidePolicy_EndWideSpawnPass(&cursor, 0x9040);
+
+  /* Advancing the native cursor must not rewind or replace the widened one. */
+  assert(MmxWidePolicy_BeginWideSpawnPass(&cursor, 0x9020) == 0x9040);
+  MmxWidePolicy_EndWideSpawnPass(&cursor, 0x9060);
+  assert(cursor.wide == 0x9060);
+  assert(cursor.valid);
+}
+
+static void test_spawn_record_ownership(void) {
+  /* Ordinary enemies are early/wide only; controllers are native only. */
+  assert(MmxWidePolicy_SpawnRecordAllowed(0x06, 3, 0x20, false));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(0x06, 3, 0x20, true));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(0x06, 2, 0x15, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(0x06, 2, 0x15, true));
+
+  /* Spark's kind-3 mid-boss controller is deliberately native-timed. */
+  assert(!MmxWidePolicy_SpawnRecordAllowed(0x06, 3, 0x03, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(0x06, 3, 0x03, true));
+
+  /* Highway traffic remains eligible in both passes. */
+  assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, true));
+}
+
 int main(void) {
   test_boss_door_stack();
   test_non_door_stack();
+  test_spawn_cursors_are_independent();
+  test_spawn_record_ownership();
   return 0;
 }

@@ -1,4 +1,5 @@
 #include "mmx_rtl.h"
+#include "mmx_wide_policy.h"
 #include "variables.h"
 #include "common_cpu_infra.h"
 #include "snes/snes.h"
@@ -132,6 +133,8 @@ typedef struct MmxSlotResume {
 static MmxSlotResume g_slot_resume[MMX_NSLOTS];
 static uint16_t g_slot_base_s[MMX_NSLOTS];          /* entry-S, latched at seed */
 static uint8_t  g_slot_resume_pending[MMX_NSLOTS];  /* set by state load */
+static MmxWideSpawnCursor s_ws_spawn_cursor;
+static uint8_t s_ws_spawn_cursor_stage = 0xff;
 /* Yields reached through the non-standard HLE paths (scheduler-dispatch
  * $80E6) have no popped-frame contract; they clear the slot's resume info
  * instead of capturing a bogus one. Non-static: gen_stubs.c's HLE bodies
@@ -336,7 +339,14 @@ typedef struct MmxSavChunk {
   MmxSlotCpuSave saved_state[MMX_NSLOTS];
   MmxSlotResume  resume[MMX_NSLOTS];
   uint8_t  task_slot_x;
+  /* These fields replace the v1 struct's three bytes of trailing padding, so
+   * the serialized size stays unchanged and existing saves read as valid=0. */
+  uint8_t  ws_wide_cursor_valid;
+  uint16_t ws_wide_cursor;
 } MmxSavChunk;
+
+_Static_assert(sizeof(MmxSavChunk) == 464,
+               "MmxSavChunk save ABI must remain 464 bytes");
 
 static MmxSavChunk g_load_chunk;
 static uint8_t g_load_chunk_ok = 0;
@@ -357,6 +367,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
     c.resume[i]      = g_slot_resume[i];
   }
   c.task_slot_x = g_mmx_task_slot_x;
+  c.ws_wide_cursor_valid = s_ws_spawn_cursor.valid ? 1 : 0;
+  c.ws_wide_cursor = s_ws_spawn_cursor.wide;
   sli->func(sli, &c, sizeof(c));
 }
 
@@ -380,6 +392,8 @@ void MmxOnStateLoaded(uint32_t version) {
      * from a matching game mode). */
     fprintf(stderr, "[mmx_state] loaded legacy v%u state: fibers NOT rebuilt "
             "(reliable only from a matching game mode)\n", version);
+    s_ws_spawn_cursor.valid = false;
+    s_ws_spawn_cursor_stage = 0xff;
     return;
   }
   const MmxSavChunk *c = &g_load_chunk;
@@ -407,6 +421,9 @@ void MmxOnStateLoaded(uint32_t version) {
     }
   }
   g_mmx_task_slot_x = c->task_slot_x;
+  s_ws_spawn_cursor.valid = c->ws_wide_cursor_valid != 0;
+  s_ws_spawn_cursor.wide = c->ws_wide_cursor;
+  s_ws_spawn_cursor_stage = g_ram[0x1f7a];
   mmx_restore_cpu(&g_cpu, &c->main_cpu);
   g_current_slot_idx = 0xFF;
   fprintf(stderr, "[mmx_state] v%u state loaded: fibers rebuilt (%d resume-pending)\n",
@@ -927,60 +944,77 @@ int MmxWsRealSpawnActive(void) {
   return MmxWsSpawnWide() && MmxWsMargin() > 0;
 }
 
-/* A camera-column update runs two scans. The normal DCDB call uses the wide
- * anchor and admits ordinary type-3 enemies plus narrowly identified Highway
- * traffic; a second host-paired DCDB call uses the unmodified 4:3 anchor for
- * kinds 0-2. Type-3 ownership must remain strictly disjoint: an enemy can be
- * killed before its native anchor and otherwise respawn. Traffic is admitted
- * by both scans so a state loaded after its one-time wide anchor can catch up
- * at native timing. Its widened 808F lifetime keeps the early instance live
- * until then, and the guest record-live flag makes the native scan idempotent.
- * Camera/tile staging and encounter controllers remain native-timed. */
+/* A camera-column update runs two scans with independent event-list cursors.
+ * The normal DCDB call uses the host-owned wide cursor/anchor and admits
+ * ordinary type-3 enemies plus narrowly identified Highway traffic. A second
+ * host-paired DCDB call restores the guest's native cursor and unmodified 4:3
+ * anchor for kinds 0-2. Spark Mandrill's kind-3/id-$03 mid-boss controller is
+ * also native-owned. The guest cursor remains save-state-authoritative, so a
+ * rejected wide record is still present when native timing reaches it.
+ * Type-3 ownership otherwise stays strictly disjoint: an early enemy can be
+ * killed before its native anchor without respawning. */
 static struct {
   uint16 native_anchor;
   uint16 wide_anchor;
+  uint16 native_cursor_before;
+  uint16 dpage;
   int active;
 } s_ws_spawn_pass;
+
+static uint16 MmxWsSpawnReadCursor(uint16 dpage) {
+  extern uint8_t g_ram[0x20000];
+  return (uint16)(g_ram[(uint16)(dpage + 0x18)] |
+                  ((uint16)g_ram[(uint16)(dpage + 0x19)] << 8));
+}
+
+static void MmxWsSpawnWriteCursor(uint16 dpage, uint16 cursor) {
+  extern uint8_t g_ram[0x20000];
+  g_ram[(uint16)(dpage + 0x18)] = (uint8_t)cursor;
+  g_ram[(uint16)(dpage + 0x19)] = (uint8_t)(cursor >> 8);
+}
+
+static uint16 MmxWsSpawnPreparePasses(uint16 native_anchor,
+                                      uint16 wide_anchor,
+                                      uint16 dpage) {
+  extern uint8_t g_ram[0x20000];
+  const int active = wide_anchor != native_anchor;
+  s_ws_spawn_pass.native_anchor = native_anchor;
+  s_ws_spawn_pass.wide_anchor = wide_anchor;
+  s_ws_spawn_pass.dpage = dpage;
+  s_ws_spawn_pass.active = active;
+  if (!active)
+    return wide_anchor;
+
+  const uint8_t stage = g_ram[0x1f7a];
+  if (s_ws_spawn_cursor_stage != stage) {
+    s_ws_spawn_cursor.valid = false;
+    s_ws_spawn_cursor_stage = stage;
+  }
+
+  s_ws_spawn_pass.native_cursor_before = MmxWsSpawnReadCursor(dpage);
+  const uint16 wide_cursor = MmxWidePolicy_BeginWideSpawnPass(
+      &s_ws_spawn_cursor, s_ws_spawn_pass.native_cursor_before);
+  MmxWsSpawnWriteCursor(dpage, wide_cursor);
+  return wide_anchor;
+}
 
 /* +32px slack past the visible margin: an anchor of exactly the margin
  * lands record spawns on the outermost visible wide column (visible
  * pop-in; vanilla's +0x100 anchor is exactly the masked 4:3 edge).
  * One column beyond keeps spawns hidden; spawned objects stay inside
  * the widened 806E keep window (margin+0x40 hysteresis) either side. */
-uint16 MmxWsSpawnAnchorRight(uint16 v) {
+uint16 MmxWsSpawnAnchorRight(uint16 v, uint16 dpage) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
   uint16 wide = (uint16)(v + m);
-  s_ws_spawn_pass.native_anchor = v;
-  s_ws_spawn_pass.wide_anchor = wide;
-  s_ws_spawn_pass.active = (m != 0 && wide != v);
-  return wide;
+  return MmxWsSpawnPreparePasses(v, wide, dpage);
 }
 
-uint16 MmxWsSpawnAnchorLeft(uint16 v) {
+uint16 MmxWsSpawnAnchorLeft(uint16 v, uint16 dpage) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
   uint16 wide = (v >= (uint16)m) ? (uint16)(v - m) : 0;
-  s_ws_spawn_pass.native_anchor = v;
-  s_ws_spawn_pass.wide_anchor = wide;
-  s_ws_spawn_pass.active = (m != 0 && wide != v);
-  return wide;
-}
-
-/* Highway's opening traffic is presentation/set dressing, but its records are
- * kind 1 -- the same broad class that also contains timing-sensitive stage
- * controllers. In bank $85's descriptor layout byte 3 is the object/event ID;
- * ID $21 identifies these moving truck/car records. Promote only that stable
- * identity in Highway stage 0. Descriptor addresses are deliberately not
- * hardcoded, so both ROM variants and every matching traffic record share the
- * same rule. */
-static int MmxWsSpawnWidePresentation(uint16 dpage, uint8 kind) {
-  extern uint8_t g_ram[0x20000];
-  if (kind != 1 || g_ram[0x1f7a] != 0x00) return 0;
-  uint16 rec = (uint16)(g_ram[(uint16)(dpage + 0x18)] |
-                        ((uint16)g_ram[(uint16)(dpage + 0x19)] << 8));
-  uint8 *descriptor = RomPtr(0x850000u | rec);
-  return descriptor[3] == 0x21;
+  return MmxWsSpawnPreparePasses(v, wide, dpage);
 }
 
 /* Called from DCDB after it reads the event descriptor's first byte. High
@@ -991,10 +1025,18 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint16 anchor = (uint16)(g_ram[dpage] |
                            ((uint16)g_ram[(uint16)(dpage + 1)] << 8));
   uint8 kind = type & 0x0f;
-  if (anchor == s_ws_spawn_pass.wide_anchor)
-    return kind == 3 || MmxWsSpawnWidePresentation(dpage, kind);
-  if (anchor == s_ws_spawn_pass.native_anchor) return kind != 3;
-  return 1;
+  uint16 rec = MmxWsSpawnReadCursor(dpage);
+  uint8 *descriptor = RomPtr(0x850000u | rec);
+  const uint8 object_id = descriptor[3];
+  int allowed = 1;
+  if (anchor == s_ws_spawn_pass.wide_anchor) {
+    allowed = MmxWidePolicy_SpawnRecordAllowed(
+        g_ram[0x1f7a], kind, object_id, false);
+  } else if (anchor == s_ws_spawn_pass.native_anchor) {
+    allowed = MmxWidePolicy_SpawnRecordAllowed(
+        g_ram[0x1f7a], kind, object_id, true);
+  }
+  return allowed;
 }
 
 /* Run DCDB as a balanced synthetic JSR, preserving all guest registers and
@@ -1004,7 +1046,16 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
   extern uint8_t g_ram[0x20000];
   if (!s_ws_spawn_pass.active) return;
   CpuState saved = *cpu;
-  uint16 dpage = cpu->D;
+  uint16 dpage = s_ws_spawn_pass.dpage;
+
+  /* The ordinary call just completed the early/wide scan. Preserve its
+   * independent cursor, then restore the guest's authoritative native cursor
+   * before walking the authentic anchor. Rejected records therefore remain
+   * visible to the native pass, while killed early enemies cannot be revisited
+   * because the wide cursor advances monotonically on its own. */
+  MmxWidePolicy_EndWideSpawnPass(
+      &s_ws_spawn_cursor, MmxWsSpawnReadCursor(dpage));
+  MmxWsSpawnWriteCursor(dpage, s_ws_spawn_pass.native_cursor_before);
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.native_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.native_anchor >> 8);
   (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Du);

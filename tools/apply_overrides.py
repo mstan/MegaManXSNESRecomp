@@ -36,16 +36,19 @@ WS-SPAWN — shift the enemy spawn-scan anchor into the margins.
   anchor $00 for the spawn list-walker (bank_00_DCDB): scrolling right
   anchor = $1E4D + 0x100 (block $00DC78), scrolling left anchor = $1E4D
   (block $00DC62). Snippets re-store the anchor through
-  MmxWsSpawnAnchorRight/Left (+margin / -margin, left clamped at 0).
+  MmxWsSpawnAnchorRight/Left (+margin / -margin, left clamped at 0), passing
+  the active direct page so the host can split the event-list cursor.
   Each camera-column update runs paired record passes: the normal call scans
   the widescreen anchor and admits ordinary type-3 enemies plus narrowly
   identified Highway traffic; a balanced second call scans the native anchor
-  and admits kinds 0-2. Enemy ownership stays strictly disjoint because an
-  enemy can die before native timing. Traffic deliberately remains eligible
-  in the native pass so save states made after the one-time wide anchor can
-  catch up; its widened presentation lifetime keeps the early instance live,
-  and the guest record-live flag makes that later scan idempotent. Camera,
-  staging, darkness, and encounter controllers retain authentic activation.
+  and admits kinds 0-2. The passes have independent event-list cursors: the
+  guest cursor remains native and save-state-authoritative, while a host cursor
+  advances the widened scan. Rejecting a future controller in the wide pass
+  therefore cannot consume it before native timing. Enemy ownership stays
+  strictly disjoint because an enemy can die before native timing. Spark
+  Mandrill's kind-3/id-$03 mid-boss controller is explicitly native-owned.
+  Traffic deliberately remains eligible in both passes; its widened lifetime
+  and the guest live flag keep the later native scan idempotent.
   Spawn bookkeeping self-heals: spawn sets the per-record flag, cull
   clears it via slot+$0C, so early spawn + wide cull keep hysteresis.
   Gated separately (SNESRECOMP_WS_SPAWN, default on) so spawning can
@@ -279,8 +282,9 @@ RE_B23C_ENTRY = re.compile(
 
 def spawn_snippet(indent, bank, var, which):
     return (f"{indent}/*WS-SPAWN*/ {{ extern uint16 MmxWsSpawnAnchor{which}"
-            f"(uint16); cpu_write16(cpu, {bank}, (uint16)(cpu->D + 0x0000), "
-            f"MmxWsSpawnAnchor{which}((uint16)({var}))); }}\n")
+            f"(uint16, uint16); cpu_write16(cpu, {bank}, "
+            f"(uint16)(cpu->D + 0x0000), MmxWsSpawnAnchor{which}"
+            f"((uint16)({var}), cpu->D)); }}\n")
 
 
 def cull_snippet(indent, var):
