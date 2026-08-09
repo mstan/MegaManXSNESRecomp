@@ -1,13 +1,26 @@
 #include "mmx_wide_policy.h"
 
-bool MmxWidePolicy_IsBossDoorRow(const uint16_t tiles[4], int row_index) {
-  if (!tiles || (unsigned)row_index >= 4)
+bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index) {
+  if (!words || (unsigned)row_index >= 3)
     return false;
 
-  /* The cap varies with its facing, while the three animated body metatiles
-   * are the stable signature shared by the back-to-back columns. */
-  return tiles[1] == 0x0172 && tiles[2] == 0x0173 &&
-         tiles[3] == 0x0174;
+  enum { kHFlip = 0x4000, kVFlip = 0x8000 };
+  const uint16_t *top = words[0];
+  const uint16_t *middle = words[1];
+  const uint16_t *bottom = words[2];
+
+  return top[1] == (uint16_t)(top[0] ^ kHFlip) &&
+         top[3] == (uint16_t)(top[2] ^ kHFlip) &&
+         middle[1] == (uint16_t)(middle[0] ^ kHFlip) &&
+         middle[2] == (uint16_t)(middle[0] ^ kVFlip) &&
+         middle[3] == (uint16_t)(middle[0] ^ kHFlip ^ kVFlip) &&
+         bottom[0] == (uint16_t)(top[2] ^ kVFlip) &&
+         bottom[1] == (uint16_t)(top[3] ^ kVFlip) &&
+         bottom[2] == (uint16_t)(top[0] ^ kVFlip) &&
+         bottom[3] == (uint16_t)(top[1] ^ kVFlip) &&
+         (top[0] & 0x03ff) != (top[2] & 0x03ff) &&
+         (middle[0] & 0x03ff) != (top[0] & 0x03ff) &&
+         (middle[0] & 0x03ff) != (top[2] & 0x03ff);
 }
 
 uint16_t MmxWidePolicy_BeginWideSpawnPass(MmxWideSpawnCursor *cursor,

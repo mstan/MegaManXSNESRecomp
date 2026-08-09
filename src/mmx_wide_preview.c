@@ -1,5 +1,6 @@
 #include "mmx_wide_preview.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -183,21 +184,47 @@ static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
 
 static bool IsBossDoorMapPixel(const StageBounds *bounds, int world_x,
                                int world_y) {
+  int tile_x = world_x & ~15;
   int tile_y = world_y & ~15;
-  uint16_t current;
-  if (!StageTile16(bounds, world_x, tile_y, &current))
-    return false;
+  for (int current_row = 0; current_row < 3; current_row++) {
+    int stack_y = tile_y - current_row * 16;
+    uint16_t words[3][4];
+    bool complete = true;
+    for (int row = 0; row < 3 && complete; row++) {
+      for (int quadrant = 0; quadrant < 4; quadrant++) {
+        int x = tile_x + (quadrant & 1) * 8;
+        int y = stack_y + row * 16 + (quadrant >> 1) * 8;
+        if (!StageTileWord(bounds, x, y, &words[row][quadrant])) {
+          complete = false;
+          break;
+        }
+      }
+    }
+    if (!complete || !MmxWidePolicy_IsBossDoorBody(words, current_row))
+      continue;
 
-  int row = 0;
-  if (current >= 0x0172 && current <= 0x0174)
-    row = (int)current - 0x0171;
-  int stack_y = tile_y - row * 16;
-  uint16_t tiles[4];
-  for (int i = 0; i < 4; i++) {
-    if (!StageTile16(bounds, world_x, stack_y + i * 16, &tiles[i]))
-      return false;
+    /* Suppress only an authored back-to-back mate, never a structurally
+     * similar standalone decoration. The three body metatiles are identical
+     * in the neighboring column even though the optional cap may face the
+     * other way. */
+    for (int direction = -1; direction <= 1; direction += 2) {
+      bool same_body = true;
+      for (int row = 0; row < 3; row++) {
+        uint16_t current_tile, neighbor_tile;
+        int y = stack_y + row * 16;
+        if (!StageTile16(bounds, tile_x, y, &current_tile) ||
+            !StageTile16(bounds, tile_x + direction * 16, y,
+                         &neighbor_tile) ||
+            current_tile != neighbor_tile) {
+          same_body = false;
+          break;
+        }
+      }
+      if (same_body)
+        return true;
+    }
   }
-  return MmxWidePolicy_IsBossDoorRow(tiles, row);
+  return false;
 }
 
 static uint8_t BackgroundTilePixel(const Ppu *ppu, uint16_t tile_word,
@@ -249,6 +276,8 @@ void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
   for (int side = 0; side < 2; side++) {
     int x_begin = side ? 256 : -(int)ppu->extraLeftCur;
     int x_end = side ? 256 + ppu->extraRightCur : 0;
+    int checked_door_tile_x = INT_MIN;
+    bool checked_is_door = false;
     for (int x = x_begin; x < x_end; x++) {
       int world_x = camera_x + x;
       int sample_x = world_x;
@@ -281,7 +310,13 @@ void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
        * margin, replace it with the next column farther into that room. The
        * live, scripted column at the native edge remains authoritative during
        * opening, camera transfer, and closing. */
-      if (IsBossDoorMapPixel(&s_stage_bounds[stage], sample_x, world_y))
+      int door_tile_x = sample_x & ~15;
+      if (door_tile_x != checked_door_tile_x) {
+        checked_door_tile_x = door_tile_x;
+        checked_is_door =
+            IsBossDoorMapPixel(&s_stage_bounds[stage], sample_x, world_y);
+      }
+      if (checked_is_door)
         sample_x += side ? 16 : -16;
 
       uint16_t tile_word;

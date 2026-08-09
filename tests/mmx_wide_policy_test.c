@@ -3,21 +3,39 @@
 #include <assert.h>
 
 static void test_boss_door_stack(void) {
-  const uint16_t left_facing[] = {0x00cf, 0x0172, 0x0173, 0x0174};
-  const uint16_t right_facing[] = {0x00ce, 0x0172, 0x0173, 0x0174};
+  const uint16_t chill_penguin[][4] = {
+      {0x06df, 0x46df, 0x06ef, 0x46ef},
+      {0x06ff, 0x46ff, 0x86ff, 0xc6ff},
+      {0x86ef, 0xc6ef, 0x86df, 0xc6df},
+  };
+  const uint16_t spark_mandrill[][4] = {
+      {0x048d, 0x448d, 0x048e, 0x448e},
+      {0x048f, 0x448f, 0x848f, 0xc48f},
+      {0x848e, 0xc48e, 0x848d, 0xc48d},
+  };
 
-  for (int row = 0; row < 4; row++) {
-    assert(MmxWidePolicy_IsBossDoorRow(left_facing, row));
-    assert(MmxWidePolicy_IsBossDoorRow(right_facing, row));
+  for (int row = 0; row < 3; row++) {
+    assert(MmxWidePolicy_IsBossDoorBody(chill_penguin, row));
+    assert(MmxWidePolicy_IsBossDoorBody(spark_mandrill, row));
   }
 }
 
 static void test_non_door_stack(void) {
-  const uint16_t ordinary_wall[] = {0x00cf, 0x0172, 0x0173, 0x0175};
-  assert(!MmxWidePolicy_IsBossDoorRow(ordinary_wall, 0));
-  assert(!MmxWidePolicy_IsBossDoorRow(NULL, 0));
-  assert(!MmxWidePolicy_IsBossDoorRow(ordinary_wall, -1));
-  assert(!MmxWidePolicy_IsBossDoorRow(ordinary_wall, 4));
+  const uint16_t almost_door[][4] = {
+      {0x048d, 0x448d, 0x048e, 0x448e},
+      {0x048f, 0x448f, 0x848f, 0xc48f},
+      {0x848e, 0xc48e, 0x848d, 0xc48c},
+  };
+  const uint16_t repeated_wall[][4] = {
+      {0x0100, 0x0100, 0x0100, 0x0100},
+      {0x0100, 0x0100, 0x0100, 0x0100},
+      {0x0100, 0x0100, 0x0100, 0x0100},
+  };
+  assert(!MmxWidePolicy_IsBossDoorBody(almost_door, 0));
+  assert(!MmxWidePolicy_IsBossDoorBody(repeated_wall, 0));
+  assert(!MmxWidePolicy_IsBossDoorBody(NULL, 0));
+  assert(!MmxWidePolicy_IsBossDoorBody(almost_door, -1));
+  assert(!MmxWidePolicy_IsBossDoorBody(almost_door, 3));
 }
 
 static void test_spawn_cursors_are_independent(void) {

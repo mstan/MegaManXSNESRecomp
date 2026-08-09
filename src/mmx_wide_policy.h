@@ -6,8 +6,10 @@
 
 /* MMX authors each boss-room boundary as two back-to-back 16-pixel door
  * columns. The native camera shows only the column belonging to the current
- * room. Return true when row_index belongs to that four-metatile stack. */
-bool MmxWidePolicy_IsBossDoorRow(const uint16_t tiles[4], int row_index);
+ * room. Door metatile IDs vary by stage, but their three-row 8x8 construction
+ * is stable: mirrored top, four-way mirrored center, reversed bottom. Return
+ * true when row_index belongs to a stack with that structural signature. */
+bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index);
 
 typedef struct MmxWideSpawnCursor {
   uint16_t wide;
