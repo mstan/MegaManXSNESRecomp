@@ -38,6 +38,10 @@ if(BUILD_TESTING)
     add_executable(mmx_display_test tests/mmx_display_test.c src/mmx_display.c)
     target_include_directories(mmx_display_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     add_test(NAME mmx_display_geometry COMMAND mmx_display_test)
+    add_executable(mmx_wide_policy_test
+        tests/mmx_wide_policy_test.c src/mmx_wide_policy.c)
+    target_include_directories(mmx_wide_policy_test PRIVATE src)
+    add_test(NAME mmx_wide_policy COMMAND mmx_wide_policy_test)
 endif()
 
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
@@ -81,6 +85,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_display.c
         src/main.c
         src/mmx_wide_preview.c
+        src/mmx_wide_policy.c
         src/opengl.c
         src/mmx_00.c
         src/gen_stubs.c

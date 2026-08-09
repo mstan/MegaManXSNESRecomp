@@ -8,6 +8,7 @@
 
 #include "common_rtl.h"
 #include "mmx_display.h"
+#include "mmx_wide_policy.h"
 #include "snes/ppu.h"
 #include "snes/snes.h"
 
@@ -136,8 +137,8 @@ static bool LoadStageBounds(uint8_t stage) {
   return true;
 }
 
-static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
-                          uint16_t *word) {
+static bool StageTile16(const StageBounds *bounds, int world_x, int world_y,
+                        uint16_t *tile16) {
   int screen_x = world_x >> 8;
   int screen_y = world_y >> 8;
   if ((unsigned)screen_x >= bounds->width ||
@@ -150,7 +151,18 @@ static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
   size_t expanded = kExpandedScreensWram + (size_t)screen * 0x200 +
                     (size_t)(((local_y >> 4) * 16 + (local_x >> 4)) * 2);
   if (expanded + 1 >= 0x10000) return false;
-  uint16_t tile16 = (uint16_t)(g_ram[expanded] | (g_ram[expanded + 1] << 8));
+  *tile16 = (uint16_t)(g_ram[expanded] | (g_ram[expanded + 1] << 8));
+  return true;
+}
+
+static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
+                          uint16_t *word) {
+  uint16_t tile16;
+  if (!StageTile16(bounds, world_x, world_y, &tile16))
+    return false;
+
+  int local_x = world_x & 0xff;
+  int local_y = world_y & 0xff;
 
   /* $0B95-$0B97 is the live ROM pointer selected by MMX for BG1's 16x16
    * table. The game has already expanded screen/32x32 data into WRAM, which
@@ -167,6 +179,25 @@ static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
   if (table == SIZE_MAX || !RomRange(table, 2)) return false;
   *word = Read16(table);
   return true;
+}
+
+static bool IsBossDoorMapPixel(const StageBounds *bounds, int world_x,
+                               int world_y) {
+  int tile_y = world_y & ~15;
+  uint16_t current;
+  if (!StageTile16(bounds, world_x, tile_y, &current))
+    return false;
+
+  int row = 0;
+  if (current >= 0x0172 && current <= 0x0174)
+    row = (int)current - 0x0171;
+  int stack_y = tile_y - row * 16;
+  uint16_t tiles[4];
+  for (int i = 0; i < 4; i++) {
+    if (!StageTile16(bounds, world_x, stack_y + i * 16, &tiles[i]))
+      return false;
+  }
+  return MmxWidePolicy_IsBossDoorRow(tiles, row);
 }
 
 static uint8_t BackgroundTilePixel(const Ppu *ppu, uint16_t tile_word,
@@ -244,6 +275,14 @@ void MmxWidePreview_EnhancePpuLine(Ppu *ppu, unsigned int y, bool sub,
           y >= 0x0050 && y < 0x00b0 &&
           sample_x >= 0x0bc0 && sample_x < 0x0c40)
         sample_x -= 0x0100;
+
+      /* Boss-room boundaries contain two back-to-back door columns because
+       * each adjacent native viewport owns one. If one falls in a host-only
+       * margin, replace it with the next column farther into that room. The
+       * live, scripted column at the native edge remains authoritative during
+       * opening, camera transfer, and closing. */
+      if (IsBossDoorMapPixel(&s_stage_bounds[stage], sample_x, world_y))
+        sample_x += side ? 16 : -16;
 
       uint16_t tile_word;
       if (!StageTileWord(&s_stage_bounds[stage], sample_x, world_y, &tile_word))

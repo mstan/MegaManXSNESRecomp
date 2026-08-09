@@ -366,6 +366,7 @@
     <ClCompile Include="glsl_shader.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="mmx_wide_preview.c" />
+    <ClCompile Include="mmx_wide_policy.c" />
     <ClCompile Include="mmx_display.c" />
     <ClCompile Include="post_mortem.c" />
 
@@ -431,6 +432,7 @@
     <ClInclude Include="mmx_rtl.h" />
     <ClInclude Include="mmx_display.h" />
     <ClInclude Include="mmx_wide_preview.h" />
+    <ClInclude Include="mmx_wide_policy.h" />
     <ClInclude Include="..\snesrecomp\runner\src\snes\apu.h" />
     <ClInclude Include="..\snesrecomp\runner\src\snes\cart.h" />
     <ClInclude Include="..\snesrecomp\runner\src\snes\cpu.h" />
