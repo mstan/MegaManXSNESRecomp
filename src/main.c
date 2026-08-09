@@ -146,7 +146,6 @@ static bool g_display_perf;
 static int g_curr_fps;
 static int g_ppu_render_flags = 0;
 static int g_snes_width, g_snes_height;
-static int g_last_drawable_width, g_last_drawable_height;
 /* Required by the shared PPU widescreen runtime; host-only, never serialized. */
 bool g_ws_active;
 int g_ws_extra;
@@ -159,21 +158,7 @@ static GamepadInfo g_gamepad[2];
 extern Snes *g_snes;
 
 static void MmxDisplay_PreparePpuFrame(void) {
-  int drawable_width = 0, drawable_height = 0;
-  if (g_renderer_funcs.GetOutputSize)
-    g_renderer_funcs.GetOutputSize(&drawable_width, &drawable_height);
-  if (drawable_width <= 0 || drawable_height <= 0)
-    SDL_GetWindowSize(g_window, &drawable_width, &drawable_height);
-  if (drawable_width > 0 && drawable_height > 0) {
-    g_last_drawable_width = drawable_width;
-    g_last_drawable_height = drawable_height;
-  } else {
-    drawable_width = g_last_drawable_width;
-    drawable_height = g_last_drawable_height;
-  }
-
-  int width = MmxDisplay_ComputeFrameWidth(drawable_width, drawable_height,
-                                           g_config.widescreen);
+  int width = MmxDisplay_ComputeFrameWidth(g_config.widescreen);
   /* Probe/CI determinism: SNESRECOMP_WS_EXTRA pins the margin so measured
    * widescreen geometry never silently follows the window aspect (a probe
    * once measured a 43px margin where the user played at ~72px and reached
@@ -599,7 +584,8 @@ void ChangeWindowScale(int scale_step) {
       bt = 31;
     }
     // Allow a scale level slightly above the max that fits on screen
-    int logical_width = MmxDisplay_GetWindowBaseWidth(g_snes_width);
+    int logical_width = MmxDisplay_GetWindowBaseWidth(
+        g_snes_width, SnesDisplayAspect_Clamp(g_config.display_aspect));
     int logical_height = MmxDisplay_GetWindowBaseHeight();
     int mw = (bounds.w - bl - br + logical_width / 4) / logical_width;
     int mh = (bounds.h - bt - bb + logical_height / 4) / logical_height;
@@ -607,7 +593,8 @@ void ChangeWindowScale(int scale_step) {
   }
   int new_scale = IntMax(IntMin(g_current_window_scale + scale_step, max_scale), 1);
   g_current_window_scale = new_scale;
-  int w = new_scale * MmxDisplay_GetWindowBaseWidth(g_snes_width);
+  int w = new_scale * MmxDisplay_GetWindowBaseWidth(
+      g_snes_width, SnesDisplayAspect_Clamp(g_config.display_aspect));
   int h = new_scale * MmxDisplay_GetWindowBaseHeight();
 
   //SDL_RenderSetLogicalSize(g_renderer, w, h);
@@ -886,6 +873,7 @@ static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pi
   SdlRenderer_GetOutputSize(&output_width, &output_height);
   MmxDisplayViewport viewport;
   MmxDisplay_ComputeViewport(width, height, output_width, output_height,
+                             SnesDisplayAspect_Clamp(g_config.display_aspect),
                              g_config.ignore_aspect_ratio, false, &viewport);
   g_sdl_present_rect.x = viewport.x;
   g_sdl_present_rect.y = viewport.y;
@@ -1290,6 +1278,9 @@ int main(int argc, char** argv) {
         ls.deadzone[0] = ls.deadzone[1] = g_config.gamepad_deadzone * 100 / 32767;
         ls.skip_launcher = g_config.skip_launcher;
         ls.msu1_enabled  = 0;   /* MMX: no MSU-1 (panel hidden) */
+#if defined(RECOMP_LAUNCHER)
+        ls.aspect_index = SnesDisplayAspect_Clamp(g_config.display_aspect);
+#endif
 
         char init_rom[512]; init_rom[0] = '\0';
         {
@@ -1324,6 +1315,19 @@ int main(int argc, char** argv) {
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */
         gi.num_known_sha256 = 1;
+#if defined(RECOMP_LAUNCHER)
+        {
+          static const char *const kDisplayAspectLabels[] = {
+            "4:3 (CRT)", "8:7 (Square pixels)", "1:1 (Square frame)"
+          };
+          gi.aspect_labels = kDisplayAspectLabels;
+          gi.num_aspect_labels = (int)countof(kDisplayAspectLabels);
+          gi.aspect_setting_label = "Display aspect";
+          gi.aspect_setting_help =
+              "4:3 recreates a traditional TV. 8:7 maps every game pixel "
+              "to a square. 1:1 forces the whole picture into a square.";
+        }
+#endif
         /* Type-3 enemies spawn into the added margins while room and stage
          * controllers retain authentic 4:3 activation timing. */
 #if MMX_VARIANT_JP
@@ -1366,6 +1370,9 @@ int main(int argc, char** argv) {
           g_config.window_scale        = (uint8)ls.window_scale;
           g_config.fullscreen          = (uint8)ls.fullscreen;
           g_config.ignore_aspect_ratio = ls.ignore_aspect != 0;
+#if defined(RECOMP_LAUNCHER)
+          g_config.display_aspect = (uint8)SnesDisplayAspect_Clamp(ls.aspect_index);
+#endif
           g_config.linear_filtering    = ls.linear_filter != 0;
           g_config.widescreen          = ls.widescreen != 0;
           g_config.enable_audio        = true;   /* always on */
@@ -1472,10 +1479,9 @@ int main(int argc, char** argv) {
   }
 
   g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
-  /* A persisted widescreen launch opens a useful 16:9 window before the first
-   * display-derived frame is calculated. Custom WindowSize remains authoritative. */
-  g_snes_width = g_config.widescreen
-      ? MmxDisplay_ComputeFrameWidth(16, 9, true) : 256;
+  /* Widescreen extends the native field by one third. The selected display
+   * aspect determines whether that presents as 16:9, 32:21, or 4:3. */
+  g_snes_width = MmxDisplay_ComputeFrameWidth(g_config.widescreen);
   g_snes_height = 224;
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
     g_config.no_sprite_limits * kPpuRenderFlags_NoSpriteLimits;
@@ -1519,7 +1525,8 @@ int main(int argc, char** argv) {
 
   bool custom_size = g_config.window_width != 0 && g_config.window_height != 0;
   int window_width = custom_size ? g_config.window_width :
-      g_current_window_scale * MmxDisplay_GetWindowBaseWidth(g_snes_width);
+      g_current_window_scale * MmxDisplay_GetWindowBaseWidth(
+          g_snes_width, SnesDisplayAspect_Clamp(g_config.display_aspect));
   int window_height = custom_size ? g_config.window_height :
       g_current_window_scale * MmxDisplay_GetWindowBaseHeight();
 
@@ -2424,6 +2431,9 @@ static const char kDefaultConfigIniContent[] =
   "\n"
   "# Don't keep the aspect ratio\n"
   "IgnoreAspectRatio = 0\n"
+  "\n"
+  "# Display aspect: 4:3 (CRT), 8:7 (square pixels), or 1:1 (square frame)\n"
+  "DisplayAspect = 4:3\n"
   "\n"
   "# Render real extra PPU columns to match a widescreen display.\n"
   "# Foreground geometry is rendered farther from MMX's prepared level data;\n"

@@ -206,17 +206,24 @@ land after the shared launcher-UI restructure settles.
 ### Experimental widescreen support
 
 The USA Rev 1 build includes an experimental true-widescreen renderer. It
-draws genuine additional PPU columns at the authentic 7:6 pixel aspect rather
-than stretching the original 4:3 image. The implementation widens presentation
-and ordinary enemy activation at the expanded 16:9 boundary while keeping the
-camera, collision, scripted room and stage triggers, and save-state data on
-their original timing and coordinates.
+draws genuine additional PPU columns rather than stretching the original
+picture. The implementation widens presentation and ordinary enemy activation
+while keeping the camera, collision, scripted room and stage triggers, and
+save-state data on their original timing and coordinates.
 
-Enable the default-disabled **Widescreen (16:9)** feature from the launcher's
-**Mods** page, then start the game. This support is still experimental, so
-visual or gameplay edge cases may remain; please report reproducible
-regressions with a savestate and screenshot. Widescreen is currently not
-exposed for Rockman X (Japan).
+The launcher's **Settings** page offers three independent display presentations:
+**4:3 (CRT)** is the default traditional-TV correction, **8:7 (Square pixels)**
+maps each 256x224 game pixel to a square, and **1:1 (Square frame)** deliberately
+fits the whole image into a square. These are presentation choices, not gameplay
+mods.
+
+Enable the default-disabled **Widescreen (Extended view)** feature from the
+launcher's **Mods** page, then start the game. It adds one third more horizontal
+game area while preserving the chosen pixel shape, producing approximately
+16:9 from 4:3, 32:21 from 8:7, or 4:3 from a 1:1 frame. This support is still
+experimental, so visual or gameplay edge cases may remain; please report
+reproducible regressions with a savestate and screenshot. Widescreen is
+currently not exposed for Rockman X (Japan).
 
 The S-DSP retains the SNES BRR predictor filters and canonical four-tap
 Gaussian interpolation. Host-rate conversion uses continuous interpolation

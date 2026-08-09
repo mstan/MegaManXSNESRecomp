@@ -173,6 +173,7 @@ static void OpenGLRenderer_EndDraw(void) {
   MmxDisplayViewport viewport;
   MmxDisplay_ComputeViewport(g_draw_width, g_draw_height,
                              drawable_width, drawable_height,
+                             SnesDisplayAspect_Clamp(g_config.display_aspect),
                              g_config.ignore_aspect_ratio, false,
                              &viewport);
   int viewport_width = viewport.width, viewport_height = viewport.height;
