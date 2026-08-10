@@ -998,20 +998,37 @@ static uint16 MmxWsSpawnPreparePasses(uint16 native_anchor,
   return wide_anchor;
 }
 
+/* Sigma stage 1's Vile room is an allocation-order-sensitive scripted
+ * encounter.  Keep its spawn scan at original timing while retaining the
+ * widened renderer, OAM window, and object culling.  Moving any of the room's
+ * type-3 records to the early margin changes which fixed object slots its
+ * controller and cutscene actors receive, and the final dialogue handoff can
+ * then wait forever.  $1E4D is the native camera-column anchor; $0900 is the
+ * door approach and $0A80 is the locked encounter screen. */
+static int MmxWsForceNativeSpawnTiming(void) {
+  extern uint8_t g_ram[0x20000];
+  if (g_ram[0x1f7a] != 0x09) return 0;
+  uint16 column = (uint16)(g_ram[0x1e4d] |
+                           ((uint16)g_ram[0x1e4e] << 8));
+  return column >= 0x0900 && column <= 0x0a80;
+}
+
 /* +32px slack past the visible margin: an anchor of exactly the margin
  * lands record spawns on the outermost visible wide column (visible
  * pop-in; vanilla's +0x100 anchor is exactly the masked 4:3 edge).
  * One column beyond keeps spawns hidden; spawned objects stay inside
  * the widened 806E keep window (margin+0x40 hysteresis) either side. */
 uint16 MmxWsSpawnAnchorRight(uint16 v, uint16 dpage) {
-  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  int m = (MmxWsSpawnWide() && !MmxWsForceNativeSpawnTiming())
+              ? MmxWsMargin() : 0;
   if (m) m += 32;
   uint16 wide = (uint16)(v + m);
   return MmxWsSpawnPreparePasses(v, wide, dpage);
 }
 
 uint16 MmxWsSpawnAnchorLeft(uint16 v, uint16 dpage) {
-  int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
+  int m = (MmxWsSpawnWide() && !MmxWsForceNativeSpawnTiming())
+              ? MmxWsMargin() : 0;
   if (m) m += 32;
   uint16 wide = (v >= (uint16)m) ? (uint16)(v - m) : 0;
   return MmxWsSpawnPreparePasses(v, wide, dpage);
