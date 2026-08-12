@@ -1,5 +1,6 @@
 # Build artifacts (all root-level CMake build trees)
 /build*/
+/MegaManXSNESRecomp/
 # macOS/Linux runtime ROM-path cache
 rom.cfg
 *.obj
@@ -82,7 +83,22 @@ MegaManXSNESRecomp-steamdeck-*.7z
 MegamanXRecomp-windows-*.zip
 mmx-v*.zip
 release-stage/
+release-linux/
 release-macos*/
 *.fig
 # per-variant generated C (copyrighted, regenerated at build time)
 variants/*/gen/
+
+# Root-level runtime/debug artifacts from local launches.
+/keybinds.ini
+/mmxb*.txt
+
+# Ghidra databases are local, regenerable build artifacts. Track only the
+# deterministic export of human-authored annotations.
+ghidra/*
+!ghidra/annotations/
+!ghidra/annotations/**
+*.gpr
+*.rep/
+*.lock
+*.lock~

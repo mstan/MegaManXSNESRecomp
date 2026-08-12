@@ -101,6 +101,88 @@ foreach ($name in $runtimeDlls) {
   Copy-Item -LiteralPath $source -Destination $stage
 }
 
+$objdump = Join-Path $RuntimeBinDir 'objdump.exe'
+if (-not (Test-Path -LiteralPath $objdump)) {
+  $objdumpCmd = Get-Command 'objdump.exe' -ErrorAction SilentlyContinue
+  if ($null -eq $objdumpCmd) {
+    throw "objdump.exe not found; cannot verify release DLL dependencies"
+  }
+  $objdump = $objdumpCmd.Source
+}
+
+$windowsDlls = [System.Collections.Generic.HashSet[string]]::new(
+  [System.StringComparer]::OrdinalIgnoreCase)
+@(
+  'ADVAPI32.dll', 'bcrypt.dll', 'COMCTL32.dll', 'comdlg32.dll',
+  'CRYPT32.dll', 'dbghelp.dll', 'DWMAPI.dll', 'GDI32.dll', 'IMM32.dll',
+  'IPHLPAPI.DLL', 'KERNEL32.dll', 'msvcrt.dll', 'ole32.dll',
+  'OLEAUT32.dll', 'OPENGL32.dll', 'POWRPROF.dll', 'RPCRT4.dll',
+  'SETUPAPI.dll', 'SHELL32.dll', 'SHLWAPI.dll', 'USER32.dll',
+  'USP10.dll', 'UXTHEME.dll', 'VERSION.dll', 'WINMM.dll', 'WINTRUST.dll',
+  'WS2_32.dll'
+) | ForEach-Object { [void]$windowsDlls.Add($_) }
+
+function Test-WindowsDll([string]$Name) {
+  return $windowsDlls.Contains($Name) -or
+    $Name.StartsWith('api-ms-win-', [StringComparison]::OrdinalIgnoreCase) -or
+    $Name.StartsWith('ext-ms-win-', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-ImportedDlls([string]$Binary) {
+  & $objdump -p $Binary | ForEach-Object {
+    if ($_ -match 'DLL Name:\s*(\S+)') {
+      $matches[1]
+    }
+  }
+}
+
+$dllSearchDirs = @($stage, $build, $RuntimeBinDir) |
+  Where-Object { Test-Path -LiteralPath $_ } |
+  ForEach-Object { [IO.Path]::GetFullPath($_) } |
+  Select-Object -Unique
+
+function Copy-DependencyDll([string]$Name) {
+  $dest = Join-Path $stage $Name
+  if (Test-Path -LiteralPath $dest) {
+    return $dest
+  }
+  foreach ($dir in $dllSearchDirs) {
+    $candidate = Join-Path $dir $Name
+    if (Test-Path -LiteralPath $candidate) {
+      Copy-Item -LiteralPath $candidate -Destination $stage
+      Write-Host "Bundled dependency DLL: $Name"
+      return $dest
+    }
+  }
+  throw "Release dependency DLL not found in build/runtime dirs: $Name"
+}
+
+$pending = [System.Collections.Generic.Queue[string]]::new()
+$seen = [System.Collections.Generic.HashSet[string]]::new(
+  [System.StringComparer]::OrdinalIgnoreCase)
+Get-ChildItem -LiteralPath $stage -File |
+  Where-Object { $_.Extension -in '.exe', '.dll' } |
+  ForEach-Object { $pending.Enqueue($_.FullName) }
+
+while ($pending.Count -gt 0) {
+  $binary = $pending.Dequeue()
+  $binaryFull = [IO.Path]::GetFullPath($binary)
+  if (-not $seen.Add($binaryFull)) {
+    continue
+  }
+
+  foreach ($dll in @(Get-ImportedDlls $binaryFull | Select-Object -Unique)) {
+    if (Test-WindowsDll $dll) {
+      continue
+    }
+    $depPath = Copy-DependencyDll $dll
+    if ([IO.Path]::GetExtension($depPath).Equals(
+        '.dll', [StringComparison]::OrdinalIgnoreCase)) {
+      $pending.Enqueue($depPath)
+    }
+  }
+}
+
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
