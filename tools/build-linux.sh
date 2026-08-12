@@ -233,6 +233,24 @@ EOF
 $LINUXDEPLOY --appdir "$APPDIR" --executable "$BIN" \
     --desktop-file "$WORK/$SLUG.desktop" --icon-file "$ICON"
 
+# linuxdeploy deliberately skips some compiler ABI libraries. Bundle the C++
+# runtime explicitly so the AppImage does not depend on a user's distro having
+# a compatible libstdc++/libgcc, mirroring the Windows release DLL policy.
+bundle_runtime_lib() { # soname
+  local soname="$1" src=""
+  src="$(LD_LIBRARY_PATH="$APPDIR/usr/lib" ldd "$BIN" |
+      awk -v lib="$soname" '$1 == lib { print $3; exit }')"
+  [ -n "$src" ] && [ -f "$src" ] || {
+    echo "ERROR: runtime dependency not found for bundling: $soname" >&2
+    exit 1
+  }
+  echo "      bundling runtime lib: $soname <- $src"
+  cp -L "$src" "$APPDIR/usr/lib/$soname"
+  chmod 0644 "$APPDIR/usr/lib/$soname"
+}
+bundle_runtime_lib libstdc++.so.6
+bundle_runtime_lib libgcc_s.so.1
+
 # The ImGui pre-boot launcher loads fonts + images from assets/ next to the exe
 # (SDL_GetBasePath resolves to usr/bin inside the AppImage). CMake's launcher
 # POST_BUILD staged them beside the build ELF; carry them into the AppDir so the
