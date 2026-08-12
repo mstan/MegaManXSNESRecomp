@@ -16,6 +16,7 @@
 #endif
 
 #include "snes/ppu.h"
+#include "snes/msu1.h"
 #include "snes/ws_shadow.h"
 #include "widescreen.h"
 #include "mmx_wide_preview.h"
@@ -97,6 +98,16 @@ enum {
   kDefaultChannels = 2,
   kDefaultSamples = 2048,
 };
+
+static void SetEnvVar(const char *name, const char *value) {
+#ifdef _WIN32
+  char buf[700];
+  snprintf(buf, sizeof(buf), "%s=%s", name, value);
+  _putenv(buf);
+#else
+  setenv(name, value, 1);
+#endif
+}
 
 /* ── Per-variant game identity ───────────────────────────────────────────
  * One source, two games (USA "Mega Man X" / JP "Rockman X"), selected by the
@@ -1220,9 +1231,9 @@ int main(int argc, char** argv) {
     int rom_resolved_by_launcher = 0;
 
 #if defined(SNES_LAUNCHER) || defined(RECOMP_LAUNCHER)
-    /* GUI launcher: pick/verify ROM + tune settings before boot. MMX exposes
-     * the PPU widescreen option but has no MSU-1. Skipped for headless paths,
-     * positional ROM, or explicit environment override. */
+    /* GUI launcher: pick/verify ROM + tune settings before boot. Widescreen and
+     * MSU-1 are Mods features; the legacy settings fields store only launcher
+     * controls and the PCM pack path. */
     {
       int headless = start_paused || (script_file != NULL) ||
                      (framedump_dir != NULL) || g_benchmark_frames > 0;
@@ -1277,7 +1288,8 @@ int main(int argc, char** argv) {
          * Convert in both directions. */
         ls.deadzone[0] = ls.deadzone[1] = g_config.gamepad_deadzone * 100 / 32767;
         ls.skip_launcher = g_config.skip_launcher;
-        ls.msu1_enabled  = 0;   /* MMX: no MSU-1 (panel hidden) */
+        ls.msu1_enabled  = g_config.msu1_enabled;
+        snprintf(ls.msu1_dir, sizeof(ls.msu1_dir), "%s", g_config.msu1_dir);
 #if defined(RECOMP_LAUNCHER)
         ls.aspect_index = SnesDisplayAspect_Clamp(g_config.display_aspect);
 #endif
@@ -1344,7 +1356,9 @@ int main(int argc, char** argv) {
         gi.widescreen_supported = 0;
 #endif
         gi.num_players = 1;            /* MMX is 1-player — hide the Player 2 row */
-        gi.msu1_supported = 0;         /* hide MSU-1 panel */
+        gi.msu1_supported = 1;
+        gi.msu1_note = "Enable the MSU-1 Audio mod and use a standard "
+                       "Mega Man X MSU-1 PCM pack.";
         gi.config_path = config_file;  /* hotkey editor targets the live config */
 #if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
         gi.mods = mods_ready ? snes_mod_runtime_launcher_provider_c() : NULL;
@@ -1381,6 +1395,8 @@ int main(int argc, char** argv) {
           g_config.enable_gamepad[1]   = ls.player_src[1] == 2;
           g_config.gamepad_deadzone    = ls.deadzone[0] * 32767 / 100;
           g_config.skip_launcher       = ls.skip_launcher != 0;
+          g_config.msu1_enabled        = ls.msu1_enabled != 0;
+          snprintf(g_config.msu1_dir, sizeof(g_config.msu1_dir), "%s", ls.msu1_dir);
           WriteConfigFile(config_file);
           /* The launcher's Hotkeys editor writes [KeyMap] straight into the
            * config file, which was parsed before the launcher ran — re-apply
@@ -1430,7 +1446,15 @@ int main(int argc, char** argv) {
     }
     snes_mod_runtime_activate_plugins_c();
   }
+  if (!mods_ready)
+    g_config.msu1_enabled = false;
 #endif
+
+  /* MSU-1 is selected by the Mods package. The config field remains the
+   * existing PCM pack path store; plugin reset/activation owns effective enable. */
+  if (g_config.msu1_enabled && g_config.msu1_dir[0] && !getenv("SNESRECOMP_MSU1")) {
+    SetEnvVar("SNESRECOMP_MSU1", g_config.msu1_dir);
+  }
 
   static char *resolved_argv[2];
   resolved_argv[0] = rom_path_buf;
@@ -1552,6 +1576,7 @@ int main(int argc, char** argv) {
 
   extern const RtlGameInfo kMmxGameInfo;
   RtlRegisterGame(&kMmxGameInfo);
+  msu1_set_rom_path(rom_path_buf);
   Snes *snes = SnesInit(kRom, kRom_SIZE);
   host_report_breadcrumb("SnesInit: %s", snes ? "ok" : "FAILED");
   if (snes == NULL) {
@@ -2451,6 +2476,8 @@ static const char kDefaultConfigIniContent[] =
   "AudioFreq = 32040\n"
   "AudioChannels = 2\n"
   "AudioSamples = 512\n"
+  "Msu1Enabled = 0\n"
+  "Msu1Dir = \n"
   "\n"
   "[KeyMap]\n"
   "# This section is for system-level shortcuts (save/load state,\n"

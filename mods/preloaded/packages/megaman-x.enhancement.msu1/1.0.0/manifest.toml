@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.enhancement.msu1"
+version = "1.0.0"
+name = "Mega Man X MSU-1"
+author = "DarkShock; host-side Mods integration by mstan"
+description = "Implements DarkShock's Mega Man X MSU-1 music behavior from a compatible audio pack without patching the ROM."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "msu1"
+name = "MSU-1 Audio"
+description = "Use MSU-1 PCM music while leaving the game ROM stock."
+group = "Audio"
+default_enabled = false
+
+[[plugin]]
+feature = "msu1"
+id = "megaman-x.msu1"

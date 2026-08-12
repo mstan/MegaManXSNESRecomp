@@ -239,6 +239,21 @@ WS-CHRBIND-PARENT - reconcile the residual Highway crusher render child at
   WRAM. No tile base or object address is hardcoded, and a legitimate page-0
   allocation remains page 0 when the parent says so.
 
+MSU1-MUSIC - let the host-side MSU-1 plugin own the stock music routine.
+  DarkShock's IPS patch hooks selected call sites and, when a matching PCM
+  exists, plays MSU-1 instead of calling the stock $87B0 music routine. A raw
+  $2140 observer is not selective enough because MMX also streams SPC upload
+  bytes through that port. This hook sits at $87B0 itself: the plugin receives
+  A's music command byte, and when it starts a valid MSU track the generated
+  routine returns before posting SPC music. Missing tracks fall through to the
+  vanilla routine, preserving SPC fallback. Source behavior:
+  https://github.com/mlarouche/MegamanX-MSU1/blob/master/mmx_msu1_music.asm
+
+MSU1-STAGE - mirror DarkShock's level-load hook at $809A2D.
+  Stage BGM reaches the stock music routine through a JMP during level load.
+  Hooking that exact site prevents the SPC stage command from being posted
+  when a matching MSU track exists.
+
 Usage:
     python tools/apply_overrides.py [--gen-dir src/gen] [--check] [-v]
     python tools/apply_overrides.py --restore [--gen-dir src/gen] [-v]
@@ -252,7 +267,7 @@ import sys
 MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
-           "/*WS-CHRBIND-PARENT*/")
+           "/*WS-CHRBIND-PARENT*/", "/*MSU1-MUSIC*/", "/*MSU1-STAGE*/")
 
 RE_TRACE = re.compile(r"cpu_trace_block\(cpu, (0x[0-9A-Fa-f]+)\)")
 RE_STORE00 = re.compile(
@@ -303,6 +318,101 @@ def presentation_cull_snippet(indent, var):
             f"MmxWsPresentationCullVerdictX(uint16, uint16); "
             f"cpu->_flag_C = MmxWsPresentationCullVerdictX(cpu->D, "
             f"(uint16)({var})); }}\n")
+
+
+RE_MSU1_MUSIC_ENTRY = re.compile(
+    r"^RecompReturn bank_(?:00|80)_87B0_M\dX\d\(CpuState \*cpu\) \{\s*$")
+RE_MSU1_MUSIC_ANCHOR = re.compile(
+    r"^(\s*)if \(g_recomp_stack_top >= 1\) "
+    r"g_cpu_entry_s\[g_recomp_stack_top - 1\] = _entry_s;\s*$")
+
+
+def msu1_music_rts_snippet(indent, source_pc, marker):
+    return (
+        f"{indent}{marker} {{ extern int mmx_msu1_music_command(uint8); "
+        f"if (mmx_msu1_music_command((uint8)(cpu->A & 0xff))) {{ "
+        f"uint16 _msu_ret_s = cpu->S; cpu->S = (uint16)(cpu->S + 1); "
+        f"uint16 _msu_rpcl = (uint16)cpu_read8(cpu, 0x00, cpu->S); "
+        f"cpu->S = (uint16)(cpu->S + 1); "
+        f"uint16 _msu_rpch = (uint16)cpu_read8(cpu, 0x00, cpu->S); "
+        f"uint32 _msu_rpc = (uint32)((((_msu_rpch << 8) | _msu_rpcl) + 1) & 0xffffu); "
+        f"uint32 _msu_rpc24 = ((uint32)cpu->PB << 16) | _msu_rpc; "
+        f"if (_hrv == 2 && _msu_ret_s == _entry_s && "
+        f"_msu_rpc24 != _host_return_pc24 && !cpu_dispatch_has_entry(cpu, _msu_rpc24)) {{ "
+        f"RecompStackPop(); return interp_tier_dispatch_rewritten_return(cpu, _msu_rpc24, {source_pc}); }} "
+        f"if (_hrv == 2 && _msu_ret_s == _entry_s && _msu_rpc24 == _host_return_pc24) {{ "
+        f"RecompStackPop(); return RECOMP_RETURN_NORMAL; }} "
+        f"if (_msu_ret_s != _entry_s) {{ int _msu_anc_skip = cpu_resolve_ancestor_skip(_msu_ret_s); "
+        f"if (_msu_anc_skip >= 0) {{ cpu_trace_mark_nlr_exit(BD_EXIT_KIND_TRAMPOLINE); "
+        f"RecompStackPop(); return (RecompReturn)_msu_anc_skip; }} "
+        f"if ((uint16)(_msu_ret_s - _entry_s) < 0x8000u && interp_bridge_has_direct_paired_bounce()) {{ "
+        f"RecompStackPop(); return interp_tier_dispatch_rewritten_return(cpu, _msu_rpc24, {source_pc}); }} }} "
+        f"if (_msu_ret_s != _entry_s && cpu->S == _entry_s && interp_bridge_has_direct_paired_bounce()) {{ "
+        f"RecompStackPop(); return interp_tier_dispatch_rewritten_return(cpu, _msu_rpc24, {source_pc}); }} "
+        f"if (_msu_ret_s != _entry_s && (uint16)(_entry_s - _msu_ret_s) < 0x8000u && "
+        f"cpu->S != _entry_s && (uint16)(cpu->S - _entry_s) < 0x8000u) {{ "
+        f"RecompStackPop(); return interp_tier_dispatch_rewritten_return(cpu, _msu_rpc24, {source_pc}); }} "
+        f"if (_msu_ret_s != _entry_s && (uint16)(_entry_s - _msu_ret_s) < 0x8000u && "
+        f"!cpu_dispatch_has_entry(cpu, _msu_rpc24)) {{ RecompStackPop(); "
+        f"return interp_tier_dispatch_popped_return(cpu, _msu_rpc24, {source_pc}, (uint16)(_entry_s + 2u)); }} "
+        f"cpu_trace_mark_nlr_exit(BD_EXIT_KIND_TRAMPOLINE); RecompStackPop(); "
+        f"return cpu_dispatch_pc_from(cpu, _msu_rpc24, (uint16)(_entry_s + 2u), {source_pc}); }} }}\n")
+
+
+def msu1_music_snippet(indent, source_pc):
+    return msu1_music_rts_snippet(indent, source_pc, "/*MSU1-MUSIC*/")
+
+
+def apply_msu1_music(lines, verbose):
+    out = []
+    in_music_fn = False
+    n = 0
+    for line in lines:
+        out.append(line)
+        if RE_MSU1_MUSIC_ENTRY.match(line):
+            in_music_fn = True
+            source_pc = "0x8087b0u" if "bank_80_" in line else "0x0087b0u"
+            continue
+        if in_music_fn:
+            m = RE_MSU1_MUSIC_ANCHOR.match(line)
+            if m:
+                out.append(msu1_music_snippet(m.group(1), source_pc))
+                n += 1
+                in_music_fn = False
+                if verbose:
+                    print(f"  MSU1-MUSIC after line {len(out) - 1}")
+                continue
+        if line.startswith("RecompReturn "):
+            in_music_fn = False
+    return out, n
+
+
+RE_MSU1_STAGE_BLOCK = re.compile(
+    r"^(\s*)cpu_trace_block\(cpu, 0x009A2D\);\s*$")
+RE_MSU1_STAGE_TAIL = re.compile(
+    r"^(\s*)\{ extern RecompReturn bank_00_87B0_M1X1\(CpuState \*cpu\); ")
+
+
+def apply_msu1_stage_load(lines, verbose):
+    out = []
+    in_stage_block = False
+    n = 0
+    for line in lines:
+        m_tail = RE_MSU1_STAGE_TAIL.match(line) if in_stage_block else None
+        if m_tail:
+            out.append(msu1_music_rts_snippet(
+                m_tail.group(1), "0x009a2du", "/*MSU1-STAGE*/"))
+            n += 1
+            in_stage_block = False
+            if verbose:
+                print(f"  MSU1-STAGE before line {len(out) + 1}")
+        out.append(line)
+        if RE_MSU1_STAGE_BLOCK.match(line):
+            in_stage_block = True
+            continue
+        if in_stage_block and line.startswith("  L_"):
+            in_stage_block = False
+    return out, n
 
 
 def apply_bank00(lines, verbose):
@@ -908,6 +1018,8 @@ def main():
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
         (apply_chrbind_copy_generic, "/*WS-CHRBIND-COPY*/"),
         (apply_chrbind_parent, "/*WS-CHRBIND-PARENT*/"),
+        (apply_msu1_stage_load, "/*MSU1-STAGE*/"),
+        (apply_msu1_music, "/*MSU1-MUSIC*/"),
     )
     paths = sorted(glob.glob(os.path.join(args.gen_dir, "bank*_v2.c")))
     if not paths:
@@ -980,6 +1092,20 @@ def main():
         print(
             f"ERROR: expected exactly {EXPECTED_CHRBIND_PARENT_SITES} "
             f"WS-CHRBIND-PARENT anchor hook, found {chrbind_parent_found}.",
+            file=sys.stderr)
+        return 1
+    msu1_music_found = effective_counts.get("/*MSU1-MUSIC*/", 0)
+    if not args.restore and msu1_music_found != 2:
+        print(
+            "ERROR: expected exactly 2 MSU1-MUSIC hooks, found "
+            f"{msu1_music_found}.",
+            file=sys.stderr)
+        return 1
+    msu1_stage_found = effective_counts.get("/*MSU1-STAGE*/", 0)
+    if not args.restore and msu1_stage_found != 1:
+        print(
+            "ERROR: expected exactly 1 MSU1-STAGE hook, found "
+            f"{msu1_stage_found}.",
             file=sys.stderr)
         return 1
     if not args.restore and total == 0 and patched_files == 0:

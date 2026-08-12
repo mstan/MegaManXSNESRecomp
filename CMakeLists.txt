@@ -93,6 +93,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_rtl.c
         src/mmx_spc_player.c
         src/mods/mmx_widescreen_plugin.c
+        src/mods/mmx_msu1_plugin.c
 
         # OpenGL function loader
         third_party/gl_core/gl_core_3_1.c
