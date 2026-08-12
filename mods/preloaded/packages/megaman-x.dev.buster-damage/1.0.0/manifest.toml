@@ -1,0 +1,36 @@
+format_version = 1
+id = "megaman-x.dev.buster-damage"
+version = "1.0.0"
+name = "Mega Man X Buster Damage"
+author = "mstan"
+description = "Development helper that lets testers tune how much HP is removed when X's buster damages an enemy."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "buster-damage"
+name = "Buster Damage"
+description = "Adjust X's buster damage for faster validation and repro traversal."
+group = "Gameplay"
+default_enabled = false
+
+[[option]]
+feature = "buster-damage"
+id = "damage"
+label = "Damage"
+description = "HP removed when a buster hit lands. 0 suppresses damage; 255 defeats most targets in one hit."
+group = "Gameplay"
+type = "integer"
+default = 255
+min = 0
+max = 255
+step = 1
+
+[[plugin]]
+feature = "buster-damage"
+id = "megaman-x.buster-damage"
