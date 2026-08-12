@@ -19,6 +19,15 @@ description = "Use MSU-1 PCM music while leaving the game ROM stock."
 group = "Audio"
 default_enabled = false
 
+[[resource]]
+feature = "msu1"
+id = "pcm_pack"
+label = "MSU-1 PCM pack"
+description = "Select the folder containing the Mega Man X MSU-1 PCM tracks."
+format = "directory"
+identity = "snes.msu1.pack"
+required = true
+
 [[plugin]]
 feature = "msu1"
 id = "megaman-x.msu1"

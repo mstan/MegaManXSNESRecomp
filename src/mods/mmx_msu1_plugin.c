@@ -1,6 +1,5 @@
 #include "mod_runtime.h"
 #include "common_rtl.h"
-#include "config.h"
 #include "snes/msu1.h"
 
 #include <stdbool.h>
@@ -161,14 +160,12 @@ static void mmx_msu1_reset(void) {
   g_mmx_msu1_active = 0;
   g_mmx_msu1_fade_state = kFadeIdle;
   g_mmx_msu1_fade_volume = 0;
-  g_config.msu1_enabled = false;
 }
 
 static void mmx_msu1_activate(void) {
   g_mmx_msu1_active = 1;
   g_mmx_msu1_fade_state = kFadeIdle;
   g_mmx_msu1_fade_volume = MMX_MSU_VOLUME_FULL;
-  g_config.msu1_enabled = true;
   (void)snes_mod_register_frame_callback(mmx_msu1_tick);
   (void)snes_mod_register_apu_write_callback(mmx_msu1_apu_write);
   interp_bridge_set_pre_opcode_hook(0x809a2d, mmx_msu1_stage_music_hook);
