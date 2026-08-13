@@ -43,6 +43,19 @@ static int mmx_msu1_track_loops(uint8_t track) {
 }
 
 int mmx_msu1_music_command(uint8_t command) {
+  /*
+   * Called unconditionally from the MSU1-MUSIC and MSU1-STAGE hooks that
+   * apply_overrides.py bakes into the generated C, so this gate is what
+   * makes a disabled mod stock. A non-zero return tells the generated hook to
+   * RTS before posting the SPC music command, so returning "claimed" while the
+   * chip is inert silently deletes the music: msu1_write is a no-op and
+   * msu1_read reports 0, so the MSU_STATUS_ERROR fallback below never trips.
+   * Same contract the widescreen hooks follow (MmxWsSpawnWide() etc.): a
+   * baked-in hook must be inert when its mod is off.
+   */
+  if (!g_mmx_msu1_active || !msu1_enabled())
+    return 0;
+
   if (command < 0x10 || command > 0x30)
     return 0;
 
