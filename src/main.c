@@ -151,6 +151,7 @@ static int g_snes_width, g_snes_height;
 bool g_ws_active;
 int g_ws_extra;
 static const char *g_active_config_file;
+static char g_launcher_shader_path[512];
 static int g_sdl_audio_mixer_volume = SNESRECOMP_SDL_MIX_MAXVOLUME;
 static struct RendererFuncs g_renderer_funcs;
 
@@ -1268,6 +1269,8 @@ int main(int argc, char** argv) {
         ls.fullscreen    = g_config.fullscreen;
         ls.ignore_aspect = g_config.ignore_aspect_ratio;
         ls.linear_filter = g_config.linear_filtering;
+        if (g_config.shader)
+          snprintf(ls.shader_path, sizeof(ls.shader_path), "%s", g_config.shader);
         ls.widescreen    = g_config.widescreen;
         ls.enable_audio  = g_config.enable_audio;
         ls.audio_freq    = g_config.audio_freq;
@@ -1330,6 +1333,7 @@ int main(int argc, char** argv) {
           gi.aspect_setting_help =
               "4:3 recreates a traditional TV. 8:7 maps every game pixel "
               "to a square. 1:1 forces the whole picture into a square.";
+          gi.has_shader = 1;
         }
 #endif
         /* Type-3 enemies spawn into the added margins while room and stage
@@ -1378,6 +1382,8 @@ int main(int argc, char** argv) {
           g_config.display_aspect = (uint8)SnesDisplayAspect_Clamp(ls.aspect_index);
 #endif
           g_config.linear_filtering    = ls.linear_filter != 0;
+          snprintf(g_launcher_shader_path, sizeof(g_launcher_shader_path), "%s", ls.shader_path);
+          g_config.shader              = g_launcher_shader_path[0] ? g_launcher_shader_path : NULL;
           g_config.widescreen          = ls.widescreen != 0;
           g_config.enable_audio        = true;   /* always on */
           g_config.audio_freq          = (uint16)ls.audio_freq;
