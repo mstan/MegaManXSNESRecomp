@@ -5,16 +5,15 @@
 #include <string.h>
 
 #define MMX_SRAM_PLUGIN "megaman-x.sram"
-#define MMX_SYNTHETIC_SRAM_BYTES 2048u
+#define MMX_PASSWORD_SAVE_BYTES 2048u
 #define MMX_PASSWORD_DIGITS 12u
 #define MMX_PASSWORD_WRAM 0x1e60u
 #define MMX_PASSWORD_SRAM_OFFSET 0x100u
 #define MMX_PASSWORD_PREFILL_GRACE_FRAMES 90
 
 extern uint8_t g_ram[0x20000];
-extern uint8_t *g_sram;
-extern int g_sram_size;
-void RtlWriteSram(void);
+void RtlEnsureSaveDir(void);
+void RtlSramFilePath(char *buf, size_t buflen);
 
 typedef struct MmxSramPassword {
   char magic[8];
@@ -27,6 +26,7 @@ static const char kMmxSramMagic[8] = {'M', 'M', 'X', 'P', 'A', 'S', 'S', 0};
 
 static int g_mmx_sram_active;
 static int g_mmx_password_prefill_frames;
+static uint8_t g_mmx_password_save[MMX_PASSWORD_SAVE_BYTES];
 
 static void mmx_sram_frame(void);
 
@@ -35,16 +35,39 @@ int mmx_sram_mod_active(void) {
 }
 
 static void mmx_sram_reset(void) {
-  g_mmx_sram_active = 0;
   g_mmx_password_prefill_frames = 0;
 }
 
-static void mmx_sram_activate(void) {
-  if (!snes_mod_request_synthetic_sram_c(MMX_SYNTHETIC_SRAM_BYTES)) {
-    fprintf(stderr, "MMX SRAM mod: failed to request %u bytes\n",
-            (unsigned)MMX_SYNTHETIC_SRAM_BYTES);
+static void mmx_sram_read_file(void) {
+  char path[128];
+  RtlSramFilePath(path, sizeof(path));
+  FILE *f = fopen(path, "rb");
+  if (!f)
+    return;
+  if (fread(g_mmx_password_save, 1, sizeof(g_mmx_password_save), f) !=
+      sizeof(g_mmx_password_save))
+    memset(g_mmx_password_save, 0, sizeof(g_mmx_password_save));
+  fclose(f);
+}
+
+static void mmx_sram_write_file(void) {
+  char path[128], bak[140];
+  RtlEnsureSaveDir();
+  RtlSramFilePath(path, sizeof(path));
+  snprintf(bak, sizeof(bak), "%s.bak", path);
+  rename(path, bak);
+  FILE *f = fopen(path, "wb");
+  if (!f) {
+    fprintf(stderr, "MMX SRAM mod: unable to write %s\n", path);
     return;
   }
+  fwrite(g_mmx_password_save, 1, sizeof(g_mmx_password_save), f);
+  fclose(f);
+}
+
+static void mmx_sram_activate(void) {
+  memset(g_mmx_password_save, 0, sizeof(g_mmx_password_save));
+  mmx_sram_read_file();
   g_mmx_sram_active = 1;
   g_mmx_password_prefill_frames = 0;
   (void)snes_mod_register_frame_callback(mmx_sram_frame);
@@ -69,10 +92,10 @@ static int mmx_sram_password_valid(const MmxSramPassword *slot) {
 }
 
 static MmxSramPassword *mmx_sram_password_slot(void) {
-  if (!g_sram ||
-      g_sram_size < (int)(MMX_PASSWORD_SRAM_OFFSET + sizeof(MmxSramPassword)))
+  if (sizeof(g_mmx_password_save) <
+      MMX_PASSWORD_SRAM_OFFSET + sizeof(MmxSramPassword))
     return NULL;
-  return (MmxSramPassword *)(g_sram + MMX_PASSWORD_SRAM_OFFSET);
+  return (MmxSramPassword *)(g_mmx_password_save + MMX_PASSWORD_SRAM_OFFSET);
 }
 
 static int mmx_password_digits_equal(const uint8_t *a, const uint8_t *b) {
@@ -135,7 +158,7 @@ static void mmx_sram_store_password(const uint8_t digits[MMX_PASSWORD_DIGITS]) {
   slot->version = 1;
   memcpy(slot->digits, digits, MMX_PASSWORD_DIGITS);
   slot->checksum = mmx_password_checksum(slot->digits);
-  RtlWriteSram();
+  mmx_sram_write_file();
 }
 
 static void mmx_sram_prefill_password(const MmxSramPassword *slot) {

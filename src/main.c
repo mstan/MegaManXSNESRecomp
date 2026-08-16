@@ -1310,10 +1310,10 @@ int main(int argc, char** argv) {
 #endif
         gi.name = MMX_GAME_NAME;
         gi.region = MMX_GAME_REGION;
-        gi.sram_path = "saves/save.srm"; /* The SRAM Saves mod allocates this
-                                            for password-save enhancements.
-                                            With the mod disabled, stock MMX
-                                            still has no guest-visible SRAM. */
+        gi.sram_path = "saves/save.srm"; /* Password Saves owns this sidecar
+                                            file for launcher presentation only;
+                                            the stock MMX cartridge still has no
+                                            guest-visible SRAM. */
         gi.password_sram_path = "saves/save.srm";
         gi.password_sram_label = "Last Password";
         gi.password_sram_size = 2048;
