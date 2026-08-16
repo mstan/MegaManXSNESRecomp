@@ -176,6 +176,20 @@ if(TARGET MegaManXSNESRecomp AND EXISTS "${MMX_PRELOADED_MODS}/packages")
         COMMENT "Preloading the Mega Man X mod catalog")
 endif()
 
+set(MMX_SHADER_ASSETS "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
+function(mmx_stage_shader_assets TARGET_NAME)
+    if(TARGET ${TARGET_NAME} AND EXISTS "${MMX_SHADER_ASSETS}")
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E remove_directory
+                "$<TARGET_FILE_DIR:${TARGET_NAME}>/assets/shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${MMX_SHADER_ASSETS}"
+                "$<TARGET_FILE_DIR:${TARGET_NAME}>/assets/shaders"
+            COMMENT "Staging Mega Man X shader presets")
+    endif()
+endfunction()
+mmx_stage_shader_assets(MegaManXSNESRecomp)
+
 # ── JP: Rockman X (Japan v1.1) — faithful LLE scheduler, no task-PC table ──
 add_mmx_variant(RockmanXSNESRecomp
     ${CMAKE_SOURCE_DIR}/variants/jp/gen
@@ -188,3 +202,4 @@ add_mmx_variant(RockmanXSNESRecomp
     # bounce on. Default stays OFF pending deeper-gameplay coverage + owner
     # sign-off; env SNESRECOMP_LLE_BOUNCE=1 opts in.
     SNESRECOMP_LLE_BOUNCE_DEFAULT=0)
+mmx_stage_shader_assets(RockmanXSNESRecomp)
