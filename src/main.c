@@ -920,6 +920,22 @@ void MkDir(const char *s) {
 #endif
 }
 
+static void RmDirIfEmpty(const char *s) {
+#if defined(_WIN32)
+  _rmdir(s);
+#else
+  rmdir(s);
+#endif
+}
+
+static void RetireMmxSramModPackage(void) {
+#if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
+  remove("mods/packages/megaman-x.enhancement.sram/1.0.0/manifest.toml");
+  RmDirIfEmpty("mods/packages/megaman-x.enhancement.sram/1.0.0");
+  RmDirIfEmpty("mods/packages/megaman-x.enhancement.sram");
+#endif
+}
+
 #include <signal.h>
 #include "cpu_state.h"
 #include "cpu_trace.h"
@@ -1212,6 +1228,7 @@ int main(int argc, char** argv) {
     };
 #endif
 #if SNESRECOMP_ENABLE_MODS && !MMX_VARIANT_JP
+    RetireMmxSramModPackage();
     mods_ready = snes_mod_runtime_initialize_c(
         "mods", "megaman-x-us",
         "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32");
@@ -1310,14 +1327,6 @@ int main(int argc, char** argv) {
 #endif
         gi.name = MMX_GAME_NAME;
         gi.region = MMX_GAME_REGION;
-        gi.sram_path = "saves/save.srm"; /* The SRAM Saves mod allocates this
-                                            for password-save enhancements.
-                                            With the mod disabled, stock MMX
-                                            still has no guest-visible SRAM. */
-        gi.password_sram_path = "saves/save.srm";
-        gi.password_sram_label = "Last Password";
-        gi.password_sram_size = 2048;
-        gi.password_sram_offset = 0x100;
         gi.expected_crc = MMX_ROM_CRC32;
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */
