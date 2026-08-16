@@ -1,0 +1,158 @@
+format_version = 1
+id = "megaman-x.enhancement.cheats"
+version = "1.0.0"
+name = "Game Genie Cheats"
+author = "GameGenie.com"
+description = "Cheat presets for Mega Man X."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+# Source reference:
+# https://gamegenie.com/cheats/gamegenie/snes/megamanx.html
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "cheat-start-10-lives"
+name = "Start: 10 lives"
+description = "Begin a new run with 10 lives."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-start-10-lives"
+id = "megaman-x.cheat.start-10-lives"
+
+[[feature]]
+id = "cheat-start-7-lives"
+name = "Start: 7 lives"
+description = "Begin a new run with 7 lives."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-start-7-lives"
+id = "megaman-x.cheat.start-7-lives"
+
+[[feature]]
+id = "cheat-start-5-lives"
+name = "Start: 5 lives"
+description = "Begin a new run with 5 lives."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-start-5-lives"
+id = "megaman-x.cheat.start-5-lives"
+
+[[feature]]
+id = "cheat-start-1-life"
+name = "Start: 1 life"
+description = "Begin a new run with 1 life."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-start-1-life"
+id = "megaman-x.cheat.start-1-life"
+
+[[feature]]
+id = "cheat-infinite-lives"
+name = "Infinite lives"
+description = "Keep the lives counter topped up."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-infinite-lives"
+id = "megaman-x.cheat.infinite-lives"
+
+[[feature]]
+id = "cheat-less-energy"
+name = "Start: low health"
+description = "Begin a new run with reduced health."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-less-energy"
+id = "megaman-x.cheat.less-energy"
+
+[[feature]]
+id = "cheat-more-energy"
+name = "Start: high health"
+description = "Begin a new run with increased health."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-more-energy"
+id = "megaman-x.cheat.more-energy"
+
+[[feature]]
+id = "cheat-all-weapons-no-sigma"
+name = "All weapons"
+description = "Unlock weapons and mark Mavericks defeated except Sigma."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-all-weapons-no-sigma"
+id = "megaman-x.cheat.all-weapons-no-sigma"
+
+[[feature]]
+id = "cheat-infinite-weapons"
+name = "Infinite weapons"
+description = "Refill owned special weapons."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-infinite-weapons"
+id = "megaman-x.cheat.infinite-weapons"
+
+[[feature]]
+id = "cheat-jump-height"
+name = "Jump height"
+description = "Change X's jump height."
+group = "Cheats"
+default_enabled = false
+
+[[option]]
+feature = "cheat-jump-height"
+id = "mode"
+label = "Mode"
+description = "Jump behavior."
+group = "Cheats"
+type = "choice"
+default = "super"
+
+[[option.choice]]
+value = "bogus"
+label = "Bogus"
+
+[[option.choice]]
+value = "super"
+label = "Super"
+
+[[option.choice]]
+value = "mega"
+label = "Mega"
+
+[[plugin]]
+feature = "cheat-jump-height"
+id = "megaman-x.cheat.jump-height"
+
+[[feature]]
+id = "cheat-disable-charging"
+name = "Disable weapon charging"
+description = "Prevent X-Buster charge buildup."
+group = "Cheats"
+default_enabled = false
+
+[[plugin]]
+feature = "cheat-disable-charging"
+id = "megaman-x.cheat.disable-charging"

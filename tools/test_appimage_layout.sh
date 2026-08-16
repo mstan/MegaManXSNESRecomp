@@ -54,6 +54,8 @@ test -f "$state1/mods/packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml" |
     echo "FAIL: MSU-1 mod package not seeded beside the AppImage" >&2; exit 1; }
 test -f "$state1/mods/packages/megaman-x.enhancement.sram/1.0.0/manifest.toml" || {
     echo "FAIL: SRAM mod package not seeded beside the AppImage" >&2; exit 1; }
+test -f "$state1/mods/packages/megaman-x.enhancement.cheats/1.0.0/manifest.toml" || {
+    echo "FAIL: cheats mod package not seeded beside the AppImage" >&2; exit 1; }
 
 # 2. User state survives a relaunch: an edited config line and a
 #    user-installed third-party mod package.
