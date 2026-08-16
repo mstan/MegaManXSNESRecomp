@@ -182,6 +182,19 @@ static bool StageTileWord(const StageBounds *bounds, int world_x, int world_y,
   return true;
 }
 
+static bool ReadDoorBodyWords(const StageBounds *bounds, int tile_x,
+                              int stack_y, uint16_t words[3][4]) {
+  for (int row = 0; row < 3; row++) {
+    for (int quadrant = 0; quadrant < 4; quadrant++) {
+      int x = tile_x + (quadrant & 1) * 8;
+      int y = stack_y + row * 16 + (quadrant >> 1) * 8;
+      if (!StageTileWord(bounds, x, y, &words[row][quadrant]))
+        return false;
+    }
+  }
+  return true;
+}
+
 static bool IsBossDoorMapPixel(const StageBounds *bounds, int world_x,
                                int world_y) {
   int tile_x = world_x & ~15;
@@ -189,24 +202,14 @@ static bool IsBossDoorMapPixel(const StageBounds *bounds, int world_x,
   for (int current_row = 0; current_row < 3; current_row++) {
     int stack_y = tile_y - current_row * 16;
     uint16_t words[3][4];
-    bool complete = true;
-    for (int row = 0; row < 3 && complete; row++) {
-      for (int quadrant = 0; quadrant < 4; quadrant++) {
-        int x = tile_x + (quadrant & 1) * 8;
-        int y = stack_y + row * 16 + (quadrant >> 1) * 8;
-        if (!StageTileWord(bounds, x, y, &words[row][quadrant])) {
-          complete = false;
-          break;
-        }
-      }
-    }
-    if (!complete || !MmxWidePolicy_IsBossDoorBody(words, current_row))
+    if (!ReadDoorBodyWords(bounds, tile_x, stack_y, words) ||
+        !MmxWidePolicy_IsBossDoorBody(words, current_row))
       continue;
 
     /* Suppress only an authored back-to-back mate, never a structurally
-     * similar standalone decoration. The three body metatiles are identical
-     * in the neighboring column even though the optional cap may face the
-     * other way. */
+     * similar standalone decoration. Most stages reuse identical 16x16 body
+     * metatiles for both native-room columns; a few paired door variants use
+     * different metatile IDs but retain the same mirrored 8x8 body structure. */
     for (int direction = -1; direction <= 1; direction += 2) {
       bool same_body = true;
       for (int row = 0; row < 3; row++) {
@@ -221,6 +224,12 @@ static bool IsBossDoorMapPixel(const StageBounds *bounds, int world_x,
         }
       }
       if (same_body)
+        return true;
+
+      uint16_t neighbor_words[3][4];
+      if (ReadDoorBodyWords(bounds, tile_x + direction * 16, stack_y,
+                            neighbor_words) &&
+          MmxWidePolicy_IsBossDoorBody(neighbor_words, current_row))
         return true;
     }
   }
