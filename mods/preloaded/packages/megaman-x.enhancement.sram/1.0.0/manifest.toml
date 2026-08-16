@@ -1,9 +1,9 @@
 format_version = 1
 id = "megaman-x.enhancement.sram"
 version = "1.0.0"
-name = "Mega Man X SRAM"
+name = "Mega Man X Password Saves"
 author = "mstan"
-description = "Adds mod-gated battery-backed SRAM storage for Mega Man X password-save enhancements while leaving the stock password game unchanged when disabled."
+description = "Adds mod-gated sidecar persistence for Mega Man X password-save data while leaving the stock no-SRAM cartridge map unchanged."
 license = "MIT"
 resolver = "declarative"
 save_compatibility = "shared"
@@ -14,8 +14,8 @@ rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
 
 [[feature]]
 id = "sram"
-name = "SRAM Saves"
-description = "Expose a small battery-backed SRAM area for password-save data. Disable this for stock no-SRAM behavior."
+name = "Password Saves"
+description = "Persist the latest password in a sidecar save file. Disable this for stock password-only behavior."
 group = "Saves"
 default_enabled = true
 
