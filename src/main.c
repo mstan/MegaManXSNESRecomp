@@ -1142,6 +1142,7 @@ int main(int argc, char** argv) {
     host_report_breadcrumb("exe-dir anchor: %s",
                            anchored ? "ok" : "declined (cwd stays authoritative)");
   }
+  MkDir("saves");
 
   if (!config_file)
     EnsureConfigIni();
@@ -1306,10 +1307,14 @@ int main(int argc, char** argv) {
 #endif
         gi.name = MMX_GAME_NAME;
         gi.region = MMX_GAME_REGION;
-        gi.sram_path = NULL;           /* hide SAVES panel — MMX has no battery SRAM
-                                          (it's a password game). Synthesized SRAM via
-                                          password persistence is a future enhancement;
-                                          see ENHANCEMENTS.md. */
+        gi.sram_path = "saves/save.srm"; /* The SRAM Saves mod allocates this
+                                            for password-save enhancements.
+                                            With the mod disabled, stock MMX
+                                            still has no guest-visible SRAM. */
+        gi.password_sram_path = "saves/save.srm";
+        gi.password_sram_label = "Last Password";
+        gi.password_sram_size = 2048;
+        gi.password_sram_offset = 0x100;
         gi.expected_crc = MMX_ROM_CRC32;
         gi.has_expected_crc = 1;
         gi.known_sha256 = &kMmxRomSha256;   /* single accepted digest */

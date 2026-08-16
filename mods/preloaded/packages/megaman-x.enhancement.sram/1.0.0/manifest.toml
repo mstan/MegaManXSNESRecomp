@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.enhancement.sram"
+version = "1.0.0"
+name = "Mega Man X SRAM"
+author = "mstan"
+description = "Adds mod-gated battery-backed SRAM storage for Mega Man X password-save enhancements while leaving the stock password game unchanged when disabled."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "sram"
+name = "SRAM Saves"
+description = "Expose a small battery-backed SRAM area for password-save data. Disable this for stock no-SRAM behavior."
+group = "Saves"
+default_enabled = true
+
+[[plugin]]
+feature = "sram"
+id = "megaman-x.sram"
