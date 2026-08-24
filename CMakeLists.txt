@@ -94,7 +94,6 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         src/mmx_spc_player.c
         src/mods/mmx_widescreen_plugin.c
         src/mods/mmx_msu1_plugin.c
-        src/mods/mmx_sram_plugin.c
 
         # OpenGL function loader
         third_party/gl_core/gl_core_3_1.c
@@ -170,6 +169,8 @@ add_mmx_variant(MegaManXSNESRecomp
 set(MMX_PRELOADED_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
 if(TARGET MegaManXSNESRecomp AND EXISTS "${MMX_PRELOADED_MODS}/packages")
     add_custom_command(TARGET MegaManXSNESRecomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E remove_directory
+            "$<TARGET_FILE_DIR:MegaManXSNESRecomp>/mods"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${MMX_PRELOADED_MODS}"
             "$<TARGET_FILE_DIR:MegaManXSNESRecomp>/mods"

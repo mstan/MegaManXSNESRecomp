@@ -59,7 +59,6 @@ BOXART="recomp/launcher/boxart.tga"          # AppImage icon source (optional)
 REQUIRED_MOD_MANIFESTS=(
   "packages/megaman-x.enhancement.widescreen/1.0.0/manifest.toml"
   "packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml"
-  "packages/megaman-x.enhancement.sram/1.0.0/manifest.toml"
 )
 PROD_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=OFF )
 DEBUG_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=ON )
@@ -302,6 +301,7 @@ ROMDIR="\$(dirname "\$(readlink -f "\$SELF")")"
 # never a dir where a file belongs); user files are left alone entirely.
 if [ -d "\$HERE/usr/bin/mods" ] && [ -w "\$ROMDIR" ]; then
     mkdir -p "\$ROMDIR/mods" 2>/dev/null || true
+    rm -rf "\$ROMDIR/mods/packages/megaman-x.enhancement.sram" 2>/dev/null || true
     cp -a "\$HERE/usr/bin/mods/." "\$ROMDIR/mods/" 2>/dev/null || true
     chmod -R u+rwX "\$ROMDIR/mods" 2>/dev/null || true
 fi
