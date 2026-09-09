@@ -282,7 +282,7 @@ compiler cannot prove remain on the authoritative interpreter fallback.
 
 ## License
 
-Not yet declared. Code in this repo is original; vendored dependencies
+PolyForm Noncommercial 1.0.0. See `LICENSE`. Code in this repo is original; vendored dependencies
 under `third_party/` retain their own licenses.
 
 The *Mega Man X* ROM and any data extracted from it are **not** in
