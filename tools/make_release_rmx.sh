@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make_release_rmx.sh — build the Rockman X (Japan v1.1) Windows release zip.
 #
-# JP ships via the CMake/mingw Release build; the MSVC mmx.sln is USA-only.
+# Both regions use the shared CMake build; this helper packages JP.
 # Stage layout mirrors tools/make_release.ps1 (the USA release):
 #   RockmanXSNESRecomp.exe  (Release, console-free via -mwindows)
 #   SDL2.dll + mingw runtime DLLs (bundled via ldd so it runs without msys2)

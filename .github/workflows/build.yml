@@ -1,0 +1,23 @@
+name: Desktop host
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Install desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libsdl2-dev libgl1-mesa-dev
+      - name: Configure ROM-free setup host
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSNESRECOMP_SDL_BACKEND=SDL2 -DSNESRECOMP_SETUP_HOST=ON
+      - name: Compile shared desktop host and game adapters
+        run: cmake --build build --target MegaManXSNESRecomp RockmanXSNESRecomp --parallel 4
+      - name: Check display geometry and widescreen policy
+        run: cmake --build build --target mmx_display_test mmx_wide_policy_test && ctest --test-dir build --output-on-failure
