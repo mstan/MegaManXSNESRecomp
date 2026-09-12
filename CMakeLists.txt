@@ -1,206 +1,94 @@
-cmake_minimum_required(VERSION 3.16)
-project(MegaManXSNESRecomp C)
-
+cmake_minimum_required(VERSION 3.20)
+project(MegaManXSNESRecomp C CXX)
+set(CMAKE_C_STANDARD 11)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-# Cross-platform (macOS/Linux) build for MegaManXSNESRecomp.
-#
-# One repo, two games (the RubySapphireRecomp pattern):
-#   MegaManXSNESRecomp   Mega Man X (USA v1.1)     gen=src/gen           LLE scheduler
-#   RockmanXSNESRecomp   Rockman X (Japan v1.1)    gen=variants/jp/gen   LLE scheduler
-#
-# Both targets share the same runner + game glue (src/*.c); only the
-# recompiled banks and game-identity compile-defs (MMX_VARIANT_JP) differ.
-# Both use the faithful LLE task scheduler by default; the legacy C-host HLE
-# is an explicit shared execution-mode override.
-#
-# The canonical Windows build is the MSVC solution (mmx.sln, USA only for now).
-# This CMake build mirrors the same source list (see snesrecomp/runner/
-# runner.cmake) so the games build natively on macOS/Linux/mingw with
-# clang/gcc + SDL3 (SDL2 fallback) + OpenGL.
-#
-# Prerequisites: a snesrecomp checkout at ./snesrecomp; the generated C for the
-# variant(s) you build (run `bash tools/regen.sh [usa|jp]` with the verified
-# ROM staged); SDL3 (e.g. `brew install sdl3`).
+set(SNESRECOMP_BUILD_VERSION "dev" CACHE STRING "Release stamp for crash reports")
+set(SNESRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp" CACHE PATH "snesrecomp checkout")
+set(RECOMP_UI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui" CACHE PATH "recomp-ui checkout")
+set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL "Shared mod package runtime" FORCE)
+include(${SNESRECOMP_ROOT}/runner/runner.cmake)
+include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
 
-set(CMAKE_C_STANDARD 11)
+# Embed the same defaults that are staged beside the executable. Never rewrite
+# a player's existing configuration when rebuilding or launching.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS config.ini)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/config.ini" _config)
+string(REPLACE "\\" "\\\\" _config "${_config}")
+string(REPLACE "\"" "\\\"" _config "${_config}")
+string(REPLACE "\r" "" _config "${_config}")
+string(REPLACE "\n" "\\n\"\n\"" _config "${_config}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mmx_default_config.h"
+    "static const char kMmxDefaultConfig[] =\n\"${_config}\";\n")
 
-set(SNESRECOMP_BUILD_VERSION "dev" CACHE STRING
-    "Version reported in crash diagnostics and network metadata")
-
-set(SNESRECOMP_ROOT "${CMAKE_SOURCE_DIR}/snesrecomp" CACHE PATH
-    "Path to the snesrecomp checkout used by this game")
-set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL
-    "Enable Mega Man X's built-in mod catalog and SNES mod packages" FORCE)
+# One source list for Windows, Linux and macOS, with region-specific generated
+# banks and funcs.h. Missing optional JP output does not block a USA build.
+function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
+    if(NOT SNESRECOMP_SETUP_HOST AND NOT EXISTS "${GEN_DIR}/dispatch_v2.c")
+        if("${TARGET}" STREQUAL "RockmanXSNESRecomp")
+            message(STATUS "Rockman X: generate variants/jp/gen to enable this target")
+            return()
+        endif()
+    endif()
+    add_executable(${TARGET} ${SNESRECOMP_RUNNER_SOURCES}
+        src/main.c src/mmx_display.c src/mmx_wide_preview.c src/mmx_wide_policy.c
+        src/mmx_00.c src/gen_stubs.c src/mmx_cpu_infra.c src/mmx_rtl.c
+        src/mmx_spc_player.c src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c)
+    target_include_directories(${TARGET} PRIVATE
+        ${CFG_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_BINARY_DIR} ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
+    target_compile_definitions(${TARGET} PRIVATE
+        SMW_DISABLE_LM=1 SYSTEM_VOLUME_MIXER_AVAILABLE=0
+        SNESRECOMP_TRACE=$<BOOL:${SNESRECOMP_ENABLE_TRACE}> SNESRECOMP_REVERSE_DEBUG=0
+        ${ARGN})
+    if(NOT MSVC)
+        target_compile_options(${TARGET} PRIVATE
+            $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>)
+    endif()
+    target_link_libraries(${TARGET} PRIVATE ${SNESRECOMP_RUNNER_LIBRARIES})
+    snesrecomp_target_sdl(${TARGET})
+    snesrecomp_target_fiber_compat(${TARGET})
+    snesrecomp_target_desktop_host(${TARGET} TIER2)
+    snesrecomp_target_generated_code(${TARGET} ${GEN_DIR})
+    if(SNESRECOMP_SETUP_HOST)
+        target_sources(${TARGET} PRIVATE src/setup_host.c)
+    endif()
+    snesrecomp_target_config_seed(${TARGET})
+    snesrecomp_target_stage_dir(${TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders" assets/shaders)
+    if("${TARGET}" STREQUAL "RockmanXSNESRecomp")
+        # JP remains authentic 4:3, with no mod provider.
+        snesrecomp_target_mod_catalog(${TARGET} NONE)
+    else()
+        snesrecomp_target_mod_catalog(${TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
+        snesrecomp_target_rom_cache(${TARGET})
+        if(NOT SNESRECOMP_SETUP_HOST)
+            add_custom_target(${TARGET}_widescreen_overrides
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_overrides.py
+                        --gen-dir ${GEN_DIR}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Applying Mega Man X widescreen generated-code overrides" VERBATIM)
+            add_dependencies(${TARGET} ${TARGET}_widescreen_overrides)
+        endif()
+    endif()
+    recomp_target_launcher_ui(${TARGET} CONSOLE snes
+        BOXART ${CMAKE_CURRENT_SOURCE_DIR}/recomp/launcher/boxart.tga)
+endfunction()
+set_property(SOURCE src/main.c APPEND PROPERTY COMPILE_DEFINITIONS
+    SNESRECOMP_BUILD_VERSION="${SNESRECOMP_BUILD_VERSION}")
+add_mmx_variant(MegaManXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/src/gen"
+    "${CMAKE_CURRENT_SOURCE_DIR}/recomp")
+add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
+    "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/config"
+    MMX_VARIANT_JP=1 SNESRECOMP_LLE_BOUNCE_DEFAULT=0)
 
 include(CTest)
 if(BUILD_TESTING)
     add_executable(mmx_display_test tests/mmx_display_test.c src/mmx_display.c)
     target_include_directories(mmx_display_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     add_test(NAME mmx_display_geometry COMMAND mmx_display_test)
-    add_executable(mmx_wide_policy_test
-        tests/mmx_wide_policy_test.c src/mmx_wide_policy.c)
+    add_executable(mmx_wide_policy_test tests/mmx_wide_policy_test.c src/mmx_wide_policy.c)
     target_include_directories(mmx_wide_policy_test PRIVATE src)
     add_test(NAME mmx_wide_policy COMMAND mmx_wide_policy_test)
 endif()
-
-include(${SNESRECOMP_ROOT}/runner/runner.cmake)
-
-# Launcher UI backend: the SHARED recomp-ui launcher (F:\Projects\recomp-ui,
-# consumed as the ./recomp-ui submodule/junction) so every recomp game drives
-# ONE launcher repo. The former in-tree launcher_ng has been retired from the
-# engine in favour of this shared, console-agnostic launcher.
-set(RECOMP_UI_ROOT "${CMAKE_SOURCE_DIR}/recomp-ui" CACHE PATH
-    "Path to the recomp-ui checkout used by this game")
-include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
-
-find_package(OpenGL REQUIRED)
-
-# prod-vs-debug via the single SNESRECOMP_ENABLE_TRACE switch (runner.cmake,
-# default OFF). Prod: no debug_server.c / TCP server / rings. Debug:
-# -DSNESRECOMP_ENABLE_TRACE=ON. tools/build-linux.sh --config {prod,debug} sets it.
-if(SNESRECOMP_ENABLE_TRACE)
-    set(_MMX_TRACE 1)
-else()
-    set(_MMX_TRACE 0)
-endif()
-
-# add_mmx_variant(<target> <gen_dir> <cfg_include_dir> [extra compile defs...])
-#
-# gen_dir         directory of recompiler-emitted bank C (globbed).
-# cfg_include_dir directory holding this variant's generated funcs.h.
-# extra defs      per-variant target_compile_definitions (e.g. MMX_VARIANT_JP=1).
-function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
-    file(GLOB _MMX_GEN CONFIGURE_DEPENDS ${GEN_DIR}/*.c)
-    if(NOT _MMX_GEN)
-        message(WARNING
-            "${TARGET}: ${GEN_DIR} is empty — skipping this target. "
-            "Run `bash tools/regen.sh` for this variant to populate it.")
-        return()
-    endif()
-
-    add_executable(${TARGET}
-        ${SNESRECOMP_RUNNER_SOURCES}
-        # game-specific runtime (shared across both variants)
-        src/mmx_display.c
-        src/main.c
-        src/mmx_wide_preview.c
-        src/mmx_wide_policy.c
-        src/opengl.c
-        src/mmx_00.c
-        src/gen_stubs.c
-        src/mmx_cpu_infra.c
-        src/mmx_rtl.c
-        src/mmx_spc_player.c
-        src/mods/mmx_widescreen_plugin.c
-        src/mods/mmx_msu1_plugin.c
-
-        # OpenGL function loader
-        third_party/gl_core/gl_core_3_1.c
-        # recompiled banks (generated, per-variant)
-        ${_MMX_GEN}
-    )
-    set_property(SOURCE src/main.c APPEND PROPERTY COMPILE_DEFINITIONS
-        SNESRECOMP_BUILD_VERSION="${SNESRECOMP_BUILD_VERSION}")
-
-    # Generated banks are ROM-derived and gitignored. Ensure the USA build's
-    # opt-in widescreen consumer hooks are present even when an existing
-    # pristine generation directory is reused. Rockman X intentionally ships
-    # authentic 4:3 only, so its generated output remains untouched.
-    if(NOT "${TARGET}" STREQUAL "RockmanXSNESRecomp")
-        add_custom_target(${TARGET}_widescreen_overrides
-            COMMAND ${Python3_EXECUTABLE}
-                    ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py
-                    --gen-dir ${GEN_DIR}
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-            COMMENT "Applying ${TARGET} widescreen generated-code overrides"
-            VERBATIM)
-        add_dependencies(${TARGET} ${TARGET}_widescreen_overrides)
-    endif()
-
-    # NOTE: CFG_INCLUDE_DIR must precede any other dir that also holds a
-    # funcs.h so the generated banks pick up THIS variant's declarations.
-    target_include_directories(${TARGET} PRIVATE
-        ${CFG_INCLUDE_DIR}
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/src
-        ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
-    )
-    snesrecomp_target_fiber_compat(${TARGET})
-    snesrecomp_target_post_mortem(${TARGET} TIER2)
-    snesrecomp_target_mmx_config(${TARGET})
-    snesrecomp_target_glsl_shader(${TARGET})
-    snesrecomp_target_sdl(${TARGET})
-
-    target_compile_definitions(${TARGET} PRIVATE
-        SMW_DISABLE_LM=1
-        SYSTEM_VOLUME_MIXER_AVAILABLE=0   # Win32 WASAPI volume control excluded
-        SNESRECOMP_TRACE=${_MMX_TRACE}    # TCP debug server: 0 in prod, 1 in debug
-        SNESRECOMP_REVERSE_DEBUG=0        # raw WRAM stores; matches non-debug generated C
-        ${ARGN}
-    )
-
-    # The recompiled C is machine-generated; quiet its warnings and tolerate the
-    # K&R-style implicit declarations clang rejects by default.
-    if(NOT MSVC)
-        target_compile_options(${TARGET} PRIVATE
-            -w -Wno-implicit-function-declaration)
-    endif()
-
-    target_link_libraries(${TARGET} PRIVATE
-        OpenGL::GL
-        ${SNESRECOMP_RUNNER_LIBRARIES}    # ws2_32 when trace/cosim builds add the TCP servers
-    )
-    # Dear ImGui pre-boot launcher (GUI) from the shared recomp-ui repo. One call
-    # wires sources/includes/RECOMP_LAUNCHER define/CXX/asset-staging (same MMX
-    # boxart; recomp-ui's default pad.tga is already the SNES pad).
-    recomp_target_launcher_ui(${TARGET}
-        CONSOLE snes
-        BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
-endfunction()
-
-# ── USA: Mega Man X (v1.1) — faithful LLE scheduler by default ──
-add_mmx_variant(MegaManXSNESRecomp
-    ${CMAKE_SOURCE_DIR}/src/gen
-    ${CMAKE_SOURCE_DIR}/recomp)
-
-# Preload the game-owned USA catalog. Rockman X intentionally does not
-# initialize a mod provider until its widescreen path is maintained.
-set(MMX_PRELOADED_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
-if(TARGET MegaManXSNESRecomp AND EXISTS "${MMX_PRELOADED_MODS}/packages")
-    add_custom_command(TARGET MegaManXSNESRecomp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E remove_directory
-            "$<TARGET_FILE_DIR:MegaManXSNESRecomp>/mods"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${MMX_PRELOADED_MODS}"
-            "$<TARGET_FILE_DIR:MegaManXSNESRecomp>/mods"
-        COMMENT "Preloading the Mega Man X mod catalog")
-endif()
-
-set(MMX_SHADER_ASSETS "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
-function(mmx_stage_shader_assets TARGET_NAME)
-    if(TARGET ${TARGET_NAME} AND EXISTS "${MMX_SHADER_ASSETS}")
-        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E remove_directory
-                "$<TARGET_FILE_DIR:${TARGET_NAME}>/assets/shaders"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${MMX_SHADER_ASSETS}"
-                "$<TARGET_FILE_DIR:${TARGET_NAME}>/assets/shaders"
-            COMMENT "Staging Mega Man X shader presets")
-    endif()
-endfunction()
-mmx_stage_shader_assets(MegaManXSNESRecomp)
-
-# ── JP: Rockman X (Japan v1.1) — faithful LLE scheduler, no task-PC table ──
-add_mmx_variant(RockmanXSNESRecomp
-    ${CMAKE_SOURCE_DIR}/variants/jp/gen
-    ${CMAKE_SOURCE_DIR}/variants/jp/config
-    MMX_VARIANT_JP=1
-    # 2026-07-03 status: after the first tier-2 enrichment round (131 promoted
-    # funcs; the old 3-func cfg's bounced-vs-interp split at cp2 was the
-    # unenriched gen mis-slicing), JP now PASSES bounced-vs-interpreted co-sim
-    # 0/4000 (only the masked $02FF interrupt-residue byte) and A-vs-A with
-    # bounce on. Default stays OFF pending deeper-gameplay coverage + owner
-    # sign-off; env SNESRECOMP_LLE_BOUNCE=1 opts in.
-    SNESRECOMP_LLE_BOUNCE_DEFAULT=0)
-mmx_stage_shader_assets(RockmanXSNESRecomp)
+include(${SNESRECOMP_ROOT}/runner/cmake/mmx_state_tests.cmake)
+snesrecomp_target_mmx_state_tests(MegaManXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
