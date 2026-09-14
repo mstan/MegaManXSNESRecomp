@@ -9,6 +9,25 @@
 Implemented and verified with the current save fixtures; owner acceptance is
 pending. Publication is limited to adaptive widescreen work in this game.
 
+## Draft integration status
+
+The spike is built and tested against its existing dependency pins. It has no
+snesrecomp source changes; unrelated runtime, audio, and benchmark work in
+other checkouts is outside this draft.
+
+Remote `main` advanced to `91be5ad` during the spike and adopted the shared
+desktop host. A read-only merge check found conflicts in `CMakeLists.txt`,
+`src/main.c`, `src/mmx_rtl.c`, and the now-removed local `src/opengl.c`.
+Before merging this draft, port the custom frame capture, native PPU setup,
+1024-pixel presentation capacity, and destination aspect handling into that
+host architecture. The draft retains the tested host until that work is done.
+
+The two branches also independently assigned game save chunk version 2 to
+different layouts: this spike marks the streaker migration in the existing
+464-byte chunk, while main appends execution and CHR-binding state. Integration
+must distinguish both formats and test migration with copies of existing saves.
+Do not infer cross-branch save compatibility from the matching version number.
+
 ## Previous owner playtest checklist (eighth batch)
 
 - [x] F1: replace parked streakers with moving entrances that retain room timing.
