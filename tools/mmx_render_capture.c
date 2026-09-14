@@ -29,14 +29,21 @@ int main(int argc, char **argv) {
       !strcmp(argv[3], "21:9") ? MMX_ASPECT_21_9 : MMX_ASPECT_32_9;
   MmxRenderView view = !strcmp(argv[3], "4:3") ? (MmxRenderView){256,0,4.0/3.0} : MmxRendererViewport(aspect, 16, 9);
   uint32_t *pixels = calloc((size_t)view.width * 224, 4);
+  g_mmx_render_asset_repairs = false;
   if (!pixels || !MmxRendererDraw(pixels, view, false)) return 2;
   unsigned differences = 0;
   const uint32_t *stock = MmxRendererStockFrame();
   for (int y = 0; y < 224; ++y) for (int x = 0; x < 256; ++x)
     differences += ((stock[y * 256 + x] ^ pixels[y * view.width + x + view.extra]) & 0xffffff) != 0;
   MmxRenderStats stats = MmxRendererGetStats();
-  printf("{\"width\":%d,\"native_differences\":%u,\"custom_lines\":%u,\"fallback_lines\":%u,\"pieces\":%u,\"margin_sprite_pixels\":%u}\n",
-          view.width, differences, stats.custom_lines, stats.fallback_lines, stats.pieces, stats.margin_sprite_pixels);
+  g_mmx_render_asset_repairs = true;
+  if (!MmxRendererDraw(pixels, view, false)) return 2;
+  unsigned repaired = 0;
+  for (int y = 0; y < 224; ++y) for (int x = 0; x < 256; ++x)
+    repaired += ((stock[y * 256 + x] ^ pixels[y * view.width + x + view.extra]) & 0xffffff) != 0;
+  unsigned margin = MmxRendererGetStats().margin_sprite_pixels;
+  printf("{\"width\":%d,\"native_differences\":%u,\"custom_lines\":%u,\"fallback_lines\":%u,\"pieces\":%u,\"margin_sprite_pixels\":%u,\"repaired_native_pixels\":%u}\n",
+          view.width, differences, stats.custom_lines, stats.fallback_lines, stats.pieces, margin, repaired);
   if (atoi(argv[4]) && !MmxRendererDraw(pixels, view, true)) return 2;
   bool ok = bmp(argv[5], pixels, view.width);
   free(pixels); free(bytes);

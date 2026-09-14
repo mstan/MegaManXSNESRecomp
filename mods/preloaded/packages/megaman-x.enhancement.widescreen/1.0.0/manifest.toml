@@ -65,6 +65,20 @@ label = "Screen edges"
 value = "center"
 label = "Native positions"
 
+[[option]]
+feature = "widescreen"
+id = "expanded_sprites"
+label = "Expanded sprite capacity"
+description = "Custom renderer: draw submitted sprites beyond the original frame limit. Experimental; disabled by default."
+type = "choice"
+default = "off"
+[[option.choice]]
+value = "off"
+label = "Off"
+[[option.choice]]
+value = "on"
+label = "On (experimental)"
+
 [[plugin]]
 feature = "widescreen"
 id = "megaman-x.widescreen"

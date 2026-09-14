@@ -12,6 +12,7 @@
  */
 static void mmx_widescreen_reset(void) {
   g_mmx_custom_renderer = false;
+  g_mmx_expanded_sprites = false;
   MmxRendererReset();
   MmxDisplay_SetWidescreenEnabled(false);
 }
@@ -20,6 +21,7 @@ static void mmx_widescreen_activate(void) {
   g_mmx_custom_renderer = true;
   g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
   g_mmx_custom_hud = true;
+  g_mmx_expanded_sprites = false;
 #if defined(RECOMP_LAUNCHER)
   const RecompLauncherCModProvider *provider = snes_mod_runtime_launcher_provider_c();
   RecompLauncherCModOption option;
@@ -27,6 +29,7 @@ static void mmx_widescreen_activate(void) {
        provider->feature_option_get(provider->ctx, "megaman-x.enhancement.widescreen", "widescreen", i, &option); ++i) {
     if (!strcmp(option.id, "renderer")) g_mmx_custom_renderer = strcmp(option.value, "legacy") != 0;
     if (!strcmp(option.id, "hud")) g_mmx_custom_hud = strcmp(option.value, "center") != 0;
+    if (!strcmp(option.id, "expanded_sprites")) g_mmx_expanded_sprites = !strcmp(option.value, "on");
     if (!strcmp(option.id, "aspect")) {
       if (!strcmp(option.value, "16:9")) g_mmx_custom_aspect = MMX_ASPECT_16_9;
       if (!strcmp(option.value, "21:9")) g_mmx_custom_aspect = MMX_ASPECT_21_9;

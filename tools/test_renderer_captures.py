@@ -18,7 +18,9 @@ def sprite_matches(data):
     """Independent native OAM check of pre-clipping geometry and art identity."""
     ram_offset = 12 + 224 * 66656
     pieces_offset = ram_offset + 0x20000 + 256 * 224 * 4
-    count = struct.unpack_from('<I', data, pieces_offset + 2048 * 8)[0]
+    version = struct.unpack_from('<I', data, 4)[0]
+    stride = 12 if version == 2 else 8
+    count = struct.unpack_from('<I', data, pieces_offset + 2048 * stride)[0]
     # OAM is stable in these fixture samples. Raster 100 avoids setup lines.
     raster = 12 + 100 * 66656
     oam = struct.unpack_from('<256H', data, raster + 64 + 512)
@@ -32,11 +34,20 @@ def sprite_matches(data):
         expected.add((x, pos >> 8, attr, 16 if flags & 2 else 8))
     matched = missing = 0
     for i in range(count):
-        x, y, attr, size = struct.unpack_from('<hhHB', data, pieces_offset + i * 8)
+        x, y, attr, size = struct.unpack_from('<hhHB', data, pieces_offset + i * stride)
         if -15 <= x < 255 and 0 <= y < 224:
             if (x, y & 255, attr, size) in expected: matched += 1
             else: missing += 1
-    return dict(native_piece_matches=matched, native_piece_unmatched=missing)
+    result = dict(native_piece_matches=matched, native_piece_unmatched=missing)
+    if version == 2:
+        expanded = pieces_offset + 2048 * stride + 10
+        expanded_count = struct.unpack_from('<I', data, expanded + 2048 * stride + 2)[0]
+        enabled = bool(data[expanded + 2048 * stride + 6])
+        result.update(expanded_sprites=enabled, submitted_pieces=expanded_count)
+        if enabled:
+            result['submission_prefix_matches'] = (
+                expanded_count >= count and data[pieces_offset:pieces_offset + count * stride] == data[expanded:expanded + count * stride])
+    return result
 
 def bmp_pixels(data):
     offset = struct.unpack_from('<I', data, 10)[0]
@@ -55,7 +66,13 @@ def main():
     p.add_argument('--script', type=Path)
     p.add_argument('--aspect', choices=['adaptive', '16:9', '21:9', '32:9'], default='32:9')
     p.add_argument('--renderer', choices=['custom', 'legacy', 'off'], default='custom')
+    p.add_argument('--expanded-sprites', action='store_true')
     args = p.parse_args()
+    if args.script:
+        for line in args.script.read_text().splitlines():
+            parts = line.split('#', 1)[0].split()
+            if parts and parts[0] not in ('wait', 'press', 'loadstate'):
+                p.error(f'Unsupported input command: {parts[0]}')
     root = Path(__file__).resolve().parents[1]
     exe, rom = args.exe.resolve(strict=True), args.rom.resolve(strict=True)
     replay = exe.with_name('mmx_render_capture.exe' if os.name == 'nt' else 'mmx_render_capture')
@@ -84,7 +101,9 @@ enabled = true
 renderer = "custom"
 aspect = "32:9"
 hud = "edges"
+expanded_sprites = "off"
 '''.replace('aspect = "32:9"', f'aspect = "{args.aspect}"')
+   .replace('expanded_sprites = "off"', f'expanded_sprites = "{"on" if args.expanded_sprites else "off"}"')
    .replace('renderer = "custom"', f'renderer = "{args.renderer if args.renderer != "off" else "custom"}"')
    .replace('enabled = true', f'enabled = {"false" if args.renderer == "off" else "true"}'))
         (folder / 'config.ini').write_text('''[General]
@@ -126,6 +145,8 @@ EnableAudio = 0
         ram = memoryview(data)[12 + 224 * 66656:][:0x20000]
         def word(address): return struct.unpack_from('<H', ram, address)[0]
         metadata = dict(stage=ram[0x1f7a], camera_x=word(0x1e4d), camera_y=word(0x1e50), **sprite_matches(data))
+        if metadata.get('expanded_sprites', False) != args.expanded_sprites:
+            raise RuntimeError('Expanded sprite mod option did not match requested value')
         for aspect in ['4:3', '16:9', '21:9', '32:9']:
             name = aspect.replace(':', 'x')
             result = subprocess.run([str(replay), str(folder / 'final.capture'), str(rom), aspect,

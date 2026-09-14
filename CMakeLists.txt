@@ -42,10 +42,10 @@ if(BUILD_TESTING)
         tests/mmx_wide_policy_test.c src/mmx_wide_policy.c)
     target_include_directories(mmx_wide_policy_test PRIVATE src)
     add_test(NAME mmx_wide_policy COMMAND mmx_wide_policy_test)
-    add_executable(mmx_renderer_test tests/mmx_renderer_test.c src/mmx_renderer.c src/mmx_display.c src/mmx_wide_policy.c)
+    add_executable(mmx_renderer_test tests/mmx_renderer_test.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c)
     target_include_directories(mmx_renderer_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     add_test(NAME mmx_custom_renderer COMMAND mmx_renderer_test)
-    add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_display.c src/mmx_wide_policy.c)
+    add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c)
     target_include_directories(mmx_render_capture PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     foreach(mmx_test mmx_display_test mmx_wide_policy_test mmx_renderer_test)
         if(MSVC)
@@ -100,6 +100,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # game-specific runtime (shared across both variants)
         src/mmx_display.c
         src/mmx_renderer.c
+        src/mmx_render_assets.c
         src/main.c
         src/mmx_wide_preview.c
         src/mmx_wide_policy.c
@@ -125,6 +126,10 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
     # pristine generation directory is reused. Rockman X intentionally ships
     # authentic 4:3 only, so its generated output remains untouched.
     if(NOT "${TARGET}" STREQUAL "RockmanXSNESRecomp")
+        # Ninja plans object rebuilds before running the injector. A script
+        # edit must invalidate the affected bank in this same build.
+        set_property(SOURCE ${GEN_DIR}/bank00_part0a_v2.c APPEND PROPERTY
+            OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_renderer_capture.py)
         add_custom_target(${TARGET}_widescreen_overrides
             COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py

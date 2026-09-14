@@ -1096,6 +1096,10 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
  * naturally instead of its controller waking only when the center reaches
  * the widened edge. */
 uint16 MmxWsEnemyActivationDistance(uint16 v) {
+  /* Custom mode can prepare the helicopter's art independently. Its entrance
+   * is vertical, from above the screen, so retain the native descent trigger
+   * even when the ordinary enemy scan has already allocated its controller. */
+  if (g_mmx_custom_renderer) return v;
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
   return (uint16)(v + m);
@@ -1317,18 +1321,8 @@ uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
                                 uint8 childBase) {
   if (!MmxWsChrBindActive()) return childBase;
   extern uint8_t g_ram[0x20000];
-  if (g_ram[0x1f7a] != 0x00) return childBase;
   uint16 child = (uint16)(scratchD + objectX);
-  if ((child & 0x003f) != 0x0028 ||
-      g_ram[(uint16)(child + 0x0a)] != 0x09)
-    return childBase;
-  uint16 parent = (uint16)(g_ram[(uint16)(child + 0x0c)] |
-                            ((uint16)g_ram[(uint16)(child + 0x0d)] << 8));
-  if ((parent & 0x003f) != 0x0028 ||
-      g_ram[(uint16)(parent + 0x0a)] != 0x0f)
-    return childBase;
-  uint8 parentBase = g_ram[(uint16)(parent + 0x18)];
-  return parentBase;
+  return MmxWidePolicy_CrusherTileBase(g_ram, child, childBase);
 }
 
 /* Called via the WS-CHRBIND injection right after each inlined bind site's

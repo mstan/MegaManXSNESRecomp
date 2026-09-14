@@ -28,6 +28,11 @@ and edge/native HUD anchors. Disable the mod for stock rendering. The custom
 aspect option controls presentation independently of the legacy Display aspect
 setting. Fixed ratios letterbox as needed; Adaptive follows the window.
 
+`Expanded sprite capacity` is a separate, experimental option, **off by
+default**. It draws up to 2,048 pieces from the game's submitted draw queues
+when the retail OAM writer runs out of slots. It applies only to the custom
+renderer. Enemy allocation and behavior still run through the guest game.
+
 Logical widths are 342, 448 and 682 pixels for 16:9, 21:9 and 32:9. Adaptive
 is bounded from 4:3 to a 1024-pixel host surface (approximately 5.33:1), with
 even-pixel rounding. This is a host allocation limit, not the shared PPU limit.
@@ -57,8 +62,24 @@ clipping. It neither widens the native OAM emission gate nor alters CPU state.
 Signed host coordinates distinguish a sprite at +300 from one at -212; the
 512-pixel OAM wrap ambiguity therefore does not constrain the view. Pieces
 are latched before the next NMI publishes the corresponding OAM. Stage changes,
-resets and state loads invalidate host observations. Native OAM remains the
-source for the native footprint; recorded pieces supply margin pixels.
+resets and state loads invalidate host observations. Recorded pieces now draw
+their complete footprints, including the column at native X=255 rejected by
+the retail writer. Native OAM supplies HUD and other uncaptured submissions.
+Full host Y coordinates also avoid the native eight-bit wrap ambiguity.
+
+`src/mmx_render_assets.c` resolves live animation sets to the ROM's compressed
+graphics and section resource tables. For an unambiguous enemy resource whose
+live tile or palette binding is stale, the compositor uses private decoded
+CHR and the resource's palette. Current bindings retain live VRAM and palette
+effects. This covers child animation pieces as well as the parent; it does
+not draw a fixed preview icon or advance guest DMA. Unknown or ambiguous
+resources keep the existing live-art path.
+
+The optional capacity extension observes D6A7's first object handoff before
+OAM exhaustion. It reads the same six priority queues, the three weapon
+objects, and X, in D56F's order. The default still uses only actual D76A
+observations. Both paths share the existing relational crusher-child tile
+repair. Neither path adds guest objects or writes guest OAM.
 
 HUD selection preserves MMX's first-16-slot reserve and signature-checked
 boss-health runs. The custom compositor relocates those sprites before layer
@@ -74,6 +95,51 @@ mid-boss controller and kinds 0–2 keep their native scan, with independent
 cursors. Vile's protected interval starts earlier when necessary to stop the
 larger custom lookahead from reaching the allocation-sensitive room first.
 Early guest graphics/stage streaming remains disabled in custom mode.
+The Highway bee's vertical descent keeps its native player-distance trigger;
+allocating its controller in the wider scan no longer advances that entrance.
+The extra background view projects ROM-authored palette transitions separately
+from guest CGRAM, including Highway's half-speed BG2 parallax.
+
+## F1–F4 playtest repairs, 2026-09-14
+
+The owner's four compatible saves are reproduced in the ignored validation
+directories; source saves are unchanged. F1's turtle and F3's bee were alive
+with stale graphics bindings. F2's turtle retained a palette selection from
+an earlier resource allocation. F4 exposed buildings before the camera's
+`$0850` palette transition. These were resource and timing problems; the
+captured frames did not exhaust the retail submission budget.
+
+- F1 and F3 now draw their live animated enemies using ROM-backed resources.
+  F2's turtle uses the correct palette. F4's newly visible buildings use the
+  projected palette in both 21:9 and 32:9 captures.
+- All four saves pass live/offline agreement at 16:9, 21:9, 32:9 and Adaptive.
+  Final runs: `mmx-render-flg1e69q`, `mmx-render-0ppkaq4_`,
+  `mmx-render-zckr30vq`, and `mmx-render-p4u4iklh`, respectively.
+- `mmx-render-5wytay_g` repeats all four at 32:9 with expanded capacity on.
+  Its guest RAM and output images equal the capacity-off run, and all expanded
+  queue entries match the observed submissions in order. A synthetic test
+  with 200 submitted pieces confirms that the additional 88 pieces appear
+  only when the option is enabled; the available 112 gameplay slots remain
+  the cutoff when it is disabled.
+- A controlled bee-boundary test (`mmx-render-ks0qm66s`) uses copies of F3
+  with the bee put in waiting state and X placed on either side of the native
+  distance threshold. At a distance of 160 it stays in state 2; at 96 it enters
+  descent state 4, even with a 32:9 view. This is a boundary test, not a claim
+  that a complete F4-to-bee route was played through. The simple walk script
+  fell into the intervening gap before reaching the encounter.
+- Expanded-capacity regression samples cover Chill Penguin, Highway, the
+  Chill door, and the previously healthy Vile fight (`mmx-render-87xxty6j`,
+  `mmx-render-c67u9alu`, `mmx-render-l7pb3jrn`). Mod-off and Legacy still produce
+  stock and legacy surface widths even if the new option is stored as on
+  (`mmx-render-1sjvrm3w`, `mmx-render-9b3kwxet`).
+
+Capture format 2 records animation/resource identity and optional complete
+submissions. The replay tool checks the unmodified compositor against native
+PPU pixels first, then reports `repaired_native_pixels` separately. Correcting
+an invisible native-area enemy intentionally changes those pixels. Raw oracle
+agreement by itself never establishes that a guest graphics binding is valid.
+`MMX_RENDER_OBJECT_TRACE=<csv path>` optionally records Highway bee state
+transitions with player/enemy positions for timing investigations.
 
 ## Validation recorded on 2026-09-13/14
 
@@ -133,8 +199,10 @@ test directory. No source save was converted or overwritten.
    resize cannot reveal a dormant enemy before the next scan.
 3. Cover animated backgrounds, all stage-specific resource transitions,
    overlapping sprites and doors through complete opening/closing sequences.
-   Margin CHR currently comes from captured live VRAM; art not loaded by the
-   game may need a host graphics cache. Non-stage screens and non-Mode-1 lines
+   Background CHR and unresolved sprite resources still come from live VRAM;
+   further art transitions may need additional resource ownership handling.
+   Validate damage flashes and alternate palettes on repaired enemy families.
+   Non-stage screens and non-Mode-1 lines
    intentionally use centered stock output. Exact native pixel agreement does
    not validate unseen margin art or encounter progression.
 

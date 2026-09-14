@@ -1,5 +1,12 @@
 #include "mmx_wide_policy.h"
 
+uint8_t MmxWidePolicy_CrusherTileBase(const uint8_t ram[0x20000], uint16_t object, uint8_t base) {
+  if (!ram || ram[0x1f7a] != 0 || (object & 63) != 0x28 || ram[(uint16_t)(object + 10)] != 9)
+    return base;
+  uint16_t parent = (uint16_t)(ram[(uint16_t)(object + 12)] | (ram[(uint16_t)(object + 13)] << 8));
+  return (parent & 63) == 0x28 && ram[(uint16_t)(parent + 10)] == 15 ? ram[(uint16_t)(parent + 24)] : base;
+}
+
 bool MmxWidePolicy_ForceNativeSpawnTiming(uint8_t stage, uint16_t camera,
                                          unsigned lookahead) {
   unsigned start = lookahead < 0x900 ? 0x900 - lookahead : 0;

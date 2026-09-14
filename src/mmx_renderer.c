@@ -1,6 +1,7 @@
 #include "mmx_renderer.h"
 #include "mmx_display.h"
 #include "mmx_wide_policy.h"
+#include "mmx_render_assets.h"
 #include <math.h>
 
 /* Mode-1 decode/composition follows SuperMetroidRecomp's sm_renderer.c.
@@ -11,7 +12,10 @@ typedef struct Raster {
   uint16_t palette[256], oam[256], vram[0x8000];
   uint8_t high_oam[32];
 } Raster;
-typedef struct Piece { int16_t x, y; uint16_t attr; uint8_t size, reserved; } Piece;
+typedef struct Piece {
+  int16_t x, y; uint16_t attr; uint8_t size, animation;
+  uint8_t tile, palette_bits; uint16_t object;
+} Piece;
 enum { MAX_PIECES = 2048 };
 typedef struct Frame {
   Raster lines[224];
@@ -20,17 +24,26 @@ typedef struct Frame {
   Piece pieces[MAX_PIECES];
   unsigned piece_count, captured;
   bool valid;
+  Piece expanded[MAX_PIECES];
+  unsigned expanded_count;
+  bool expand;
 } Frame;
 static Frame frame;
 static Piece building[MAX_PIECES], latched[MAX_PIECES];
 static unsigned building_count, latched_count;
 static uint8_t building_stage, latched_stage;
+static Piece expanded_building[MAX_PIECES], expanded_latched[MAX_PIECES];
+static unsigned expanded_building_count, expanded_latched_count;
+static uint16_t current_object;
+static bool observed_lists;
 static const uint8_t *rom;
 static size_t rom_size;
 static MmxRenderStats stats;
 static uint8_t door_cache[512 * 512];
 bool g_mmx_custom_renderer;
 bool g_mmx_custom_hud = true;
+bool g_mmx_expanded_sprites;
+bool g_mmx_render_asset_repairs = true;
 MmxRenderAspect g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
 MmxRenderView g_mmx_custom_view = {342, 43, 16.0 / 9.0};
 
@@ -57,11 +70,66 @@ static const uint8_t *rom_at(unsigned address, size_t length) {
   size_t offset = ((address >> 16) & 0x7f) * 0x8000 + (address & 0x7fff);
   return rom && offset <= rom_size && length <= rom_size - offset ? rom + offset : NULL;
 }
-void MmxRendererSetRom(const uint8_t *bytes, size_t length) { rom = bytes; rom_size = length; }
+void MmxRendererSetRom(const uint8_t *bytes, size_t length) {
+  rom = bytes; rom_size = length; MmxRenderAssetsSetRom(bytes, length);
+}
 void MmxRendererReset(void) {
   frame.valid = false; frame.captured = 0;
   building_count = latched_count = 0;
   building_stage = latched_stage = 0xff;
+  expanded_building_count = expanded_latched_count = 0;
+  current_object = 0; observed_lists = false;
+}
+static Piece make_piece(const uint8_t *p, int x, int y, unsigned flip,
+                        unsigned attributes, unsigned base, unsigned animation, unsigned object) {
+  int size = p[4] & 0x20 ? 16 : 8;
+  x += flip & 0x40 ? -(int8_t)p[1] - size : (int8_t)p[1];
+  y += flip & 0x80 ? -(int8_t)p[2] - size : (int8_t)p[2];
+  unsigned attr = (((p[4] & 0xce) | attributes) ^ flip) << 8;
+  attr |= (p[3] + base) & 255;
+  return (Piece){(int16_t)x, (int16_t)y, (uint16_t)attr, (uint8_t)size,
+      (uint8_t)animation, p[3], (uint8_t)(p[4] & 14), (uint16_t)object};
+}
+static void expand_object(const uint8_t *ram, unsigned object) {
+  if (object < 0x20 || object > 0x1fe0) return;
+  unsigned animation = ram[object + 0x16], f = ram[object + 0x17] & 127;
+  const uint8_t *pointer = rom_at(0x8d8000 + animation * 3, 3);
+  if (!pointer) return;
+  unsigned address = word(pointer, 0) | (pointer[2] << 16);
+  pointer = rom_at(address + f * 3, 3);
+  if (!pointer) return;
+  address = word(pointer, 0) | (pointer[2] << 16);
+  const uint8_t *arrangement = rom_at(address, 1);
+  if (!arrangement || !rom_at(address, 1 + arrangement[0] * 4)) return;
+  int x = (int16_t)(word(ram, object + 5) - word(ram, 0x1e4d));
+  int y = (int16_t)(word(ram, object + 8) + (int8_t)ram[object + 0x19] - word(ram, 0x1e50));
+  unsigned base = MmxWidePolicy_CrusherTileBase(ram, (uint16_t)object, ram[object + 0x18]);
+  for (unsigned i = 0; i < arrangement[0] && expanded_building_count < MAX_PIECES; ++i)
+    expanded_building[expanded_building_count++] = make_piece(arrangement + i * 4, x, y,
+        ram[object + 0x11] & 0x40, ram[object + 0x11] & 0x3f, base, animation, object);
+}
+void MmxRendererObserveObject(const uint8_t ram[0x20000], uint16_t object) {
+  if (!g_mmx_custom_renderer || !ram) return;
+  if (building_stage != ram[0x1f7a]) {
+    building_count = expanded_building_count = 0; observed_lists = false;
+    building_stage = ram[0x1f7a];
+  }
+  current_object = object;
+  if (observed_lists || !g_mmx_expanded_sprites) return;
+  observed_lists = true;
+  /* D56F's actual six priority queues, captured before D6A7 can exhaust OAM.
+   * Keep its order: queues 0..2, weapon objects, X, queues 3..5. No arbitrary
+   * scan of dormant object slots and no additional guest objects or writes. */
+  for (unsigned group = 0; group < 6; ++group) {
+    if (group == 3) {
+      for (unsigned d = 0xc38; d <= 0xc78; d += 0x20)
+        if (ram[d] && ram[d + 14]) expand_object(ram, d);
+      if (ram[0xbb6]) expand_object(ram, 0xba8);
+    }
+    unsigned count = ram[0xe7 + group];
+    if (count > 32) count = 32;
+    for (unsigned i = 0; i < count; ++i) expand_object(ram, word(ram, 0x920 + group * 64 + i * 2));
+  }
 }
 void MmxRendererRecordPiece(const uint8_t ram[0x20000], uint16_t d) {
   if (!g_mmx_custom_renderer || !ram || d > 0xffe0 || building_count >= MAX_PIECES) return;
@@ -72,25 +140,51 @@ void MmxRendererRecordPiece(const uint8_t ram[0x20000], uint16_t d) {
   unsigned pointer = word(ram, d + 0x18) | (ram[d + 0x1a] << 16);
   const uint8_t *p = rom_at(pointer, 5);
   if (!p) return;
-  int size = p[4] & 0x20 ? 16 : 8;
   int x = (int16_t)word(ram, d), y = (int16_t)word(ram, d + 2);
-  x += ram[d + 0xb] & 0x40 ? -(int8_t)p[1] - size : (int8_t)p[1];
-  y += ram[d + 0xb] & 0x80 ? -(int8_t)p[2] - size : (int8_t)p[2];
-  unsigned attr = (((p[4] & 0xce) | ram[d + 0xf]) ^ ram[d + 0xb]) << 8;
-  attr |= (p[3] + ram[d + 0x10]) & 255;
-  building[building_count++] = (Piece){(int16_t)x, (int16_t)y, (uint16_t)attr, (uint8_t)size, 0};
+  unsigned animation = current_object && current_object < 0x1fe0 ? ram[current_object + 0x16] : 255;
+  building[building_count++] = make_piece(p, x, y, ram[d + 0xb], ram[d + 0xf],
+                                         ram[d + 0x10], animation, current_object);
 }
 void MmxRendererLatchSprites(void) {
   latched_count = building_count;
   latched_stage = building_stage;
   memcpy(latched, building, building_count * sizeof(*building));
   building_count = 0;
+  expanded_latched_count = expanded_building_count;
+  memcpy(expanded_latched, expanded_building, expanded_building_count * sizeof(Piece));
+  expanded_building_count = 0; observed_lists = false; current_object = 0;
+}
+static void trace_objects(const uint8_t *ram) {
+  static FILE *log;
+  static bool checked;
+  static unsigned tick, previous[16];
+  ++tick;
+  if (!checked) {
+    checked = true;
+    const char *path = getenv("MMX_RENDER_OBJECT_TRACE");
+    if (path && *path) log = fopen(path, "w");
+    if (log) fputs("frame,object,state,camera,player_x,enemy_x,enemy_y,pieces\n", log);
+  }
+  if (!log || ram[0x1f7a] != 0) return;
+  for (unsigned i = 0; i < 15; ++i) {
+    unsigned d = 0xe68 + i * 64;
+    unsigned state = ram[d] && ram[d + 10] == 0x22 ? ram[d + 1] + 1u : 0;
+    if (state == previous[i]) continue;
+    previous[i] = state;
+    fprintf(log, "%u,%04x,%d,%u,%u,%u,%u,%u\n", tick, d, (int)state - 1,
+        word(ram, 0x1e4d), word(ram, 0xbad), word(ram, d + 5), word(ram, d + 8), latched_count);
+    fflush(log);
+  }
 }
 void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
+  trace_objects(ram);
   frame.valid = false; frame.captured = 0;
   memcpy(frame.ram, ram, sizeof(frame.ram));
   frame.piece_count = latched_stage == ram[0x1f7a] ? latched_count : 0;
   memcpy(frame.pieces, latched, frame.piece_count * sizeof(*latched));
+  frame.expanded_count = latched_stage == ram[0x1f7a] ? expanded_latched_count : 0;
+  memcpy(frame.expanded, expanded_latched, frame.expanded_count * sizeof(Piece));
+  frame.expand = g_mmx_expanded_sprites;
 }
 void MmxRendererCaptureLine(const Ppu *p, unsigned line) {
   if (!p || line < 1 || line > 224 || line != frame.captured + 1) return;
@@ -113,7 +207,7 @@ bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path) return false;
   FILE *f = fopen(path, "wb");
   if (!f) return false;
-  uint32_t header[] = {0x4d4d5843, 1, sizeof(frame)};
+  uint32_t header[] = {0x4d4d5843, 2, sizeof(frame)};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 && fwrite(&frame, sizeof(frame), 1, f) == 1;
   return fclose(f) == 0 && ok;
 }
@@ -124,8 +218,8 @@ bool MmxRendererLoadCapture(const char *path) {
   uint32_t h[3];
   frame.valid = false;
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
-      h[1] == 1 && h[2] == sizeof(frame) && fread(&frame, sizeof(frame), 1, f) == 1 &&
-      frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.valid && fgetc(f) == EOF;
+      h[1] == 2 && h[2] == sizeof(frame) && fread(&frame, sizeof(frame), 1, f) == 1 &&
+      frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES && frame.valid && fgetc(f) == EOF;
   fclose(f); frame.valid = ok; return ok;
 }
 
@@ -223,9 +317,11 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   return (uint16_t)((priority << 12) | (layer << 8) | (((tile >> 10) & 7) << bpp) | pixel);
 }
 static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, int size,
-                    int y, MmxRenderView view, uint16_t *out, bool margins_only) {
-  int row = (y - sy) & 255;
-  if (row >= size) return;
+                    int y, MmxRenderView view, uint16_t *out, bool margins_only,
+                    const MmxSpriteAsset *asset, unsigned raw_tile, int *object_color,
+                    bool full_coordinates) {
+  int row = full_coordinates ? y - sy : (y - sy) & 255;
+  if (row < 0 || row >= size) return;
   if (attr & 0x8000) row = size - 1 - row;
   unsigned base = (p->obsel & 7) * 8192;
   if (attr & 256) base += (((p->obsel >> 3) & 3) + 1) * 4096;
@@ -235,9 +331,20 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
     int dx = x + c, dest = dx + view.extra;
     if (dest < 0 || dest >= view.width || (margins_only && dx >= 0 && dx < 256)) continue;
     int cx = attr & 0x4000 ? size - 1 - c : c;
-    unsigned tile = (((((attr & 255) >> 4) + row / 8) & 15) << 4) | (((attr & 15) + cx / 8) & 15);
-    unsigned pixel = tile_pixel(r->vram, base + tile * 16, cx & 7, row & 7, 4);
-    if (pixel) { out[dest] = (uint16_t)(z | pixel); if (margins_only) ++stats.margin_sprite_pixels; }
+    unsigned number = asset ? raw_tile : attr & 255;
+    unsigned tile = ((((number >> 4) + row / 8) & 15) << 4) | (((number & 15) + cx / 8) & 15);
+    unsigned pixel;
+    if (asset) {
+      const uint8_t *bits = asset->tiles + tile * 32 + (row & 7) * 2;
+      unsigned shift = 7 - (cx & 7);
+      pixel = ((bits[0] >> shift) & 1) | (((bits[1] >> shift) & 1) << 1) |
+          (((bits[16] >> shift) & 1) << 2) | (((bits[17] >> shift) & 1) << 3);
+    } else pixel = tile_pixel(r->vram, base + tile * 16, cx & 7, row & 7, 4);
+    if (pixel) {
+      out[dest] = (uint16_t)(z | pixel);
+      object_color[dest] = asset ? asset->colors[pixel] : -1;
+      if (x + c < 0 || x + c >= 256) ++stats.margin_sprite_pixels;
+    }
   }
 }
 static bool window(const Ppu *p, int layer, int x, int extra) {
@@ -255,13 +362,19 @@ static bool window(const Ppu *p, int layer, int x, int extra) {
   }
 }
 static bool condition(unsigned mode, bool inside) { return mode == 3 || (mode == 1 && !inside) || (mode == 2 && inside); }
-static uint32_t colour(const Ppu *p, const Raster *r, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside) {
-  unsigned rgb = r->palette[main & 255], layer = (main >> 8) & 15;
+static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color) {
+  unsigned rgb = palette[main & 255], layer = (main >> 8) & 15;
+  if (object_color >= 0 && (layer == 4 || layer == 6)) rgb = (unsigned)object_color;
   bool clipped = condition(p->cgwsel >> 6, inside);
   bool math = !condition((p->cgwsel >> 4) & 3, inside) && ((p->cgadsub & 63) & (1u << layer));
   unsigned other = p->fixedColor;
   bool half = math && (p->cgadsub & 64) && !clipped;
-  if (math && (p->cgwsel & 2)) { if (sub & 255) other = r->palette[sub & 255]; else half = false; }
+  if (math && (p->cgwsel & 2)) {
+    if (sub & 255) {
+      unsigned sub_layer = (sub >> 8) & 15;
+      other = object_color >= 0 && (sub_layer == 4 || sub_layer == 6) ? (unsigned)object_color : palette[sub & 255];
+    } else half = false;
+  }
   uint32_t result = 0;
   for (int component = 0; component < 3; ++component) {
     int c = clipped ? 0 : (rgb >> (component * 5)) & 31;
@@ -282,6 +395,20 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
   bool stage = frame.ram[0xd1] == 2 && frame.ram[0xd2] == 4;
+  const Piece *pieces = frame.expand && g_mmx_render_asset_repairs ? frame.expanded : frame.pieces;
+  unsigned piece_count = frame.expand && g_mmx_render_asset_repairs ? frame.expanded_count : frame.piece_count;
+  const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
+  if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
+    const Piece *s = &pieces[i];
+    const MmxSpriteAsset *a = MmxRenderAssetsSprite(frame.ram[0x1f7a], frame.ram[0x1f08], s->animation);
+    /* Keep current allocations and their live flashes/animation. Repair
+     * missing or stale bindings using the ROM resource's own palette. */
+    if (a && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
+        ((s->attr >> 8) & 0x2f) != (unsigned)(a->attributes | s->palette_bits))) piece_assets[i] = a;
+  }
+  uint16_t margin_colors[2][128]; bool margin_changed[2][128] = {{false}};
+  if (stage && g_mmx_render_asset_repairs) for (int side = 0; side < 2; ++side)
+    MmxRenderAssetsMarginPalette(frame.ram, side ? view.extra : -view.extra, margin_colors[side], margin_changed[side]);
   for (int y = 0; y < 224; ++y) {
     const Raster *r = &frame.lines[y]; Ppu p;
     memcpy(&p, r->registers, PPU_SAVESTATE_REGS_SIZE);
@@ -294,9 +421,24 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     uint8_t brightness[32];
     for (int c = 0; c < 32; ++c) brightness[c] = (uint8_t)(((c << 3) | (c >> 2)) * (p.inidisp & 15) / 15);
     uint16_t objects[MMX_RENDER_MAX_WIDTH] = {0};
-    for (int i = (int)frame.piece_count - 1; i >= 0; --i) {
-      Piece s = frame.pieces[i];
-      sprite(&p, r, s.x, s.y, s.attr, s.size, y, view, objects, true);
+    int object_colors[MMX_RENDER_MAX_WIDTH];
+    for (int x = 0; x < view.width; ++x) object_colors[x] = -1;
+    bool replaced[128] = {false};
+    for (int i = (int)piece_count - 1; i >= 0; --i) {
+      Piece s = pieces[i]; const MmxSpriteAsset *asset = piece_assets[i];
+      /* Recorded pieces already obey the retail submission budget. Draw
+       * their entire footprint, including x=255 which native D76A clips.
+       * Only the explicit expanded list can add pieces beyond that budget. */
+      bool center = g_mmx_render_asset_repairs;
+      if (g_mmx_render_asset_repairs) for (int slot = 16; slot < 128; ++slot) {
+        unsigned pos = r->oam[slot * 2], hi = r->high_oam[slot / 4] >> (slot % 4 * 2);
+        int ox = (pos & 255) | ((hi & 1) << 8); if (ox >= 256) ox -= 512;
+        if (ox == s.x && (pos >> 8) == ((unsigned)s.y & 255) && r->oam[slot * 2 + 1] == s.attr) {
+          replaced[slot] = true; center = true;
+        }
+      }
+      unsigned attr = asset ? (s.attr & 0xd000) | 0x2000 | ((asset->attributes & 15) << 8) : s.attr;
+      sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset, s.tile, object_colors, true);
     }
     int bar_first = -1, bar_count = 0;
     if (hud) for (int slot = 16; slot <= 48; ++slot) {
@@ -309,6 +451,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     }
     static const int sizes[8][2] = {{8,16},{8,32},{8,64},{16,32},{16,64},{32,64},{16,32},{16,32}};
     for (int slot = 127; slot >= 0; --slot) {
+      if (replaced[slot]) continue;
       unsigned pos = r->oam[slot * 2], attr = r->oam[slot * 2 + 1];
       unsigned hi = r->high_oam[slot / 4] >> (slot % 4 * 2);
       int x = (pos & 255) | ((hi & 1) << 8), sy = pos >> 8;
@@ -317,7 +460,12 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if (x + size <= 0 || x >= 256) continue;
       bool anchored = hud && sy < 96 && (slot < 16 || (bar_count >= 4 && slot >= bar_first && slot < bar_first + bar_count));
       if (anchored) { if (x < 25) x -= view.extra; else if (x >= 216) x += view.extra; }
-      sprite(&p, r, x, sy, attr, size, y, view, objects, false);
+      sprite(&p, r, x, sy, attr, size, y, view, objects, false, NULL, 0, object_colors, false);
+    }
+    uint16_t palettes[2][256];
+    for (int side = 0; side < 2; ++side) {
+      memcpy(palettes[side], r->palette, sizeof(r->palette));
+      for (int i = 0; i < 128; ++i) if (margin_changed[side][i]) palettes[side][i] = margin_colors[side][i];
     }
     for (int sx = 0; sx < view.width; ++sx) {
       int x = sx - view.extra;
@@ -335,7 +483,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         if ((p.screenEnabled[sub] & 16) && (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, view.extra)) &&
             objects[sx] > screens[sub]) screens[sub] = objects[sx];
       }
-      out[y * view.width + sx] = colour(&p, r, brightness, screens[0], screens[1], window(&p, 5, x, view.extra));
+      const uint16_t *pal = x < 0 ? palettes[0] : x >= 256 ? palettes[1] : r->palette;
+      out[y * view.width + sx] = colour(&p, pal, brightness, screens[0], screens[1], window(&p, 5, x, view.extra), object_colors[sx]);
     }
   }
   return true;

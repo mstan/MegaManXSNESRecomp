@@ -13,6 +13,9 @@ typedef struct MmxRenderStats {
 
 extern bool g_mmx_custom_renderer;
 extern bool g_mmx_custom_hud;
+extern bool g_mmx_expanded_sprites;
+/* Diagnostic oracle switch: compare the compositor before art repairs. */
+extern bool g_mmx_render_asset_repairs;
 extern MmxRenderAspect g_mmx_custom_aspect;
 extern MmxRenderView g_mmx_custom_view;
 MmxRenderView MmxRendererViewport(MmxRenderAspect aspect, int width, int height);
@@ -21,6 +24,7 @@ void MmxRendererReset(void);
 void MmxRendererSetRom(const uint8_t *rom, size_t size);
 /* Capture drawing data before native clipping; never modify guest state. */
 void MmxRendererRecordPiece(const uint8_t ram[0x20000], uint16_t scratch);
+void MmxRendererObserveObject(const uint8_t ram[0x20000], uint16_t object);
 void MmxRendererLatchSprites(void);
 void MmxRendererBeginFrame(const uint8_t ram[0x20000]);
 void MmxRendererCaptureLine(const Ppu *ppu, unsigned line);

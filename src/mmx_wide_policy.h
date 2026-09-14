@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+uint8_t MmxWidePolicy_CrusherTileBase(const uint8_t ram[0x20000], uint16_t object, uint8_t base);
+
 /* MMX authors each boss-room boundary as two back-to-back 16-pixel door
  * columns. The native camera shows only the column belonging to the current
  * room. Door metatile IDs vary by stage, but their three-row 8x8 construction

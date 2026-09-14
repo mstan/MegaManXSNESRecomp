@@ -22,6 +22,13 @@ def apply(text):
     # once. Do not affect registers, flags, OAM, CPU cycles or dispatch.
     text = re.sub(r'    cpu_trace_block\(cpu, 0x00D76A\);\n(?:(?!cpu_trace_block)[\s\S])*?'
                   r'    cpu->coprocessor_master_cycles = cpu->master_cycles;\n', inject, text)
+    def observe(match):
+        return match[0] + ('    /*MMX-RENDER-PIECE*/ { extern uint8_t g_ram[0x20000]; extern void MmxRendererObserveObject(const uint8_t *, uint16_t); '
+                           'MmxRendererObserveObject(g_ram, (uint16_t)(cpu->D + cpu->X)); }\n')
+    text, objects = re.subn(r'    cpu_trace_block\(cpu, 0x00D6A7\);\n(?:(?!cpu_trace_block)[\s\S])*?'
+                  r'    cpu->coprocessor_master_cycles = cpu->master_cycles;\n', observe, text)
+    if count and objects != count:
+        raise ValueError(f'D6A7/D76A mode coverage differs: {objects}/{count}')
     return text, count
 
 def main():
