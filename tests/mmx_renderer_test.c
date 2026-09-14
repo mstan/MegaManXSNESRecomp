@@ -432,4 +432,81 @@ static void spark_effects(void) {
   assert(output[50 * v.width + v.extra - 100] == 0);
   assert(output[50 * v.width + v.extra + 100] == 0xff0000);
 }
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); return 0; }
+static void airport_panorama_edge(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 5; ram[0x1e89] = 0x0e;
+  put_word(0x1e50, 0x600); put_word(0x1e8d, 118);
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  ram[0xec01] = 1; ram[0xec02] = 2; ram[0xec03] = 3;
+  for (int y = 0; y < 16; ++y) for (int x = 0; x < 40; ++x)
+    put_word(0xa600 + (x / 16) * 512 + y * 32 + (x % 16) * 2, x == 39 ? 2 : 1);
+  for (int q = 0; q < 4; ++q) { rom_word(8 + q * 2, 1); rom_word(16 + q * 2, 0x402); }
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 2; ppu.hScroll[1] = 118;
+  ppu.bgXsc[1] = 8; ppu.cgram[1] = 31; ppu.cgram[17] = 31 << 10;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = ppu.vram[32 + y] = 255;
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra + 128] == 0); /* Native still uses its own tilemap. */
+  assert(output[80 * v.width + v.extra + 530] == 0x0000ff); /* Reflect the painted edge. */
+  assert(output[80 * v.width + v.extra + 560] == 0xff0000); /* No blue backdrop hole. */
+  put_word(0x1e90, 256); /* Other airport/roof planes are not the panorama. */
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra + 560] == 0);
+}
+
+static void wide_water_plane(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 1;
+  put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  for (int i = 0; i < 256; ++i) put_word(0x2000 + i * 2, 1);
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 1);
+  ppu.inidisp = 15; ppu.bgmode = 9; ppu.screenEnabled[0] = 5; ppu.screenEnabled[1] = 1;
+  ppu.cgwsel = 2; ppu.cgadsub = 0x44; ppu.bgTileAdr = 0x400;
+  ppu.bgXsc[0] = 0x10; ppu.bgXsc[2] = 8; ppu.cgram[1] = 31; ppu.cgram[5] = 31 << 10;
+  for (int i = 0; i < 1024; ++i) ppu.vram[0x1000 + i] = 1;
+  for (int i = 4 * 32; i < 1024; ++i) ppu.vram[0x800 + i] = 0x2402;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = ppu.vram[0x4010 + y] = 255;
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, v, false));
+  for (int x = 0; x < v.width; ++x) {
+    assert(output[16 * v.width + x] == 0xff0000); /* Above the waterline. */
+    assert(output[40 * v.width + x] == 0x7b007b); /* Same half blend across both seams. */
+  }
+  ram[0x1f7a] = 0; /* Dialogue overlays in other stages must remain bounded. */
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[40 * v.width + v.extra + 128] == 0x7b007b);
+  assert(output[40 * v.width + 128] == 0xff0000);
+}
+
+static void buried_submarine(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 1;
+  put_word(0x1e4d, 0xa53); put_word(0x1e50, 0x20f);
+  put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  ram[0xe800 + 2 * 32 + 11] = 1; ram[0xe800 + 2 * 32 + 12] = 2;
+  for (int y = 5; y < 10; ++y) for (int x = 12; x < 20; ++x)
+    put_word(0x2200 + (x / 16) * 512 + y * 32 + (x % 16) * 2, 1);
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 1);
+  rom_word(0x34bec, 0x258); rom_word(0x34bf2, 0x29f);
+  ram[0xe68] = 1; ram[0xe72] = 0x21; ram[0xe73] = 0x80; ram[0xe6a] = 6; put_word(0xe6d, 0xbce);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 1;
+  ppu.hScroll[0] = 0x253; ppu.vScroll[0] = 0x20f; ppu.bgXsc[0] = 8; ppu.cgram[1] = 31;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, v, false));
+  assert(output[96 * v.width + v.extra + 389] == 0); /* Hidden at the owner's earlier camera. */
+  ram[0xe6a] = 4; /* The native emergence state owns presentation now. */
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[96 * v.width + v.extra + 389] == 0xff0000);
+  ram[0xe69] = 2; ram[0xe6a] = 0;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[96 * v.width + v.extra + 389] == 0xff0000);
+  ram[0xe69] = 0; ram[0xe73] = 0; /* Ordinary surface variant is never hidden. */
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[96 * v.width + v.extra + 389] == 0xff0000);
+}
+
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); return 0; }

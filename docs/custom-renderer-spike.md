@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, eighth batch)
+## Current owner playtest checklist (2026-09-14, ninth batch)
+
+- [x] F3: fill the remaining missing area farther out in Storm Eagle.
+- [x] F4: extend the water tint across the entire adaptive view.
+- [x] F5: keep the buried enemy hidden until its original emergence.
+
+Implemented and verified with the current save fixtures; owner acceptance is
+pending. Publication is limited to adaptive widescreen work in this game.
+
+## Previous owner playtest checklist (eighth batch)
 
 - [x] F1: replace parked streakers with moving entrances that retain room timing.
 - [x] F3: prefill Storm Eagle's background so arrival has no blue gaps.
@@ -107,8 +116,9 @@ or writing guest memory. Native terrain samples use captured VRAM; wider BG1
 and BG2 samples use MMX's retained level maps and ROM metatile definitions.
 BG1 uses the full camera plus raster scroll phase. BG2 uses the streamer's
 retained coordinates. Stage edges reflect terrain. Storm Eagle's airport sky
-also uses the complete retained map. The Launch Octopus submarine entrance
-mask is retained.
+also uses the retained map, reflecting the airport panorama's painted edge
+where a wider view exceeds that band. Launch Octopus's buried submarine mask
+follows the live entrance controller instead of a fixed camera interval.
 
 The generated D76A hook records actual metasprite drawing data before native
 clipping. It neither widens the native OAM emission gate nor alters CPU state.
@@ -563,6 +573,47 @@ isolated platform switches. Injector counts and strict renderer/policy warnings
 pass. Each capture is replayed at all five aspect settings with zero raw native
 oracle differences; live presentation matches its corresponding replay.
 These are targeted captures, not a completed airport or full-game playthrough.
+
+## Ninth playtest: distant panorama, water and buried entrance
+
+Current F3/F4/F5 were copied to `ninth-saves` without modifying the originals.
+The fixes are presentation-only; event allocation, physics and triggers keep
+the eighth build's behavior.
+
+- Storm's retained panorama is only 640 pixels wide, ending halfway through
+  its third screen. The farther cells contain intentional holes and other
+  mechanism data. During the airport's existing sky phase, the renderer finds
+  the painted band's end from its top row and reflects that edge into farther
+  margins. This continues the mountains and road without reading empty cells;
+  native pixels and other background phases retain their original sources.
+- Launch Octopus uses BG3 for a water filter, blended over the world on the
+  subscreen. The dialogue clipping rule had removed this layer in the margins.
+  That stage's active water blend now extends BG3 across the view with its
+  existing vertical scroll, waterline and half-color math. Other stage overlays
+  remain bounded, including Vile's dialogue.
+- The large buried submarine is baked into BG1, not an ordinary visible sprite.
+  Its live `$21` entrance controller identifies buried variants and the start
+  of the rise. Before emergence, only its source-art rectangle is replaced
+  with the preceding empty water screen; the vertical bounds come from the
+  ROM's `$86:CBEC`/`CBF2` tables. This replaces the old `$0A70..$0AC0` camera
+  exception, which missed larger margins. The original HDMA-driven rise and
+  active enemy rendering take over at their original states.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-0saxk8o_` | Baseline: all three reports reproduced from the updated F3/F4/F5 saves |
+| `mmx-render-9fifz_tn` | Fixed live maximum Adaptive: F3 far-right gap filled with panorama; F4 full-width waterline/tint; F5 buried body hidden |
+| `mmx-render-qxdco6rh` | F5 held right to frame 140: submarine beginning to rise from the ground at the native trigger |
+| `mmx-render-tvrkx6yy` | Same route through frame 230: emerged enemy and its parts visible, without changing guest entrance timing |
+
+All three CTests and strict C warnings pass. Added renderer tests cover a gap
+beyond the panorama's 640-pixel end, its reflection and phase exclusion, water
+color blending across both seams and above the waterline, bounded non-water
+overlays, and hidden/rising/active/surface submarine states. The capture harness
+replays every sample at 4:3, 16:9, 21:9, 32:9 and maximum Adaptive with zero raw
+native differences and matching live/replay output. Capacity is still opt-in.
 
 ## Validation recorded on 2026-09-13/14
 

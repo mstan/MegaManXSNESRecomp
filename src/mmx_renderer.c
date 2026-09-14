@@ -40,6 +40,10 @@ static const uint8_t *rom;
 static size_t rom_size;
 static MmxRenderStats stats;
 static uint8_t door_cache[512 * 512];
+static int airport_sky_width;
+typedef struct BuriedBody { int left, top, bottom; } BuriedBody;
+static BuriedBody buried_bodies[16];
+static unsigned buried_count;
 bool g_mmx_custom_renderer;
 bool g_mmx_custom_hud = true;
 bool g_mmx_expanded_sprites;
@@ -267,12 +271,45 @@ static unsigned tile_pixel(const uint16_t *vram, unsigned address, int x, int y,
     pixel |= ((bits & 1) << 2) | ((bits >> 5) & 8); }
   return pixel;
 }
+static void prepare_stage_planes(void) {
+  airport_sky_width = 0; buried_count = 0;
+  if (frame.ram[0x1f7a] == 5 && frame.ram[0x1e89] == 0x0e &&
+      word(frame.ram, 0x1e90) == 0 && word(frame.ram, 0x1e50) >= 0x300) {
+    /* The airport panorama ends partway through screen 2 (640 pixels in
+     * the retail map). Later cells belong to other mechanisms and contain
+     * intentional holes. Discover the continuous sky band from its top row
+     * and reflect that edge, instead of exposing those unpainted cells. */
+    unsigned x; uint16_t tile;
+    for (x = 0; x < 1024; x += 8)
+      if (!MmxRendererStageTile(frame.ram, 1, x, 0, &tile) || !(tile & 1023)) break;
+    if (x >= 256 && x < 1024) airport_sky_width = (int)x;
+  }
+  if (frame.ram[0x1f7a] != 1) return;
+  for (unsigned d = 0xe68; d <= 0x1228; d += 64) {
+    const uint8_t *r = frame.ram;
+    if (!r[d] || r[d + 10] != 0x21 || !(r[d + 11] & 0x80) ||
+        r[d + 1] != 0 || r[d + 2] == 4) continue;
+    unsigned variant = r[d + 11] & 0x7f;
+    if (variant >= 3) continue;
+    /* $82:AE81 / $86:CBEC describe the buried submarine's BG1 body.
+     * State 4 starts its real rise. Before that, the source-art rectangle
+     * must stay empty even when an adaptive margin can already see it. */
+    const uint8_t *top = rom_at(0x86cbec + variant * 2, 2);
+    const uint8_t *bottom = rom_at(0x86cbf2 + variant * 2, 2);
+    if (!top || !bottom || word(bottom, 0) < word(top, 0)) continue;
+    buried_bodies[buried_count++] = (BuriedBody){
+        ((int)word(r, d + 5) + 16) & ~31, (int)word(top, 0), (int)word(bottom, 0) + 1};
+  }
+}
 static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x, int y, bool stage, int *private_color) {
   static const unsigned low[] = {8, 7, 1}, high[] = {12, 11, 3};
   bool margin = x < 0 || x >= 256;
-  /* Stage BG3 is a screen-space overlay (dialogue), not a repeating world
-   * map. Keep its original scroll/window processing inside the native view. */
-  if (stage && layer == 2 && margin) return 0;
+  /* Launch's BG3 water plane is blended over the world on the subscreen.
+   * Repeat that plane while retaining the vertical waterline/scroll. Other
+   * BG3 uses, including dialogue, stay within their native screen bounds. */
+  bool water = frame.ram[0x1f7a] == 1 && (p->screenEnabled[0] & 4) &&
+      !(p->screenEnabled[1] & 4) && (p->cgwsel & 2) && (p->cgadsub & 0x44) == 0x44;
+  if (stage && layer == 2 && margin && !water) return 0;
   /* Spark's BG2 mode $0C is the Thunder Slimer actor surface, not the
    * scrolling level map. The retained map contains its staging tiles;
    * extending those outside the native arena duplicates dormant bubbles. */
@@ -302,6 +339,10 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
     /* Reconstruct prepared map data independently of circular VRAM history.
      * Outside authored terrain, reflect only the background edge. */
     if (wx < 0) wx = -wx - 1;
+    if (layer == 1 && airport_sky_width && wx >= airport_sky_width) {
+      wx %= 2 * airport_sky_width;
+      if (wx >= airport_sky_width) wx = 2 * airport_sky_width - wx - 1;
+    }
     if (layer == 0) {
       unsigned stage_id = frame.ram[0x1f7a];
       if (stage_id < 13 && rom_size > 0x30d24 + stage_id * 3 + 2) {
@@ -313,8 +354,12 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
           if (wx < 0) wx = 0;
         }
       }
-      if (stage_id == 1 && word(frame.ram, 0x1e4d) >= 0xa70 && word(frame.ram, 0x1e4d) < 0xac0 &&
-          y >= 0x50 && y < 0xb0 && wx >= 0xbc0 && wx < 0xc40) wx -= 256;
+      for (unsigned i = 0; i < buried_count; ++i) {
+        const BuriedBody *body = &buried_bodies[i];
+        if (wx >= body->left && wx < body->left + 128 && wy >= body->top && wy < body->bottom) {
+          wx -= 256; break; /* The preceding water screen has no source body. */
+        }
+      }
       if (door_body(wx, wy)) {
         bool left = door_body(wx - 16, wy), right = door_body(wx + 16, wy);
         if (left || right) {
@@ -488,6 +533,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
   bool stage = MmxWidePolicy_IsStageScene(frame.ram);
+  prepare_stage_planes();
   LightBeam beams[2];
   unsigned beam_count = stage ? spark_lights(beams, view.extra) : 0;
   unsigned palette_fade = stage && g_mmx_render_asset_repairs ?
