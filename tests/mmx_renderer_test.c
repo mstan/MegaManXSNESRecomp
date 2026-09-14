@@ -507,6 +507,37 @@ static void buried_submarine(void) {
   ram[0xe69] = 0; ram[0xe73] = 0; /* Ordinary surface variant is never hidden. */
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[96 * v.width + v.extra + 389] == 0xff0000);
+
+  /* The entrance IRQ moves one horizontal BG1 band down by 80 pixels.
+   * Distant terrain on either side of the actor must retain its own rows:
+   * the left green slope cannot vanish, nor may the red container top be
+   * repeated over its blue base. The native field still uses the real IRQ. */
+  ram[0xe800 + 2 * 32 + 9] = 3;
+  put_word(0x2600 + 7 * 32 + 6 * 2, 2); /* World $0960,$0270: slope. */
+  put_word(0x2400 + 2 * 32 + 10 * 2, 1); /* $0CA0,$0220: container top. */
+  put_word(0x2400 + 7 * 32 + 10 * 2, 3); /* $0CA0,$0270: container base. */
+  for (int q = 0; q < 4; ++q) {
+    rom_word(16 + q * 2, 0x0401); rom_word(24 + q * 2, 0x0801);
+  }
+  ppu.cgram[17] = 31 << 5; ppu.cgram[33] = 31 << 10;
+  ram[0xe73] = 0x80; ram[0xe6a] = 2; ram[0xba1] = 2;
+  put_word(0xe9c, 0x50); put_word(0xc4, 0x1bf);
+  put_word(0x1f28, 0x258); put_word(0x1f2a, 0x29f);
+  for (int phase = 2; phase <= 4; phase += 2) {
+    ram[0xe6a] = (uint8_t)phase;
+    MmxRendererBeginFrame(ram);
+    for (int line = 1; line <= 224; ++line) {
+      ppu.vScroll[0] = line >= 75 && line <= 145 ? 0x1bf : 0x20f;
+      MmxRendererCaptureLine(&ppu, line);
+    }
+    assert(MmxRendererEndFrame(stock));
+    assert(MmxRendererDraw(output, v, false));
+    assert(output[96 * v.width + v.extra + 0x960 - 0xa53] == 0x00ff00);
+    assert(output[96 * v.width + v.extra + 0xca0 - 0xa53] == 0x0000ff);
+    assert(output[16 * v.width + v.extra + 0xca0 - 0xa53] == 0xff0000);
+    assert(output[96 * v.width + v.extra + 128] == 0); /* Native unchanged. */
+    assert(output[96 * v.width + v.extra + 389] == 0); /* Body still displaced. */
+  }
 }
 
 int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); return 0; }

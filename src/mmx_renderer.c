@@ -41,9 +41,13 @@ static size_t rom_size;
 static MmxRenderStats stats;
 static uint8_t door_cache[512 * 512];
 static int airport_sky_width;
-typedef struct BuriedBody { int left, top, bottom; } BuriedBody;
-static BuriedBody buried_bodies[16];
-static unsigned buried_count;
+typedef struct SubmarineBody {
+  int left, top, bottom;
+  unsigned shift;
+  bool hidden, scrolling;
+} SubmarineBody;
+static SubmarineBody submarine_bodies[16];
+static unsigned submarine_count;
 bool g_mmx_custom_renderer;
 bool g_mmx_custom_hud = true;
 bool g_mmx_expanded_sprites;
@@ -272,7 +276,7 @@ static unsigned tile_pixel(const uint16_t *vram, unsigned address, int x, int y,
   return pixel;
 }
 static void prepare_stage_planes(void) {
-  airport_sky_width = 0; buried_count = 0;
+  airport_sky_width = 0; submarine_count = 0;
   if (frame.ram[0x1f7a] == 5 && frame.ram[0x1e89] == 0x0e &&
       word(frame.ram, 0x1e90) == 0 && word(frame.ram, 0x1e50) >= 0x300) {
     /* The airport panorama ends partway through screen 2 (640 pixels in
@@ -287,8 +291,7 @@ static void prepare_stage_planes(void) {
   if (frame.ram[0x1f7a] != 1) return;
   for (unsigned d = 0xe68; d <= 0x1228; d += 64) {
     const uint8_t *r = frame.ram;
-    if (!r[d] || r[d + 10] != 0x21 || !(r[d + 11] & 0x80) ||
-        r[d + 1] != 0 || r[d + 2] == 4) continue;
+    if (!r[d] || r[d + 10] != 0x21 || !(r[d + 11] & 0x80) || r[d + 1] != 0) continue;
     unsigned variant = r[d + 11] & 0x7f;
     if (variant >= 3) continue;
     /* $82:AE81 / $86:CBEC describe the buried submarine's BG1 body.
@@ -297,8 +300,13 @@ static void prepare_stage_planes(void) {
     const uint8_t *top = rom_at(0x86cbec + variant * 2, 2);
     const uint8_t *bottom = rom_at(0x86cbf2 + variant * 2, 2);
     if (!top || !bottom || word(bottom, 0) < word(top, 0)) continue;
-    buried_bodies[buried_count++] = (BuriedBody){
-        ((int)word(r, d + 5) + 16) & ~31, (int)word(top, 0), (int)word(bottom, 0) + 1};
+    unsigned shift = word(r, d + 0x34);
+    bool scrolling = (r[d + 2] == 2 || r[d + 2] == 4) && r[0xba1] == 2 &&
+        word(r, 0x1f28) == word(top, 0) && word(r, 0x1f2a) == word(bottom, 0) &&
+        shift > 0 && shift <= 0x50;
+    submarine_bodies[submarine_count++] = (SubmarineBody){
+        ((int)word(r, d + 5) + 16) & ~31, (int)word(top, 0), (int)word(bottom, 0) + 1,
+        shift, r[d + 2] != 4, scrolling};
   }
 }
 static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x, int y, bool stage, int *private_color) {
@@ -327,6 +335,18 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
     if (layer == 0) {
       wx = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e4d), p->hScroll[0]) + x;
       wy = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e50), p->vScroll[0]) + y;
+      for (unsigned i = 0; i < submarine_count; ++i) {
+        const SubmarineBody *body = &submarine_bodies[i];
+        /* $82:B414 subtracts the burial offset into $C4; the $80:84CB
+         * raster IRQ applies it to the whole BG1 scanline. Only the body
+         * occupies that band in 4:3. Restore the terrain's original scroll
+         * outside its columns in the wider view, including during the rise.
+         * Match the captured IRQ value so other raster bands stay intact. */
+        if (body->scrolling && (p->vScroll[0] & 1023) == (word(frame.ram, 0xc4) & 1023)) {
+          if (wx < body->left || wx >= body->left + 128) wy += body->shift;
+          break;
+        }
+      }
     } else {
       int stream_x = word(frame.ram, 0x1e8d), stream_y = word(frame.ram, 0x1e90);
       wx = stream_x + (((p->hScroll[1] - stream_x + 512) & 1023) - 512) + x;
@@ -354,9 +374,9 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
           if (wx < 0) wx = 0;
         }
       }
-      for (unsigned i = 0; i < buried_count; ++i) {
-        const BuriedBody *body = &buried_bodies[i];
-        if (wx >= body->left && wx < body->left + 128 && wy >= body->top && wy < body->bottom) {
+      for (unsigned i = 0; i < submarine_count; ++i) {
+        const SubmarineBody *body = &submarine_bodies[i];
+        if (body->hidden && wx >= body->left && wx < body->left + 128 && wy >= body->top && wy < body->bottom) {
           wx -= 256; break; /* The preceding water screen has no source body. */
         }
       }

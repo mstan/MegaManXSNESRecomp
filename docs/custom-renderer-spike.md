@@ -1,6 +1,14 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, ninth batch)
+## Current owner playtest checklist (2026-09-14, tenth batch)
+
+- [x] F1: preserve left terrain while the submarine waits underground.
+- [x] F1: prevent the right-hand container from duplicating during that wait.
+- [x] Verify both remain correct through the submarine's emergence.
+
+The transition captures and regression test pass; owner acceptance is pending.
+
+## Previous owner playtest checklist (ninth batch)
 
 - [x] F3: fill the remaining missing area farther out in Storm Eagle.
 - [x] F4: extend the water tint across the entire adaptive view.
@@ -615,7 +623,7 @@ the eighth build's behavior.
   of the rise. Before emergence, only its source-art rectangle is replaced
   with the preceding empty water screen; the vertical bounds come from the
   ROM's `$86:CBEC`/`CBF2` tables. This replaces the old `$0A70..$0AC0` camera
-  exception, which missed larger margins. The original HDMA-driven rise and
+  exception, which missed larger margins. The original raster-IRQ rise and
   active enemy rendering take over at their original states.
 
 Evidence under `build-custom/validation`:
@@ -633,6 +641,42 @@ color blending across both seams and above the waterline, bounded non-water
 overlays, and hidden/rising/active/surface submarine states. The capture harness
 replays every sample at 4:3, 16:9, 21:9, 32:9 and maximum Adaptive with zero raw
 native differences and matching live/replay output. Capacity is still opt-in.
+
+## Tenth playtest: terrain during the submarine entrance
+
+Current F1 was copied to `tenth-saves/save0.sav`. Holding right reproduced a
+complete slope at frame 60, a missing slope and repeated container at frame
+100, then recovering terrain as the submarine emerged. The preceding body
+mask prevented early visibility but did not confine its raster scroll.
+
+`$82:B414` stores the camera Y minus the burial offset in `$C4`; `$80:84CB`
+applies that value to BG1 between the actor's vertical bounds. The original
+view contains empty water around the body in that band. Adaptive exposes
+unrelated scenery on the same scanlines, and applying the offset to its
+retained map moved the slope away and repeated the container's upper section.
+
+The compositor now identifies that active entrance's IRQ value and restores
+the terrain scroll outside the body's columns. This remains active during
+the rise as the offset decreases. Body columns, native pixels, other raster
+bands, and guest execution retain their existing behavior.
+
+The new synthetic regression failed on the previous code, then passed with
+the fix. It checks a slope, two differently colored container sections,
+native pixels, and the displaced body in both waiting and rising states.
+All three CTests and strict C warnings pass. Live maximum-width captures at
+frames 60, 100, 160 and 240 cover approach, buried wait, emergence and the
+active enemy; each replays at all five aspects with zero raw native pixel
+differences and matching live output. Sprite capacity remains off.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-16wjmv9b` | Previous build, frame 100: both reported defects reproduced |
+| `mmx-render-1dorsktl` | Fixed approach, frame 60: intact terrain and hidden body |
+| `mmx-render-thkqlrn3` | Fixed buried wait, frame 100: intact slope and one complete container |
+| `mmx-render-6wzgiyak` | Fixed emergence, frame 160: terrain intact while the body rises |
+| `mmx-render-n6hdrs92` | Fixed active enemy, frame 240: terrain and container remain complete |
 
 ## Validation recorded on 2026-09-13/14
 
