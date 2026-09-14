@@ -22,7 +22,7 @@ static void geometry(void) {
 }
 static void raster_and_hud(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
-  ram[0xd1] = 2; ram[0xd2] = 4;
+  ram[0xd1] = 2; ram[0xd2] = 4; ram[0xd3] = 4;
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16;
   ppu.cgram[129] = 31; ppu.cgram[0] = 31 << 10;
   for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
@@ -43,7 +43,7 @@ static void raster_and_hud(void) {
 }
 static void sprite_coordinates(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
-  ram[0xd1] = 2; ram[0xd2] = 4;
+  ram[0xd1] = 2; ram[0xd2] = 4; ram[0xd3] = 4;
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16; ppu.cgram[129] = 31;
   for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
   for (int y = 0; y < 8; ++y) ppu.vram[y] = 255;
@@ -74,7 +74,7 @@ static void rom_word(unsigned a, unsigned v) { rom_bytes[a] = (uint8_t)v; rom_by
 static void rom_long(unsigned a, unsigned v) { rom_word(a, v); rom_bytes[a + 2] = (uint8_t)(v >> 16); }
 static void expanded_capacity(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
-  ram[0xd1] = 2; ram[0xd2] = 4;
+  ram[0xd1] = 2; ram[0xd2] = 4; ram[0xd3] = 4;
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16; ppu.cgram[129] = 31;
   for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
   for (int i = 16; i < 128; ++i) { ppu.oam[i * 2] = 0x2800; ppu.oam[i * 2 + 1] = 0x2000; }
@@ -108,31 +108,85 @@ static void expanded_capacity(void) {
   }
   g_mmx_custom_renderer = g_mmx_expanded_sprites = false;
 }
-static void margin_palette_transition(void) {
+static void background_resources(void) {
   memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
-  put_word(0x1e4d, 0x7c2);
   rom_word(0x282c2, 0x9000);
   rom_bytes[0x29000] = 0x42; rom_bytes[0x29001] = 2;
   rom_bytes[0x29004] = 0x17; rom_bytes[0x29005] = 1;
-  rom_word(0x29006, 0x8850); rom_bytes[0x29008] = 0x42;
-  rom_word(0x32260, 0x20); rom_word(0x32280, 0x30); rom_word(0x32282, 0x40);
+  rom_word(0x29006, 0x0850);
+  rom_bytes[0x29008] = 2; rom_bytes[0x2900b] = 0x16; rom_bytes[0x2900c] = 1;
+  rom_word(0x2900d, 0x8850); rom_bytes[0x2900f] = 0x42;
+  rom_word(0x32260, 0x20); rom_word(0x32262, 0x24);
+  rom_word(0x32280, 0x30); rom_word(0x32282, 0x40);
   rom_word(0x32290, 0xa000); rom_bytes[0x32292] = 0x70; rom_word(0x32293, 0xffff);
   rom_word(0x322a0, 0xa020); rom_bytes[0x322a2] = 0x70; rom_word(0x322a3, 0xffff);
   for (unsigned i = 0; i < 16; ++i) { rom_word(0x2a000 + i * 2, i); rom_word(0x2a020 + i * 2, i + 16); }
+  rom_word(0x321d5, 0x20); rom_word(0x321d7, 0x24);
+  rom_word(0x321f5, 0x30); rom_word(0x321f7, 0x40);
+  rom_word(0x32205, 32); rom_word(0x32207, 0x3500); rom_long(0x32209, 0x808100);
+  rom_word(0x32215, 32); rom_word(0x32217, 0x3500); rom_long(0x32219, 0x808120);
+  memset(rom_bytes + 0x100, 0x55, 32); memset(rom_bytes + 0x120, 0xaa, 32);
   MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
-  uint16_t colors[128]; bool changed[128];
-  MmxRenderAssetsMarginPalette(ram, 0, colors, changed);
-  for (int i = 0; i < 128; ++i) assert(!changed[i]);
-  MmxRenderAssetsMarginPalette(ram, 96, colors, changed);
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x84f)->colors[0x71] == 1);
+  const MmxBackgroundPalette *pal = MmxRenderAssetsBackgroundPalette(ram, 0x850);
   for (int i = 0; i < 128; ++i) {
-    assert(changed[i] == (i >= 0x70));
-    if (i >= 0x70) assert(colors[i] == i - 0x70 + 16);
+    assert(pal->valid[i] == (i >= 0x70));
+    if (i >= 0x70) assert(pal->colors[i] == i - 0x70 + 16);
   }
-  /* Backtracking projects the previous palette; the live phase stays put. */
-  put_word(0x1e4d, 0x900); ram[0x1f0a] = 1;
-  MmxRenderAssetsMarginPalette(ram, -96, colors, changed);
-  for (int i = 0x70; i < 128; ++i) assert(changed[i] && colors[i] == i - 0x70);
-  assert(ram[0x1f0a] == 1 && ram[0x1e4e] == 9);
+  const uint8_t *tile = MmxRenderAssetsBackgroundTile(ram, 0x850, 0x3500);
+  assert(tile && tile[0] == 0xaa && tile[31] == 0xaa);
+  assert(!MmxRenderAssetsBackgroundTile(ram, 0x850, 0x3510));
+  ram[0x1f09] = ram[0x1f0a] = 1;
+  pal = MmxRenderAssetsBackgroundPalette(ram, 0x84f);
+  assert(pal && pal->colors[0x71] == 1);
+  tile = MmxRenderAssetsBackgroundTile(ram, 0x84f, 0x3500);
+  assert(tile && tile[0] == 0x55);
+  /* Selecting the new phase in RAM precedes its DMA; margin resources
+   * remain stable through that transition instead of borrowing stale VRAM. */
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x850)->colors[0x71] == 17);
+  assert(MmxRenderAssetsBackgroundTile(ram, 0x850, 0x3500)[0] == 0xaa);
+  /* Camera travel cannot recolor the same authored column. */
+  put_word(0x1e4d, 0x900);
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x84f)->colors[0x71] == 1);
+  ram[0x1f7a] = 8;
+  assert(!MmxRenderAssetsBackgroundPalette(ram, 0x84f));
+}
+static void dialogue_and_password(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0);
+  ram[0xd1] = 2; ram[0xd2] = 4; ram[0xd3] = 4;
+  ppu.inidisp = 15; ppu.bgmode = 9; ppu.screenEnabled[0] = 4;
+  ppu.bgXsc[2] = 4; ppu.cgram[1] = 31;
+  for (int i = 0; i < 8; ++i) ppu.vram[i] = 255;
+  capture();
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0);
+  assert(MmxRendererDraw(output, v, true));
+  assert(output[40 * v.width + v.extra + 40] == 0xff0000);
+  assert(output[40 * v.width + 40] == 0);
+  ram[0xd3] = 0x0a;
+  for (unsigned i = 0; i < 256 * 224; ++i) stock[i] = 0x123456;
+  capture(); assert(MmxRendererDraw(output, v, true));
+  assert(MmxRendererGetStats().fallback_lines == 224);
+  for (int y = 0; y < 224; ++y) for (int x = 0; x < v.width; ++x)
+    assert(output[y * v.width + x] == (x >= v.extra && x < v.extra + 256 ? 0x123456u : 0));
+  memset(stock, 0, sizeof(stock));
+}
+static void highway_arena_sky(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4;
+  put_word(0x1e8d, 0xa78); put_word(0x1e90, 0x16b);
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  for (int y = 0; y < 4; ++y) for (int x = 10; x < 16; ++x) ram[0xec00 + y * 32 + x] = 1;
+  for (int i = 0; i < 256; ++i) put_word(0xa800 + i * 2, 1);
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 1);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 2;
+  ppu.bgXsc[1] = 8; ppu.hScroll[1] = 0x278; ppu.vScroll[1] = 0x16a; ppu.cgram[1] = 31;
+  for (int i = 0; i < 1024; ++i) ppu.vram[0x800 + i] = 1;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, v, false));
+  for (int x = 0; x < v.width; ++x) assert(output[80 * v.width + x] == 0xff0000);
 }
 static void resource_decode(void) {
   memset(rom_bytes, 0, sizeof(rom_bytes));
@@ -169,7 +223,7 @@ static void resource_decode(void) {
   ram[0xe72] = 0x29; assert(!MmxRenderAssetsObjectSprite(ram, 0x1928, 0x36));
   ram[0xe72] = 0x22; /* A dead parent's retained identity is sufficient. */
   memset(&ppu, 0, sizeof(ppu)); MmxRendererReset();
-  ram[0xd1] = 2; ram[0xd2] = 4;
+  ram[0xd1] = 2; ram[0xd2] = 4; ram[0xd3] = 4;
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16;
   for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
   for (int y = 0; y < 8; ++y) ppu.vram[0x40 * 16 + y] = 255;
@@ -182,7 +236,15 @@ static void resource_decode(void) {
   assert(MmxRendererDraw(output, v, false));
   assert(output[40 * v.width + v.extra + 40] == 0x080000);
   g_mmx_custom_renderer = false;
+  /* Dedicated usable armor is not the pilot animation in the enemy table. */
+  rom_bytes[0x32d2e] = 0x49;
+  memcpy(rom_bytes + 0x376f7 + 0x49 * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x49 * 2, 0x200);
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  asset = MmxRenderAssetsObjectSprite(ram, 0xe18, 0x4a);
+  assert(asset && asset->id == 0x49 && !asset->current && !asset->live_tiles);
+  assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x4a));
   MmxRenderAssetsSetRom(NULL, 0);
   assert(!MmxRenderAssetsSprite(0, 0, 7));
 }
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); margin_palette_transition(); resource_decode(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); resource_decode(); return 0; }

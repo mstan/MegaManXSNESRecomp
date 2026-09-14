@@ -5,6 +5,11 @@
 #include <stdint.h>
 
 uint8_t MmxWidePolicy_CrusherTileBase(const uint8_t ram[0x20000], uint16_t object, uint8_t base);
+bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]);
+uint16_t MmxWidePolicy_FlyerLeash(unsigned margin);
+bool MmxWidePolicy_RideArmorCull(uint16_t distance, unsigned margin);
+bool MmxWidePolicy_PrematureRideArmor(const uint8_t ram[0x20000]);
+bool MmxWidePolicy_RecoverRideArmor(uint8_t ram[0x20000], unsigned margin);
 
 /* Recover a waiting bee's premature camera lock from older spike saves and
  * keep its entrance behind the native encounter boundary. Custom mode only. */

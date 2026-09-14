@@ -163,16 +163,19 @@ static void trace_objects(const uint8_t *ram) {
     checked = true;
     const char *path = getenv("MMX_RENDER_OBJECT_TRACE");
     if (path && *path) log = fopen(path, "w");
-    if (log) fputs("frame,object,state,camera,player_x,enemy_x,enemy_y,pieces\n", log);
+    if (log) fputs("frame,object,state,camera,player_x,enemy_x,enemy_y,pieces,stage,id,health,player_y\n", log);
   }
-  if (!log || ram[0x1f7a] != 0) return;
-  for (unsigned i = 0; i < 15; ++i) {
-    unsigned d = 0xe68 + i * 64;
-    unsigned state = ram[d] && ram[d + 10] == 0x22 ? ram[d + 1] + 1u : 0;
-    if (state == previous[i]) continue;
+  unsigned stage = ram[0x1f7a];
+  if (!log || (stage != 0 && stage != 8)) return;
+  for (unsigned i = 0; i < 16; ++i) {
+    unsigned d = i == 15 ? 0xe18 : 0xe68 + i * 64;
+    bool selected = i == 15 ? stage == 8 : ram[d + 10] == (stage == 0 ? 0x22 : 0x36);
+    unsigned state = ram[d] && selected ? ram[d + 1] + 1u : 0;
+    if (state == previous[i] && (!state || (tick & 15))) continue;
     previous[i] = state;
-    fprintf(log, "%u,%04x,%d,%u,%u,%u,%u,%u\n", tick, d, (int)state - 1,
-        word(ram, 0x1e4d), word(ram, 0xbad), word(ram, d + 5), word(ram, d + 8), latched_count);
+    fprintf(log, "%u,%04x,%d,%u,%u,%u,%u,%u,%u,%u,%u,%u\n", tick, d, (int)state - 1,
+        word(ram, 0x1e4d), word(ram, 0xbad), word(ram, d + 5), word(ram, d + 8), latched_count,
+        stage, ram[d + 10], ram[d + 0x27], word(ram, 0xbb0));
     fflush(log);
   }
 }
@@ -262,8 +265,13 @@ static unsigned tile_pixel(const uint16_t *vram, unsigned address, int x, int y,
     pixel |= ((bits & 1) << 2) | ((bits >> 5) & 8); }
   return pixel;
 }
-static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x, int y, bool stage) {
+static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x, int y, bool stage, int *private_color) {
   static const unsigned low[] = {8, 7, 1}, high[] = {12, 11, 3};
+  bool margin = x < 0 || x >= 256;
+  /* Stage BG3 is a screen-space overlay (dialogue), not a repeating world
+   * map. Keep its original scroll/window processing inside the native view. */
+  if (stage && layer == 2 && margin) return 0;
+  int asset_x = -1;
   unsigned bpp = layer == 2 ? 2 : 4, size = PPU_bigTiles(p, layer) ? 16 : 8;
   int px = (x + p->hScroll[layer]) & 1023, py = (y + p->vScroll[layer]) & 1023;
   unsigned sc = p->bgXsc[layer], tx = px / size, ty = py / size;
@@ -281,6 +289,10 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       int stream_x = word(frame.ram, 0x1e8d), stream_y = word(frame.ram, 0x1e90);
       wx = stream_x + (((p->hScroll[1] - stream_x + 512) & 1023) - 512) + x;
       wy = stream_y + (((p->vScroll[1] - stream_y + 512) & 1023) - 512) + y;
+      /* Highway's final arena switches to the sky plane at BG2 x=$A00.
+       * Earlier columns are intentionally empty at this vertical scroll;
+       * extend the arena's sky edge when a wide view reaches behind it. */
+      if (frame.ram[0x1f7a] == 0 && stream_x >= 0xa00 && wx < 0xa00) wx = 0xa00;
     }
     /* Reconstruct prepared map data independently of circular VRAM history.
      * Outside authored terrain, reflect only the background edge. */
@@ -305,16 +317,34 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       }
     }
     uint16_t mapped;
-    if (MmxRendererStageTile(frame.ram, layer, wx, wy, &mapped)) { tile = mapped; px = wx; py = wy; }
+    if (MmxRendererStageTile(frame.ram, layer, wx, wy, &mapped)) {
+      tile = mapped; px = wx; py = wy;
+      /* The city moves at half speed. Express its map column as the player
+       * X at which it crosses the native view's center (camera+128). */
+      asset_x = layer == 1 && frame.ram[0x1f7a] == 0 ? wx * 2 - 128 : wx;
+    }
   }
   int cx = px & (size - 1), cy = py & (size - 1);
   if (tile & 0x4000) cx = size - 1 - cx;
   if (tile & 0x8000) cy = size - 1 - cy;
   unsigned number = ((tile & 1023) + cx / 8 + cy / 8 * 16) & 1023;
-  unsigned pixel = tile_pixel(r->vram, PPU_bgTileAdr(p, layer) + number * bpp * 4, cx & 7, cy & 7, bpp);
+  unsigned address = (PPU_bgTileAdr(p, layer) + number * bpp * 4) & 0x7fff;
+  const uint8_t *bits = g_mmx_render_asset_repairs && bpp == 4 ?
+      MmxRenderAssetsBackgroundTile(frame.ram, asset_x, address) : NULL;
+  unsigned pixel;
+  if (bits) {
+    bits += (cy & 7) * 2;
+    unsigned shift = 7 - (cx & 7);
+    pixel = ((bits[0] >> shift) & 1) | (((bits[1] >> shift) & 1) << 1) |
+        (((bits[16] >> shift) & 1) << 2) | (((bits[17] >> shift) & 1) << 3);
+  } else pixel = tile_pixel(r->vram, address, cx & 7, cy & 7, bpp);
   if (!pixel) return 0;
+  unsigned index = (((tile >> 10) & 7) << bpp) | pixel;
+  const MmxBackgroundPalette *palette = g_mmx_render_asset_repairs ?
+      MmxRenderAssetsBackgroundPalette(frame.ram, asset_x) : NULL;
+  if (palette && palette->valid[index]) *private_color = palette->colors[index];
   unsigned priority = tile & 0x2000 ? (layer == 2 && (p->bgmode & 8) ? 15 : high[layer]) : low[layer];
-  return (uint16_t)((priority << 12) | (layer << 8) | (((tile >> 10) & 7) << bpp) | pixel);
+  return (uint16_t)((priority << 12) | (layer << 8) | index);
 }
 static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, int size,
                     int y, MmxRenderView view, uint16_t *out, bool margins_only,
@@ -362,9 +392,10 @@ static bool window(const Ppu *p, int layer, int x, int extra) {
   }
 }
 static bool condition(unsigned mode, bool inside) { return mode == 3 || (mode == 1 && !inside) || (mode == 2 && inside); }
-static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color) {
+static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3]) {
   unsigned rgb = palette[main & 255], layer = (main >> 8) & 15;
   if (object_color >= 0 && (layer == 4 || layer == 6)) rgb = (unsigned)object_color;
+  if (layer < 3 && bg_colors[layer] >= 0) rgb = (unsigned)bg_colors[layer];
   bool clipped = condition(p->cgwsel >> 6, inside);
   bool math = !condition((p->cgwsel >> 4) & 3, inside) && ((p->cgadsub & 63) & (1u << layer));
   unsigned other = p->fixedColor;
@@ -373,6 +404,7 @@ static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brig
     if (sub & 255) {
       unsigned sub_layer = (sub >> 8) & 15;
       other = object_color >= 0 && (sub_layer == 4 || sub_layer == 6) ? (unsigned)object_color : palette[sub & 255];
+      if (sub_layer < 3 && bg_colors[sub_layer] >= 0) other = (unsigned)bg_colors[sub_layer];
     } else half = false;
   }
   uint32_t result = 0;
@@ -394,7 +426,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(&stats, 0, sizeof(stats)); stats.pieces = frame.piece_count;
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
-  bool stage = frame.ram[0xd1] == 2 && frame.ram[0xd2] == 4;
+  bool stage = MmxWidePolicy_IsStageScene(frame.ram);
   const Piece *pieces = frame.expand && g_mmx_render_asset_repairs ? frame.expanded : frame.pieces;
   unsigned piece_count = frame.expand && g_mmx_render_asset_repairs ? frame.expanded_count : frame.piece_count;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
@@ -406,9 +438,6 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     if (a && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
         ((s->attr >> 8) & 0x2f) != (unsigned)(a->attributes | s->palette_bits))) piece_assets[i] = a;
   }
-  uint16_t margin_colors[2][128]; bool margin_changed[2][128] = {{false}};
-  if (stage && g_mmx_render_asset_repairs) for (int side = 0; side < 2; ++side)
-    MmxRenderAssetsMarginPalette(frame.ram, side ? view.extra : -view.extra, margin_colors[side], margin_changed[side]);
   for (int y = 0; y < 224; ++y) {
     const Raster *r = &frame.lines[y]; Ppu p;
     memcpy(&p, r->registers, PPU_SAVESTATE_REGS_SIZE);
@@ -463,19 +492,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if (anchored) { if (x < 25) x -= view.extra; else if (x >= 216) x += view.extra; }
       sprite(&p, r, x, sy, attr, size, y, view, objects, false, NULL, 0, object_colors, false);
     }
-    uint16_t palettes[2][256];
-    for (int side = 0; side < 2; ++side) {
-      memcpy(palettes[side], r->palette, sizeof(r->palette));
-      for (int i = 0; i < 128; ++i) if (margin_changed[side][i]) palettes[side][i] = margin_colors[side][i];
-    }
     for (int sx = 0; sx < view.width; ++sx) {
       int x = sx - view.extra;
       uint16_t screens[2] = {0x500, 0x500}, bg[3] = {0};
+      int bg_colors[3] = {-1, -1, -1};
       for (int layer = 0; layer < 3; ++layer) if ((p.screenEnabled[0] | p.screenEnabled[1]) & (1 << layer)) {
         int bx = x, by = y + 1;
         if (p.mosaic & (1 << layer)) { int size = (p.mosaic >> 4) + 1;
           bx -= ((bx % size) + size) % size; by -= by % size; }
-        bg[layer] = background(&p, r, layer, bx, by, stage);
+        bg[layer] = background(&p, r, layer, bx, by, stage, &bg_colors[layer]);
       }
       for (int sub = 0; sub < 2; ++sub) {
         for (int layer = 0; layer < 3; ++layer)
@@ -484,8 +509,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         if ((p.screenEnabled[sub] & 16) && (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, view.extra)) &&
             objects[sx] > screens[sub]) screens[sub] = objects[sx];
       }
-      const uint16_t *pal = x < 0 ? palettes[0] : x >= 256 ? palettes[1] : r->palette;
-      out[y * view.width + sx] = colour(&p, pal, brightness, screens[0], screens[1], window(&p, 5, x, view.extra), object_colors[sx]);
+      out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], window(&p, 5, x, view.extra), object_colors[sx], bg_colors);
     }
   }
   return true;

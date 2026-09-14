@@ -27,7 +27,8 @@ int main(int argc, char **argv) {
   if (!MmxRendererLoadCapture(argv[1])) return 2;
   MmxRenderAspect aspect = !strcmp(argv[3], "16:9") ? MMX_ASPECT_16_9 :
       !strcmp(argv[3], "21:9") ? MMX_ASPECT_21_9 : MMX_ASPECT_32_9;
-  MmxRenderView view = !strcmp(argv[3], "4:3") ? (MmxRenderView){256,0,4.0/3.0} : MmxRendererViewport(aspect, 16, 9);
+  MmxRenderView view = !strcmp(argv[3], "4:3") ? (MmxRenderView){256,0,4.0/3.0} :
+      !strcmp(argv[3], "max") ? MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300) : MmxRendererViewport(aspect, 16, 9);
   uint32_t *pixels = calloc((size_t)view.width * 224, 4);
   g_mmx_render_asset_repairs = false;
   if (!pixels || !MmxRendererDraw(pixels, view, false)) return 2;

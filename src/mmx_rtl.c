@@ -386,8 +386,11 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
             g_load_chunk.magic, g_load_chunk.version);
 }
 
+static bool s_ws_recover_armor;
+static int MmxWsMargin(void);
 void MmxOnStateLoaded(uint32_t version) {
   MmxRendererReset();
+  s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
   if (version < 5 || !g_load_chunk_ok) {
     /* Legacy v4 save: no chunk, no rebuild — preserve the historical
      * behavior exactly (live fibers limp along; loads are only reliable
@@ -796,6 +799,10 @@ void RunOneFrameOfGame(void) {
     }
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2002, "before_Internal");
+  if (s_ws_recover_armor) {
+    if (!g_mmx_custom_renderer || !MmxWidePolicy_PrematureRideArmor(g_ram) ||
+        MmxWidePolicy_RecoverRideArmor(g_ram, MmxWsMargin())) s_ws_recover_armor = false;
+  }
   /* Rearm the P.X tripwire here so the first x=1→0 transition INSIDE
    * Internal() (the main game loop) is captured fresh. The earlier
    * boot-time REP #$38 in I_RESET is expected and intentional; we only
@@ -858,7 +865,7 @@ static int MmxWsMargin(void) {
   extern uint8_t g_ram[0x20000];
   if ((!g_ws_active && !g_mmx_custom_renderer) || g_ram[0xD1] != 0x02 || g_ram[0xD2] != 0x04)
     return 0;
-  if (g_mmx_custom_renderer) return (g_mmx_custom_view.extra + 7) & ~7;
+  if (g_mmx_custom_renderer) return MmxWidePolicy_IsStageScene(g_ram) ? (g_mmx_custom_view.extra + 7) & ~7 : 0;
   return (g_ws_extra + 7) & ~7;
 }
 
@@ -878,6 +885,13 @@ uint16 MmxWsCullVerdictX(uint16 v) {
 uint16 MmxWsShotCullVerdictX(uint16 v) {
   int m = MmxWsMargin();
   return ((uint16)(v + m) >= (uint16)(0x140 + 2 * m)) ? 1 : 0;
+}
+
+uint16 MmxWsFlyerLeashLimit(void) {
+  return MmxWidePolicy_FlyerLeash(g_mmx_custom_renderer ? MmxWsMargin() : 0);
+}
+uint16 MmxWsRideArmorCullVerdictX(uint16 v) {
+  return MmxWidePolicy_RideArmorCull(v, g_mmx_custom_renderer ? MmxWsMargin() : 0);
 }
 
 /* bank_00_DC36 spawn-scan anchors (one 32px column scanned per camera
@@ -902,13 +916,14 @@ static int MmxWsSpawnWide(void) {
  * carry = (objX - camX + 0x60) >= 0x1c0. Ordinary enemy lifetime already
  * uses the widened bank_02_806E path, but these kind-1 cars never visit it:
  * at the early spawn anchor 808F marks them offscreen and their F554 updater
- * immediately clears the object. Widen only Highway traffic ID $21 here;
- * every other presentation object retains the exact vanilla verdict. */
+ * immediately clears the object. The dedicated Ride Armor slot also draws
+ * through this routine, so its presentation must match its wider lifetime. */
 uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
   extern uint8_t g_ram[0x20000];
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
-  if (!m || g_ram[0x1f7a] != 0x00 ||
-      g_ram[(uint16)(dpage + 0x0a)] != 0x21)
+  bool traffic = g_ram[0x1f7a] == 0 && g_ram[(uint16)(dpage + 0x0a)] == 0x21;
+  bool armor = g_mmx_custom_renderer && dpage == 0xe18;
+  if (!m || (!traffic && !armor))
     return v >= 0x1c0 ? 1 : 0;
   return ((uint16)(v + m) >= (uint16)(0x1c0 + 2 * m)) ? 1 : 0;
 }

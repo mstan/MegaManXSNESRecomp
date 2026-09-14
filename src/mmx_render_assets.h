@@ -14,6 +14,13 @@ void MmxRenderAssetsSetRom(const uint8_t *rom, size_t size);
 const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, unsigned sprite);
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation);
-/* ROM-authored palette transitions for the extra view; never touch CGRAM. */
-void MmxRenderAssetsMarginPalette(const uint8_t ram[0x20000], int extra,
-                                uint16_t colors[128], bool changed[128]);
+typedef struct MmxBackgroundPalette {
+  uint16_t colors[128];
+  bool valid[128];
+} MmxBackgroundPalette;
+/* Resolve the resource belonging to a world column, independently of which
+ * side of the viewport it occupies. NULL retains the current live resource. */
+const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
+                                            int world_x, unsigned vram_word);
+const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
+                                                             int world_x);

@@ -1,10 +1,44 @@
 #include "mmx_wide_policy.h"
 
+bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
+  /* D1/D2 survive the transition to the password screen; D3 selects the
+   * actual stage loop ($04), password ($0A), and other menu substates. */
+  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] == 4;
+}
+
 static uint16_t read_word(const uint8_t *ram, unsigned a) {
   return (uint16_t)(ram[a] | (ram[a + 1] << 8));
 }
 static void write_word(uint8_t *ram, unsigned a, uint16_t value) {
   ram[a] = (uint8_t)value; ram[a + 1] = (uint8_t)(value >> 8);
+}
+uint16_t MmxWidePolicy_FlyerLeash(unsigned margin) {
+  /* $83:DF71 limits id-$36's travel from its spawn, even while homing.
+   * Give an early-spawned flyer enough travel to reach the native arena. */
+  return (uint16_t)(0xa0 + margin);
+}
+bool MmxWidePolicy_RideArmorCull(uint16_t distance, unsigned margin) {
+  /* $83:8948 has its own cam-128..cam+383 horizontal lifetime window. */
+  return (uint16_t)(distance + margin) >= 0x200 + 2 * margin;
+}
+bool MmxWidePolicy_PrematureRideArmor(const uint8_t ram[0x20000]) {
+  /* Compatibility with early spike saves: the empty Chill Penguin armor
+   * was initialized, then culled before its first animation/physics update.
+   * Require that exact untouched spawn signature; used/damaged/destroyed
+   * armor must never be recreated. This is checked only after a state load. */
+  return MmxWidePolicy_IsStageScene(ram) && ram[0x1f7a] == 8 &&
+      read_word(ram, 0xe18) == 0 && read_word(ram, 0xe1a) == 0 &&
+      read_word(ram, 0xe1d) == 0x1220 && read_word(ram, 0xe20) == 0x390 &&
+      ram[0xe2e] == 0x4a && ram[0xe2f] == 0 && ram[0xe3f] == 0x10 &&
+      read_word(ram, 0xe38) == 0xbb4c && read_word(ram, 0xbad) < 0x1200;
+}
+bool MmxWidePolicy_RecoverRideArmor(uint8_t ram[0x20000], unsigned margin) {
+  if (!MmxWidePolicy_PrematureRideArmor(ram)) return false;
+  uint16_t dx = (uint16_t)(read_word(ram, 0xe1d) - read_word(ram, 0x1e4d) + 0x80);
+  uint16_t dy = (uint16_t)(read_word(ram, 0xe20) - read_word(ram, 0x1e50) + 0x80);
+  if (MmxWidePolicy_RideArmorCull(dx, margin) || dy >= 0x1e0) return false;
+  ram[0xe18] = 1; /* Let the original initialization/physics resume. */
+  return true;
 }
 uint16_t MmxWidePolicy_BeeEntrance(uint8_t ram[0x20000], uint16_t object,
                                   uint16_t distance) {

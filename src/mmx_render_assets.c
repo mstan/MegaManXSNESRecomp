@@ -8,6 +8,10 @@ static size_t rom_size;
 static MmxSpriteAsset assets[256];
 static uint8_t ready[256], sprite_resource[256];
 static unsigned cached_stage = ~0u, cached_section = ~0u;
+static unsigned bg_stage = ~0u;
+static uint8_t bg_phase[2][8192], bg_chr[16][65536];
+static bool bg_chr_valid[16][2048], bg_chr_ready[16], bg_palette_ready[16];
+static MmxBackgroundPalette bg_palette[16];
 static bool range(size_t a, size_t n) { return a <= rom_size && n <= rom_size - a; }
 static unsigned word(size_t a) { return range(a, 2) ? rom[a] | (rom[a + 1] << 8) : 0; }
 static size_t lorom(unsigned a) { return ((a >> 16) & 127) * 0x8000u + (a & 0x7fff); }
@@ -17,6 +21,7 @@ void MmxRenderAssetsSetRom(const uint8_t *bytes, size_t size) {
   if (rom == bytes && rom_size == size) return;
   rom = bytes; rom_size = size;
   cached_stage = cached_section = ~0u;
+  bg_stage = ~0u;
 }
 static bool tiles(unsigned id, uint8_t out[8192]) {
   uint8_t decoded[65536];
@@ -113,6 +118,13 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
   if (!ram) return NULL;
+  /* The usable Ride Armor has a dedicated slot/animation; the enemy table
+   * maps its pilot ($4F), not the armor's own $4A animation, to resource $49.
+   * Early visibility must not borrow CHR/palettes from the current cave set. */
+  if (object == 0xe18 && animation == 0x4a) {
+    stage_assets(ram[0x1f7a], ram[0x1f08]);
+    return ready[0x49] == 1 ? &assets[0x49] : NULL;
+  }
   /* 82:F486's rotor effect uses animation $36, but binds resource $2D
    * directly through $7F832D. It is absent from the enemy animation table.
    * Verify its Bee Blader parent; unrelated users of animation $36 must
@@ -136,38 +148,75 @@ const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
   }
   return MmxRenderAssetsSprite(ram[0x1f7a], ram[0x1f08], animation);
 }
-void MmxRenderAssetsMarginPalette(const uint8_t ram[0x20000], int extra,
-                                uint16_t colors[128], bool changed[128]) {
-  memset(changed, 0, 128 * sizeof(*changed));
-  unsigned stage = ram[0x1f7a], phase = ram[0x1f0a];
-  if (!extra || stage >= 13 || !range(0x32260, 32)) return;
-  /* Highway's city layer scrolls at half the camera speed. An extra BG2
-   * column becomes native after twice that camera travel, so its palette
-   * lookahead must use the same parallax scale as the retained map. */
-  int camera = (int)ram_word(ram, 0x1e4d), projected = camera + extra * (stage == 0 ? 2 : 1);
-  size_t pos = 0x28000 + (word(0x282c2 + stage * 2) & 0x7fff);
-  if (!range(pos, 1)) return;
+/* Highway's kind-2 $16/$17 records select BG CHR/palette phases at X
+ * boundaries. Other stages can use vertical switches or boss-state offsets;
+ * keep their live resources until their ownership has been established. */
+static bool prepare_background(const uint8_t *ram) {
+  unsigned stage = ram[0x1f7a];
+  if (stage != 0 || !range(0x32280, 2)) return false;
+  if (bg_stage == stage) return true;
+  bg_stage = stage;
+  memset(bg_phase, 0, sizeof(bg_phase));
+  memset(bg_chr_ready, 0, sizeof(bg_chr_ready));
+  memset(bg_palette_ready, 0, sizeof(bg_palette_ready));
+  size_t pos = 0x28000 + (word(0x282c2) & 0x7fff);
+  if (!range(pos, 1)) return false;
   unsigned column = rom[pos++];
-  int nearest = extra > 0 ? camera : projected - 1;
   for (unsigned guard = 0; guard < 512 && range(pos, 8); ++guard) {
-    unsigned x = word(pos + 5), kind = rom[pos] & 15, event = rom[pos + 3];
-    int line = (int)(x & 0x7fff);
-    if (kind == 2 && event == 0x17 &&
-        (extra > 0 ? line > camera && line <= projected && line >= nearest :
-                     line > projected && line <= camera && line > nearest)) {
-      phase = extra > 0 ? rom[pos + 4] & 15 : rom[pos + 4] >> 4;
-      nearest = line;
-      if (extra < 0) break;
+    unsigned x = word(pos + 5), event = rom[pos + 3];
+    if ((rom[pos] & 15) == 2 && (event == 0x16 || event == 0x17)) {
+      unsigned line = x & 0x7fff;
+      if (line < 8192) memset(bg_phase[event - 0x16] + line, rom[pos + 4] & 15, 8192 - line);
     }
     pos += 7;
     if (x & 0x8000) { if (rom[pos] == column) break; column = rom[pos++]; }
   }
-  if (phase == ram[0x1f0a]) return;
-  size_t base = 0x32260, p = base + word(base + word(base + stage * 2) + phase * 2);
-  for (unsigned guard = 0; guard < 32 && range(p, 3) && word(p) != 0xffff; ++guard, p += 3) {
-    size_t source = 0x28000 + (word(p) & 0x7fff);
-    unsigned first = rom[p + 2];
-    if (first + 16 > 128 || !range(source, 32)) continue;
-    for (unsigned i = 0; i < 16; ++i) { colors[first + i] = (uint16_t)word(source + i * 2); changed[first + i] = true; }
+  return true;
+}
+static size_t background_list(size_t base, unsigned phase) {
+  unsigned start = word(base), end = word(base + 2);
+  if (end < start || phase >= (end - start) / 2) return rom_size;
+  return base + word(base + start + phase * 2);
+}
+const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
+                                            int world_x, unsigned vram_word) {
+  if (!ram || world_x < 0 || world_x >= 8192 || vram_word >= 0x8000 || !prepare_background(ram)) return NULL;
+  unsigned phase = bg_phase[0][world_x];
+  /* RAM records the requested phase before DMA completes. Use private
+   * resources even when it matches, so margin art cannot briefly regress. */
+  if (!bg_chr_ready[phase]) {
+    bg_chr_ready[phase] = true;
+    memset(bg_chr_valid[phase], 0, sizeof(bg_chr_valid[phase]));
+    size_t p = background_list(0x321d5, phase);
+    /* B436's nine-byte DMA records: byte count, VRAM word destination,
+     * ROM long source, palette descriptor. BG data is uncompressed. */
+    for (unsigned guard = 0; guard < 32 && range(p, 9) && word(p); ++guard, p += 9) {
+      unsigned count = word(p), dest = word(p + 2) * 2;
+      size_t source = lorom(word(p + 4) | (rom[p + 6] << 16));
+      if ((dest & 31) || (count & 31) || dest + count > 65536 || !range(source, count)) continue;
+      memcpy(bg_chr[phase] + dest, rom + source, count);
+      memset(bg_chr_valid[phase] + dest / 32, 1, count / 32);
+    }
   }
+  return bg_chr_valid[phase][vram_word / 16] ? bg_chr[phase] + vram_word * 2 : NULL;
+}
+const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
+                                                             int world_x) {
+  if (!ram || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
+  unsigned phase = bg_phase[1][world_x];
+  if (!bg_palette_ready[phase]) {
+    bg_palette_ready[phase] = true;
+    memset(&bg_palette[phase], 0, sizeof(bg_palette[phase]));
+    size_t p = background_list(0x32260, phase);
+    for (unsigned guard = 0; guard < 32 && range(p, 3) && word(p) != 0xffff; ++guard, p += 3) {
+      size_t source = 0x28000 + (word(p) & 0x7fff);
+      unsigned first = rom[p + 2];
+      if (first + 16 > 128 || !range(source, 32)) continue;
+      for (unsigned i = 0; i < 16; ++i) {
+        bg_palette[phase].colors[first + i] = (uint16_t)word(source + i * 2);
+        bg_palette[phase].valid[first + i] = true;
+      }
+    }
+  }
+  return &bg_palette[phase];
 }

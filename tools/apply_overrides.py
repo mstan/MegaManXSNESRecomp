@@ -265,6 +265,7 @@ import re
 import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
+           "/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
            "/*WS-CHRBIND-PARENT*/", "/*MSU1-MUSIC*/", "/*MSU1-STAGE*/")
@@ -742,6 +743,45 @@ def apply_bank82_activation(lines, verbose):
     return out, n
 
 
+def apply_flyer_leash(lines, verbose):
+    """The pink flyer's spawn leash must include the custom view's margin."""
+    out, block, count = [], None, 0
+    for line in lines:
+        out.append(line)
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace.group(1), 16))
+        match = re.match(r"^(\s*)uint16 (_v\d+) = 0xa0;\s*$", line)
+        if block == 0x03DF71 and match:
+            out.append(f"{match[1]}/*WS-FLYER-LEASH*/ {{ extern uint16 MmxWsFlyerLeashLimit(void); {match[2]} = MmxWsFlyerLeashLimit(); }}\n")
+            count += 1
+    return out, count
+
+
+def apply_ride_armor_cull(lines, verbose):
+    """Widen only the first (horizontal) compare in $83:8948."""
+    out, block, compared, pending, count = [], None, None, False, 0
+    for line in lines:
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace.group(1), 16))
+            compared, pending = None, False
+        if block == 0x038948:
+            if re.match(r"^\s*uint16 _v\d+ = 0x200;\s*$", line):
+                pending = True
+            match = RE_READ_A.match(line)
+            if pending and match:
+                compared = match[1]
+                pending = False
+            branch = RE_BRANCH_C.match(line)
+            if compared and branch:
+                out.append(f"{branch[1]}/*WS-ARMOR-CULL*/ {{ extern uint16 MmxWsRideArmorCullVerdictX(uint16); cpu->_flag_C = MmxWsRideArmorCullVerdictX({compared}); }}\n")
+                count += 1
+                compared = None
+        out.append(line)
+    return out, count
+
+
 RE_CHRBIND_ANCHOR = re.compile(
     r"^\s*uint8 (_v\d+) = cpu_read8\(cpu, \(uint8\)\(\(\(\(uint32\)0x7f8200 "
     r"\+ \(uint32\)cpu->X\)\) >> 16\), \(uint16\)\(\(\(uint32\)0x7f8200 \+ "
@@ -1015,6 +1055,8 @@ def main():
         (apply_bank82_presentation_cull, "/*WS-PRESENTATION-CULL*/"),
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
+        (apply_flyer_leash, "/*WS-FLYER-LEASH*/"),
+        (apply_ride_armor_cull, "/*WS-ARMOR-CULL*/"),
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
         (apply_chrbind_copy_generic, "/*WS-CHRBIND-COPY*/"),
@@ -1075,6 +1117,11 @@ def main():
             file=sys.stderr)
         return 1
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
+    if not args.restore:
+        for marker in ("/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/"):
+            if effective_counts.get(marker, 0) != 1:
+                print(f"ERROR: expected exactly 1 {marker} hook, found {effective_counts.get(marker, 0)}", file=sys.stderr)
+                return 1
     if not args.restore and chrbind_found != EXPECTED_CHRBIND_SITES:
         print(
             f"ERROR: expected exactly {EXPECTED_CHRBIND_SITES} WS-CHRBIND "

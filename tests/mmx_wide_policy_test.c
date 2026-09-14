@@ -6,6 +6,39 @@
 static uint8_t ram[0x20000];
 static void put(unsigned a, unsigned v) { ram[a] = (uint8_t)v; ram[a + 1] = (uint8_t)(v >> 8); }
 static unsigned get(unsigned a) { return ram[a] | (ram[a + 1] << 8); }
+static void test_flyer_and_armor_range(void) {
+  for (unsigned margin = 0; margin <= 384; margin += 8) {
+    /* A flyer at the spawn lead can approach within its 64px attack range
+     * before it exhausts the leash, including the extra spawn column. */
+    assert(MmxWidePolicy_FlyerLeash(margin) > 128 + margin + 32 - 64);
+    assert(!MmxWidePolicy_RideArmorCull((uint16_t)(-128 - (int)margin + 128), margin));
+    assert(MmxWidePolicy_RideArmorCull((uint16_t)(-129 - (int)margin + 128), margin));
+    assert(!MmxWidePolicy_RideArmorCull((uint16_t)(383 + margin + 128), margin));
+    assert(MmxWidePolicy_RideArmorCull((uint16_t)(384 + margin + 128), margin));
+  }
+  assert(MmxWidePolicy_FlyerLeash(0) == 160);
+  memset(ram, 0, sizeof(ram));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 8;
+  put(0xe1d, 0x1220); put(0xe20, 0x390); ram[0xe2e] = 0x4a;
+  ram[0xe3f] = 0x10; put(0xe38, 0xbb4c); put(0xbad, 0xeca);
+  put(0x1e4d, 0xe4a); put(0x1e50, 0x300);
+  assert(MmxWidePolicy_PrematureRideArmor(ram));
+  assert(!MmxWidePolicy_RecoverRideArmor(ram, 384)); /* Still beyond even max view. */
+  put(0x1e4d, 0x1000);
+  assert(!MmxWidePolicy_RecoverRideArmor(ram, 0));
+  ram[0xe3f] = 0;
+  assert(!MmxWidePolicy_PrematureRideArmor(ram)); /* Destroyed. */
+  ram[0xe3f] = 0x10; ram[0xe2f] = 1;
+  assert(!MmxWidePolicy_PrematureRideArmor(ram)); /* Already animated. */
+  ram[0xe2f] = 0; put(0xe20, 0x391);
+  assert(!MmxWidePolicy_PrematureRideArmor(ram)); /* Already moved. */
+  put(0xe20, 0x390); put(0x1e50, 0x100);
+  assert(!MmxWidePolicy_RecoverRideArmor(ram, 384)); /* Preserve vertical cull. */
+  put(0x1e50, 0x300);
+  assert(MmxWidePolicy_RecoverRideArmor(ram, 384));
+  assert(ram[0xe18] == 1 && get(0xe1d) == 0x1220 && get(0xbad) == 0xeca);
+  assert(!MmxWidePolicy_RecoverRideArmor(ram, 384)); /* No duplication. */
+}
 static void test_bee_camera_and_descent(void) {
   memset(ram, 0, sizeof(ram));
   ram[0xe68] = 1; ram[0xe69] = 2; ram[0xe72] = 0x22;
@@ -109,5 +142,6 @@ int main(void) {
   test_spawn_cursors_are_independent();
   test_spawn_record_ownership();
   test_bee_camera_and_descent();
+  test_flyer_and_armor_range();
   return 0;
 }

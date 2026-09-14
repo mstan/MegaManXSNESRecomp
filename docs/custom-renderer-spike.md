@@ -1,5 +1,20 @@
 # Mega Man X custom renderer spike
 
+## Current owner playtest checklist (2026-09-14 morning)
+
+- [x] F1: foreground building CHR is scrambled until X moves right.
+- [x] F2: foreground building palettes change correct/wrong/correct on approach.
+- [x] Reported F4 (save4): parked traffic/foreground palettes change behind X.
+- [x] F8 (save7): Vile dialogue repeats into a black area in the left margin.
+- [x] F9 (save8): pillarbox the password screen instead of expanding stale maps.
+- [x] F7: flying enemy completes its approach/exit before X can engage it.
+- [x] New F3: Ride Armor is absent on approach, but appears after death/respawn.
+
+Track each fix and its validation here. Keep source saves unchanged, sprite
+capacity opt-in, and all code on `codex/mmx-custom-renderer-spike`.
+Checked means implemented and validated against the captured/simulated cases
+below; the next owner playtest remains the acceptance check.
+
 Branch: `codex/mmx-custom-renderer-spike`, based on `bbaf743`.
 Tracking: central Beads `beads-8wg.1.21`.
 
@@ -140,8 +155,9 @@ submissions. The replay tool checks the unmodified compositor against native
 PPU pixels first, then reports `repaired_native_pixels` separately. Correcting
 an invisible native-area enemy intentionally changes those pixels. Raw oracle
 agreement by itself never establishes that a guest graphics binding is valid.
-`MMX_RENDER_OBJECT_TRACE=<csv path>` optionally records Highway bee state
-transitions with player/enemy positions for timing investigations.
+`MMX_RENDER_OBJECT_TRACE=<csv path>` optionally records Highway bee, Chill
+Penguin flyer, and Ride Armor states with player/enemy positions. It logs
+transitions and periodic samples while those objects are alive.
 
 ## Second playtest: arena push, descent and propellers
 
@@ -195,6 +211,74 @@ Validation artifacts under `build-custom/validation`:
 
 The existing checkpoint is `384a5fe` on `codex/mmx-custom-renderer-spike`.
 All follow-up work remains on that branch; no main/master merge is intended.
+
+## Third playtest: seven-item burndown
+
+Background resources now belong to individual world columns, replacing the
+earlier per-side palette substitution. Highway kind-2 events `$16`/`$17`
+select the private CHR/palette phase. BG1 uses its world position; Highway's
+half-speed BG2 projects that position back into the event coordinate system.
+Only the groups/tiles owned by those transfers are replaced. The native
+256-pixel background continues to use captured PPU data. Other stages retain
+their live resources until their vertical/encounter phase rules are verified.
+
+The private resources remain authoritative in the margins even when RAM says
+the requested phase is current: RAM changes before DMA finishes. A moving F1
+capture exposed that one-frame gap and now stays correct across it.
+
+Stage BG3 is screen-space dialogue and is clipped to the native view. In the
+Highway end arena, BG2 columns before `$A00` are authored as empty at the new
+vertical scroll. Extending the arena sky edge fills that exposed region.
+The password screen is identified by game scene `$D3=$0A`; `$D1/$D2` alone
+incorrectly identified it as gameplay. Non-stage scenes use the centered
+stock frame with black side bars, including native HUD/menu placement.
+
+The pink flyer (enemy `$36`, `$83:DF71`) previously abandoned its approach
+after traveling 160 pixels from spawn. Its custom-renderer leash now adds the
+visible margin, allowing it to enter its original attack states. Ride Armor's
+dedicated `$83:8948` horizontal lifetime check and `$82:808F` presentation check
+now include that margin. The vertical lifetime limit is unchanged. These new
+hooks retain their original limits with no custom margin or in Legacy mode.
+
+The provided F3 already contained an armor initialized and erased before its
+first animation/physics update. A state-load compatibility fix recognizes
+only the untouched Chill Penguin spawn signature (position `$1220,$0390`,
+full health, initial frame/collision data, empty slot, X before the spawn).
+It resumes the guest initialization once the armor is within both lifetime
+axes. Used, moved, animated, or damaged armor does not qualify. Its animation
+`$4A` is separately mapped to resource `$49`; the enemy table only maps the
+pilot, so the usable armor also needed private art before that resource loads.
+
+Evidence in `build-custom/validation`:
+
+- `mmx-render-ja_um420`: F1/F2/traffic/F8/F9 moving samples at maximum Adaptive
+  width. F1 reaches player `$12C3` with the new CHR phase selected; its distant
+  towers stay intact. Traffic remains blue behind X. F8 has one dialogue box
+  with continuous sky in the left margin; F9 is pillarboxed.
+- `mmx-render-gpgc8yab`: F7 normal approach, then waiting. The first flyer
+  reaches attack state 4 at frame 269 with a 60-pixel X separation, progresses
+  through states 6/8/10, and the second reaches state 4 at frame 400. Neither
+  prematurely takes the retreat state 12 before engagement.
+- `mmx-render-aku6oz5o`: original new F3, with scripted movement/jumps. Armor
+  revives at the expanded lifetime boundary, remains alive through approach,
+  and is visible with its green/yellow art after 620 frames. This validates
+  appearance and persistence; the script did not mount the armor.
+- `mmx-render-2e7_20hc`: F3/F7 with expanded capacity enabled. The option is
+  recorded as on, submission prefixes match, and sprites render correctly.
+  The other samples use the default off setting.
+- `mmx-render-aobkpvx9`: existing Chill door fixtures still pass at maximum
+  width. `mmx-render-04v2ovzj` and `mmx-render-m_ssjbe8` confirm Mod Off and
+  Legacy retain their respective renderers and surface widths.
+- Each custom capture is replayed at 4:3, 16:9, 21:9, 32:9, and maximum
+  Adaptive width. All raw native pixel oracles pass; live output equals replay
+  at the configured ratio. Visual inspection is separate from that oracle.
+- All three CTests and strict C warnings pass. Regression cases cover world
+  resource ownership through pending DMA, dialogue/arena sky, password bars,
+  both armor cull edges, untouched-save recovery exclusions, and dedicated
+  armor art. The injector verifies one flyer hook and one armor lifetime hook.
+
+Source saves are unchanged. All seven reports have fixes and evidence; broader
+full-game qualification and owner acceptance remain open before retiring Legacy.
 
 ## Validation recorded on 2026-09-13/14
 

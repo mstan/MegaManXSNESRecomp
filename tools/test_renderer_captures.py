@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture isolated MMX save fixtures and replay each at four aspect ratios.
+"""Capture isolated MMX save fixtures and replay each at five aspect settings.
 
 Copies caller-owned saves; never runs in the source checkout or writes back to
 the originals. The pixel oracle compares unanchored native pixels, then saves
@@ -64,7 +64,7 @@ def main():
     p.add_argument('--artifacts', type=Path, required=True)
     p.add_argument('--frames', type=int, default=120)
     p.add_argument('--script', type=Path)
-    p.add_argument('--aspect', choices=['adaptive', '16:9', '21:9', '32:9'], default='32:9')
+    p.add_argument('--aspect', choices=['adaptive', '16:9', '21:9', '32:9', 'max'], default='32:9')
     p.add_argument('--renderer', choices=['custom', 'legacy', 'off'], default='custom')
     p.add_argument('--expanded-sprites', action='store_true')
     args = p.parse_args()
@@ -102,7 +102,7 @@ renderer = "custom"
 aspect = "32:9"
 hud = "edges"
 expanded_sprites = "off"
-'''.replace('aspect = "32:9"', f'aspect = "{args.aspect}"')
+'''.replace('aspect = "32:9"', f'aspect = "{"adaptive" if args.aspect == "max" else args.aspect}"')
    .replace('expanded_sprites = "off"', f'expanded_sprites = "{"on" if args.expanded_sprites else "off"}"')
    .replace('renderer = "custom"', f'renderer = "{args.renderer if args.renderer != "off" else "custom"}"')
    .replace('enabled = true', f'enabled = {"false" if args.renderer == "off" else "true"}'))
@@ -118,7 +118,7 @@ OutputMethod = SDL-Software
 DisplayAspect = 4:3
 [Sound]
 EnableAudio = 0
-''')
+'''.replace('WindowScale = 1', 'WindowScale = 1\nWindowSize = 2048x300' if args.aspect == 'max' else 'WindowScale = 1'))
         (folder / 'input.txt').write_text(args.script.read_text() if args.script else 'wait 30\nloadstate 0\n')
         with (folder / 'stdout.log').open('wb') as out, (folder / 'stderr.log').open('wb') as err:
             result = subprocess.run([str(exe), '--config', 'config.ini', '--script', 'input.txt',
@@ -132,7 +132,7 @@ EnableAudio = 0
         bitmap = (folder / 'final.bmp').read_bytes()
         width, height = struct.unpack_from('<ii', bitmap, 18)
         expected_width = 256 if args.renderer == 'off' else 342 if args.renderer == 'legacy' else {
-            'adaptive': 342, '16:9': 342, '21:9': 448, '32:9': 682}[args.aspect]
+            'adaptive': 342, '16:9': 342, '21:9': 448, '32:9': 682, 'max': 1024}[args.aspect]
         if bitmap[:2] != b'BM' or width != expected_width or abs(height) != 224:
             raise RuntimeError(f'Incorrect presented dimensions: {width}x{height}, expected {expected_width}x224')
         if args.renderer != 'custom':
@@ -144,10 +144,11 @@ EnableAudio = 0
         data = (folder / 'final.capture').read_bytes()
         ram = memoryview(data)[12 + 224 * 66656:][:0x20000]
         def word(address): return struct.unpack_from('<H', ram, address)[0]
-        metadata = dict(stage=ram[0x1f7a], camera_x=word(0x1e4d), camera_y=word(0x1e50), **sprite_matches(data))
+        metadata = dict(stage=ram[0x1f7a], scene=ram[0xd3], camera_x=word(0x1e4d), camera_y=word(0x1e50),
+                        stage_scene=ram[0xd1:0xd4].tolist() == [2, 4, 4], **sprite_matches(data))
         if metadata.get('expanded_sprites', False) != args.expanded_sprites:
             raise RuntimeError('Expanded sprite mod option did not match requested value')
-        for aspect in ['4:3', '16:9', '21:9', '32:9']:
+        for aspect in ['4:3', '16:9', '21:9', '32:9', 'max']:
             name = aspect.replace(':', 'x')
             result = subprocess.run([str(replay), str(folder / 'final.capture'), str(rom), aspect,
                                      '1', str(folder / f'{name}.bmp')], env=env, capture_output=True, text=True)
@@ -162,7 +163,8 @@ EnableAudio = 0
             report.append(entry)
             print(entry, flush=True)
         (run / 'report.json').write_text(json.dumps(report, indent=2))
-    return int(any(e.get('native_differences', 0) or e.get('custom_lines', 224) != 224 for e in report))
+    return int(any(e.get('native_differences', 0) or
+                   ('custom_lines' in e and e['custom_lines'] != (224 if e['stage_scene'] else 0)) for e in report))
 
 if __name__ == '__main__':
     raise SystemExit(main())
