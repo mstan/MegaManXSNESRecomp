@@ -272,6 +272,21 @@ static void resource_decode(void) {
   ram[0x1632] = 7; assert(!MmxRenderAssetsObjectSprite(ram, 0x1628, 0x38));
   assert(!MmxRenderAssetsObjectSprite(ram, 0x18f8, 0x37));
 
+  /* Spark and his ice chips deliberately switch away from the resource's
+   * default palette. Retain live colors when their section is resident. */
+  rom_bytes[0x32d2e] = 0x8a; rom_bytes[0x325e4] = 0x91; rom_bytes[0x325e5] = 0x8a;
+  memcpy(rom_bytes + 0x376f7 + 0x8a * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x8a * 2, 0x200);
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  memset(ram, 0, sizeof(ram)); ram[0xe72] = 0x31; ram[0x1932] = 6;
+  asset = MmxRenderAssetsObjectSprite(ram, 0xe68, 0x91);
+  assert(asset && !asset->current); /* Unloaded art still gets private repair. */
+  ram[0x1f08] = 1;
+  assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x91));
+  assert(!MmxRenderAssetsObjectSprite(ram, 0x1928, 0x91));
+  ram[0x1932] = 7; assert(MmxRenderAssetsObjectSprite(ram, 0x1928, 0x91));
+  rom_bytes[0x325e4] = 7;
+
   /* The rotor borrows resource $2D's palette, but uses permanent page-zero
    * CHR. Its animation is deliberately absent from the enemy asset table. */
   rom_bytes[0x32d2e] = 0x2d; rom_bytes[0x325e5] = 0x2d;

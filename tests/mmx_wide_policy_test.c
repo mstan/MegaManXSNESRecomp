@@ -109,6 +109,28 @@ static void test_spawn_cursors_are_independent(void) {
   assert(cursor.valid);
 }
 
+static void test_streaker_wait(void) {
+  memset(ram, 0, sizeof(ram));
+  ram[0x1f7a] = 6; ram[0xe68] = 1; ram[0xe69] = 2;
+  ram[0xe72] = 0x37; ram[0xe8f] = 2;
+  put(0xe6d, 0x5f6); put(0x1e4d, 0x340);
+  assert(MmxWidePolicy_StreakerWaiting(ram, 0xe68));
+  put(0x1e4d, 0x4df); assert(MmxWidePolicy_StreakerWaiting(ram, 0xe68));
+  put(0x1e4d, 0x4e0); assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68));
+  put(0x1e4d, 0x640); assert(MmxWidePolicy_StreakerWaiting(ram, 0xe68));
+  put(0x1e4d, 0x5ff); assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68));
+  put(0x1e4d, 0x340); ram[0xe6a] = 2;
+  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Already launched. */
+  ram[0xe6a] = 0; ram[0xe6b] = 2;
+  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Fading. */
+  ram[0xe6b] = 0; ram[0xe8f] = 0;
+  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Killed before launch. */
+  ram[0xe8f] = 2; ram[0xe72] = 0x31;
+  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Other actor. */
+  assert(!MmxWidePolicy_StreakerWaiting(ram, 0));
+  assert(!MmxWidePolicy_StreakerWaiting(NULL, 0xe68));
+}
+
 static void test_spawn_record_ownership(void) {
   /* Ordinary enemies are early/wide only; controllers are native only. */
   assert(MmxWidePolicy_SpawnRecordAllowed(0x06, 3, 0x20, false));
@@ -166,6 +188,7 @@ int main(void) {
   test_non_door_stack();
   test_spawn_cursors_are_independent();
   test_spawn_record_ownership();
+  test_streaker_wait();
   test_bee_camera_and_descent();
   test_flyer_and_armor_range();
   return 0;

@@ -1144,6 +1144,12 @@ uint16 MmxWsEnemyActivationDistance(uint16 v, uint16 object) {
   return (uint16)(v + m);
 }
 
+int MmxWsStreakerWaiting(uint16 object) {
+  extern uint8_t g_ram[0x20000];
+  return g_mmx_custom_renderer && MmxWsSpawnWide() && MmxWsMargin() &&
+      MmxWidePolicy_StreakerWaiting(g_ram, object);
+}
+
 /* bank_03_FDD3 camera-line trigger compare. Tilemap screen staging
  * (Task_B091 via FE05/FE0C) is fired by level-placed camera-line
  * trigger objects: FDD3 compares live camera X ($0BAD, via $0BA8+X

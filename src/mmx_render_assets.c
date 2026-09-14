@@ -118,6 +118,16 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
   if (!ram) return NULL;
+  /* Spark's freeze state ($88:A25E) deliberately selects palette $0A,
+   * and thawing returns it to $08. Its ice chips share animation $91 and
+   * the live ice palette. Native-timed bosses have current art; replacing
+   * these bindings with resource $8A's default colors erases the ice coat. */
+  if (animation == 0x91 &&
+      ((object >= 0xe68 && object <= 0x1228 && (object & 63) == 0x28 && ram[object + 10] == 0x31) ||
+       (object >= 0x1928 && object < 0x1d08 && (object & 31) == 8 && ram[object + 10] == 6))) {
+    stage_assets(ram[0x1f7a], ram[0x1f08]);
+    if (ready[0x8a] == 1 && assets[0x8a].current) return NULL;
+  }
   /* $81:E99D binds collectible $0B directly to resource $36; animation
    * $38 has no entry in the enemy resource table. Its old palette slot can
    * be reused while the tank is still visible in the extended view. */

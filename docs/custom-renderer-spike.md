@@ -1,6 +1,11 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, sixth batch)
+## Current owner playtest checklist (2026-09-14, seventh batch)
+
+- [x] F5: keep restored streaker/light visuals, but prevent attacks outside their room before entry.
+- [x] F6: preserve Spark Mandrill's ice covering when Shotgun Ice freezes him.
+
+## Previous owner playtest checklist (sixth batch)
 
 - [x] Restore streaker visibility outside the native view; remove mid-screen spawn regression.
 - [x] Keep the Heart Tank's colors correct near the wide-view edge.
@@ -460,6 +465,42 @@ opt-in and off by default. The boss family coverage is verified against ROM
 initializers and policy tests; actual arena-entry replays cover Spark Mandrill
 and Chill Penguin. The owner's third-boss playtest and remaining full-stage
 qualification are still needed before replacing the released renderer.
+
+## Seventh playtest: streaker activation and Spark's ice coat
+
+The owner accepted the restored streaker/light rendering but reported that
+F5 still attacks outside the room. The updated F6 is now the Spark Mandrill
+fight with Shotgun Ice equipped. Immutable copies are in `seventh-saves`.
+
+- Streakers still allocate beyond the wide edge and render their live art.
+  Only their `$87:A597` horizontal movement waits: until the native scan
+  reaches the authored 32-pixel spawn column, they stay at the room position.
+  Animation, drawing, collisions and light composition continue. Launched,
+  fading or killed actors are never held, and no host-only latch is needed
+  for saves. The hook is custom-renderer-only, injected at one verified site,
+  with an explicit CMake dependency so the first build recompiles that bank.
+- Spark's `$88:A25E` freeze state selects palette bits `$0A`; thawing returns
+  them to `$08`. His ice chips share animation `$91` and its alternate palette.
+  When resource `$8A` is resident, those authored bindings now retain live
+  colors instead of being replaced with the default orange body palette.
+  Nonresident resources still use the private asset repair path.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-oz5fhi4i` | F5 frame 550: first streaker remains visible at authored X `$05F6`; second waits at `$065D`, neither has crossed into the preceding corridor |
+| `mmx-render-b1germvu` | F5 through frame 740: first stays at X 1526 through frame 672/camera 1226, then moves at frame 688/camera 1249 after native column threshold `$04E0`; second still waits |
+| `mmx-render-1v5jrj1d` | F5 32:9 with expanded capacity on: launched actor and wide light remain visible at room entry |
+| `mmx-render-7q625nmn` | F6 Shotgun Ice frame 90: frozen state `04/0A/04`, blue ice coat, live/replay and native RGB match; capacity off |
+| `mmx-render-58i8ods7` | F6 frame 145: thaw state `04/0A/08`, normal body colors plus pale ice chips, native RGB match; capacity on |
+
+All three CTests, strict C warnings and injector drift checks pass. Replays
+cover 4:3, 16:9, 21:9, 32:9 and maximum Adaptive width. The raw native oracle
+passes for every sample; Spark's corrected freeze/thaw frames also match the
+native image after asset repair. The existing wide light can intentionally
+alter native color-window pixels near entry. Capacity remains opt-in/off by
+default, saves are preserved, and all work remains on the spike branch.
 
 ## Validation recorded on 2026-09-13/14
 

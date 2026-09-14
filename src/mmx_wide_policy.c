@@ -119,6 +119,20 @@ void MmxWidePolicy_EndWideSpawnPass(MmxWideSpawnCursor *cursor,
   cursor->valid = true;
 }
 
+bool MmxWidePolicy_StreakerWaiting(const uint8_t ram[0x20000], uint16_t object) {
+  if (!ram || ram[0x1f7a] != 6 || object < 0xe68 || object > 0x1228 ||
+      (object & 63) != 0x28 || !ram[object] || ram[object + 10] != 0x37 ||
+      ram[object + 1] != 2 || ram[object + 2] || ram[object + 3] || !ram[object + 0x27])
+    return false;
+  /* Keep the early-visible actor at its authored room position until its
+   * 32-pixel event column reaches the native scan. $87:A6BA then advances
+   * its beam state; a launched/fading actor must never be parked again.
+   * This needs no host latch, so saves retain the same waiting behavior. */
+  unsigned column = read_word(ram, object + 5) & ~31u;
+  unsigned camera_column = read_word(ram, 0x1e4d) & ~31u;
+  return column < camera_column || column > camera_column + 256;
+}
+
 bool MmxWidePolicy_IsBossEncounter(uint8_t object_id) {
   /* The eight Mavericks and Bospider call the shared defeated-boss guard
    * $84:AADD during initialization. The other fortress encounters have

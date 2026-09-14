@@ -265,7 +265,7 @@ import re
 import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
-           "/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/",
+           "/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/", "/*WS-STREAKER-WAIT*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
            "/*WS-CHRBIND-PARENT*/", "/*MSU1-MUSIC*/", "/*MSU1-STAGE*/")
@@ -758,6 +758,23 @@ def apply_flyer_leash(lines, verbose):
     return out, count
 
 
+def apply_streaker_wait(lines, verbose):
+    """Keep early-visible streakers in place until their native event column.
+
+    Skip only horizontal movement, retaining animation, drawing, collision
+    and the existing light composition in the rest of the actor update.
+    """
+    out, count = [], 0
+    for line in lines:
+        out.append(line)
+        trace = RE_TRACE.search(line)
+        if trace and canon_pc24(int(trace[1], 16)) == 0x07A597:
+            indent = line[:len(line) - len(line.lstrip())]
+            out.append(f"{indent}/*WS-STREAKER-WAIT*/ {{ extern int MmxWsStreakerWaiting(uint16); if (MmxWsStreakerWaiting(cpu->D)) goto L_A59B_M1X1; }}\n")
+            count += 1
+    return out, count
+
+
 def apply_ride_armor_cull(lines, verbose):
     """Widen only the first (horizontal) compare in $83:8948."""
     out, block, compared, pending, count = [], None, None, False, 0
@@ -1056,6 +1073,7 @@ def main():
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
         (apply_flyer_leash, "/*WS-FLYER-LEASH*/"),
+        (apply_streaker_wait, "/*WS-STREAKER-WAIT*/"),
         (apply_ride_armor_cull, "/*WS-ARMOR-CULL*/"),
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
@@ -1118,7 +1136,7 @@ def main():
         return 1
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
     if not args.restore:
-        for marker in ("/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/"):
+        for marker in ("/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/", "/*WS-STREAKER-WAIT*/"):
             if effective_counts.get(marker, 0) != 1:
                 print(f"ERROR: expected exactly 1 {marker} hook, found {effective_counts.get(marker, 0)}", file=sys.stderr)
                 return 1
