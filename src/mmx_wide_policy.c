@@ -119,18 +119,55 @@ void MmxWidePolicy_EndWideSpawnPass(MmxWideSpawnCursor *cursor,
   cursor->valid = true;
 }
 
-bool MmxWidePolicy_StreakerWaiting(const uint8_t ram[0x20000], uint16_t object) {
+static bool unstarted_streaker(const uint8_t ram[0x20000], uint16_t object) {
   if (!ram || ram[0x1f7a] != 6 || object < 0xe68 || object > 0x1228 ||
       (object & 63) != 0x28 || !ram[object] || ram[object + 10] != 0x37 ||
       ram[object + 1] != 2 || ram[object + 2] || ram[object + 3] || !ram[object + 0x27])
     return false;
-  /* Keep the early-visible actor at its authored room position until its
-   * 32-pixel event column reaches the native scan. $87:A6BA then advances
-   * its beam state; a launched/fading actor must never be parked again.
-   * This needs no host latch, so saves retain the same waiting behavior. */
+  return true;
+}
+
+void MmxWidePolicy_StreakerEntrance(uint8_t ram[0x20000], uint16_t object, unsigned margin) {
+  if (!margin || !unstarted_streaker(ram, object)) return;
+  /* Run once after $87:A527 has chosen the original flight direction.
+   * The native event starts the encounter, then the moving actor enters
+   * from beyond the wide edge instead of appearing in its middle. */
+  int lead = (int)margin + 32;
+  int x = read_word(ram, object + 5) + (ram[object + 0xb] ? -lead : lead);
+  write_word(ram, object + 5, (uint16_t)x);
+  write_word(ram, object + 0x22, (uint16_t)x);
+}
+
+bool MmxWidePolicy_RecoverParkedStreaker(uint8_t ram[0x20000], uint16_t object, uint16_t authored_x) {
+  if (!MmxWidePolicy_IsStageScene(ram) || !unstarted_streaker(ram, object)) return false;
+  if (ram[object + 0x27] != 2 || read_word(ram, object + 5) != authored_x) return false;
   unsigned column = read_word(ram, object + 5) & ~31u;
   unsigned camera_column = read_word(ram, 0x1e4d) & ~31u;
-  return column < camera_column || column > camera_column + 256;
+  unsigned flag = read_word(ram, object + 0xc);
+  unsigned owner = ram[object + 0x2d];
+  if (column <= camera_column + 256 || flag < 0xfa00 || flag > 0xfffb ||
+      ram[flag] != 1 || (owner != 0x40 && owner != 0x80)) return false;
+  /* Older spike saves contain early, parked actors ahead of the untouched
+   * native event cursor. Mirror $87:A94F / $82:8387 so that cursor can
+   * allocate them at the proper time. Never resurrect an attacked actor. */
+  ram[owner == 0x40 ? 0xaa1 : 0xaaf] = 0;
+  ram[owner == 0x40 ? 0xaa8 : 0xab6] = 0;
+  ram[0x1f2c] &= (uint8_t)~owner;
+  if (!ram[0x1f2c]) ram[0xc9] = 0;
+  ram[flag] = 0;
+  write_word(ram, object, 0); write_word(ram, object + 2, 0); write_word(ram, object + 0xe, 0);
+  return true;
+}
+
+uint16_t MmxWidePolicy_ChainPlatformLine(const uint8_t ram[0x20000], uint16_t object,
+                                      uint16_t line, unsigned margin) {
+  /* $81:F97A parameters 3/4 only create/remove the airport chain platforms;
+   * the other parameters move the camera, palette or unrelated mechanisms. */
+  if (!ram || ram[0x1f7a] != 5 || object < 0x1d08 || object >= 0x1e08 ||
+      (object & 15) != 8 || ram[object + 0xa] != 4) return line;
+  if (ram[object + 0xb] == 3) return (uint16_t)(line - margin);
+  if (ram[object + 0xb] == 4) return (uint16_t)(line + margin);
+  return line;
 }
 
 bool MmxWidePolicy_IsBossEncounter(uint8_t object_id) {
@@ -175,8 +212,8 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
 
   /* Boss records belong to the native scan, just like camera/door events.
    * Its independent cursor reaches them at the authored arena boundary.
-   * Ordinary enemies, including the light streakers, remain visible early. */
-  if (kind == 3 && MmxWidePolicy_IsBossEncounter(object_id))
+   * Streakers also retain their room timing, with a moving offscreen entry. */
+  if (kind == 3 && (MmxWidePolicy_IsBossEncounter(object_id) || object_id == 0x37))
     return native_pass;
 
   return native_pass ? kind != 3 : kind == 3;

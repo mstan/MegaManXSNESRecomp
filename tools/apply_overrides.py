@@ -266,6 +266,7 @@ import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/", "/*WS-STREAKER-WAIT*/",
+           "/*WS-STREAKER-ENTRY*/", "/*WS-CHAIN-PLATFORM*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
            "/*WS-CHRBIND-PARENT*/", "/*MSU1-MUSIC*/", "/*MSU1-STAGE*/")
@@ -758,19 +759,35 @@ def apply_flyer_leash(lines, verbose):
     return out, count
 
 
-def apply_streaker_wait(lines, verbose):
-    """Keep early-visible streakers in place until their native event column.
-
-    Skip only horizontal movement, retaining animation, drawing, collision
-    and the existing light composition in the rest of the actor update.
-    """
-    out, count = [], 0
+def apply_streaker_entry(lines, verbose):
+    """Keep native timing, but start the moving actor beyond the wide edge."""
+    # Migrate the previous spike's parked-actor hook in existing generations.
+    lines = [line for line in lines if '/*WS-STREAKER-WAIT*/' not in line]
+    out, count, block = [], 0, None
     for line in lines:
         out.append(line)
         trace = RE_TRACE.search(line)
-        if trace and canon_pc24(int(trace[1], 16)) == 0x07A597:
+        if trace:
+            block = canon_pc24(int(trace[1], 16))
+        # After the deadline guard so a yield cannot apply the offset twice.
+        if block == 0x07A590 and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
             indent = line[:len(line) - len(line.lstrip())]
-            out.append(f"{indent}/*WS-STREAKER-WAIT*/ {{ extern int MmxWsStreakerWaiting(uint16); if (MmxWsStreakerWaiting(cpu->D)) goto L_A59B_M1X1; }}\n")
+            out.append(f"{indent}/*WS-STREAKER-ENTRY*/ {{ extern void MmxWsStreakerEntrance(uint16); MmxWsStreakerEntrance(cpu->D); }}\n")
+            count += 1
+    return out, count
+
+
+def apply_chain_platform(lines, verbose):
+    """Widen only the chain-platform create/remove switches at $81:F97A."""
+    out, block, count = [], None, 0
+    for line in lines:
+        out.append(line)
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace[1], 16))
+        match = re.match(r"^(\s*)uint16 (_v\d+) = cpu_read16\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0000 \+ cpu->X\)\);", line)
+        if block == 0x01F97A and match:
+            out.append(f"{match[1]}/*WS-CHAIN-PLATFORM*/ {{ extern uint16 MmxWsChainPlatformLine(CpuState *, uint16); {match[2]} = MmxWsChainPlatformLine(cpu, {match[2]}); }}\n")
             count += 1
     return out, count
 
@@ -1073,7 +1090,8 @@ def main():
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
         (apply_flyer_leash, "/*WS-FLYER-LEASH*/"),
-        (apply_streaker_wait, "/*WS-STREAKER-WAIT*/"),
+        (apply_streaker_entry, "/*WS-STREAKER-ENTRY*/"),
+        (apply_chain_platform, "/*WS-CHAIN-PLATFORM*/"),
         (apply_ride_armor_cull, "/*WS-ARMOR-CULL*/"),
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
@@ -1136,9 +1154,10 @@ def main():
         return 1
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
     if not args.restore:
-        for marker in ("/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/", "/*WS-STREAKER-WAIT*/"):
-            if effective_counts.get(marker, 0) != 1:
-                print(f"ERROR: expected exactly 1 {marker} hook, found {effective_counts.get(marker, 0)}", file=sys.stderr)
+        for marker, expected in (("/*WS-FLYER-LEASH*/", 1), ("/*WS-ARMOR-CULL*/", 1),
+                                 ("/*WS-STREAKER-ENTRY*/", 1), ("/*WS-CHAIN-PLATFORM*/", 2)):
+            if effective_counts.get(marker, 0) != expected:
+                print(f"ERROR: expected exactly {expected} {marker} hook(s), found {effective_counts.get(marker, 0)}", file=sys.stderr)
                 return 1
     if not args.restore and chrbind_found != EXPECTED_CHRBIND_SITES:
         print(

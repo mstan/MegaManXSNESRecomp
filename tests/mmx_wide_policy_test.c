@@ -109,26 +109,51 @@ static void test_spawn_cursors_are_independent(void) {
   assert(cursor.valid);
 }
 
-static void test_streaker_wait(void) {
+static void test_streaker_entry_and_recovery(void) {
   memset(ram, 0, sizeof(ram));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4;
   ram[0x1f7a] = 6; ram[0xe68] = 1; ram[0xe69] = 2;
   ram[0xe72] = 0x37; ram[0xe8f] = 2;
   put(0xe6d, 0x5f6); put(0x1e4d, 0x340);
-  assert(MmxWidePolicy_StreakerWaiting(ram, 0xe68));
-  put(0x1e4d, 0x4df); assert(MmxWidePolicy_StreakerWaiting(ram, 0xe68));
-  put(0x1e4d, 0x4e0); assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68));
-  put(0x1e4d, 0x640); assert(MmxWidePolicy_StreakerWaiting(ram, 0xe68));
-  put(0x1e4d, 0x5ff); assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68));
-  put(0x1e4d, 0x340); ram[0xe6a] = 2;
-  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Already launched. */
+  put(0xe74, 0xfa7a); ram[0xfa7a] = 1; ram[0xe95] = 0x40; ram[0x1f2c] = 0xc0;
+  for (unsigned m = 0; m <= 384; m += 8) {
+    put(0xe6d, 0x5f6); ram[0xe73] = 0;
+    MmxWidePolicy_StreakerEntrance(ram, 0xe68, m);
+    assert(get(0xe6d) == 0x5f6 + (m ? m + 32 : 0));
+    if (m) assert(!MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
+    put(0xe6d, 0x5f6); ram[0xe73] = 1;
+    MmxWidePolicy_StreakerEntrance(ram, 0xe68, m);
+    assert(get(0xe6d) == 0x5f6 - (m ? m + 32 : 0));
+  }
+  put(0xe6d, 0x5f6); ram[0xe6a] = 2;
+  assert(!MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
   ram[0xe6a] = 0; ram[0xe6b] = 2;
-  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Fading. */
-  ram[0xe6b] = 0; ram[0xe8f] = 0;
-  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Killed before launch. */
-  ram[0xe8f] = 2; ram[0xe72] = 0x31;
-  assert(!MmxWidePolicy_StreakerWaiting(ram, 0xe68)); /* Other actor. */
-  assert(!MmxWidePolicy_StreakerWaiting(ram, 0));
-  assert(!MmxWidePolicy_StreakerWaiting(NULL, 0xe68));
+  assert(!MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
+  ram[0xe6b] = 0; ram[0xe8f] = 1;
+  assert(!MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
+  ram[0xe8f] = 2; put(0x1e4d, 0x4e0);
+  assert(!MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
+  put(0x1e4d, 0x340);
+  assert(MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
+  assert(!ram[0xe68] && !ram[0xfa7a] && ram[0x1f2c] == 0x80);
+  assert(!MmxWidePolicy_RecoverParkedStreaker(ram, 0xe68, 0x5f6));
+  assert(!MmxWidePolicy_RecoverParkedStreaker(NULL, 0xe68, 0x5f6));
+}
+
+static void test_chain_platform_switches(void) {
+  memset(ram, 0, sizeof(ram)); ram[0x1f7a] = 5;
+  ram[0x1d12] = 4; ram[0x1d13] = 3;
+  assert(MmxWidePolicy_ChainPlatformLine(ram, 0x1d08, 256, 0) == 256);
+  uint16_t entry = MmxWidePolicy_ChainPlatformLine(ram, 0x1d08, 256, 384);
+  assert((int16_t)(128 - entry) >= 0); /* READY arrival is already inside. */
+  ram[0x1d13] = 4;
+  assert(MmxWidePolicy_ChainPlatformLine(ram, 0x1d08, 0x3b0, 384) == 0x530);
+  for (unsigned param = 0; param < 12; ++param) if (param != 3 && param != 4) {
+    ram[0x1d13] = (uint8_t)param;
+    assert(MmxWidePolicy_ChainPlatformLine(ram, 0x1d08, 256, 384) == 256);
+  }
+  ram[0x1d13] = 3; ram[0x1f7a] = 6;
+  assert(MmxWidePolicy_ChainPlatformLine(ram, 0x1d08, 256, 384) == 256);
 }
 
 static void test_spawn_record_ownership(void) {
@@ -145,8 +170,8 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 3, 0x22, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, true));
-  assert(MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, false));
-  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, true));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, true));
   /* The same boss IDs recur in fortress stages. No per-stage exception
    * may put any encounter back into the widened ordinary-enemy scan. */
   const uint8_t bosses[] = {2,5,7,0x0a,0x0c,0x14,0x31,0x52,0x5d,0x62,0x63,0x65,3,0x22};
@@ -188,7 +213,8 @@ int main(void) {
   test_non_door_stack();
   test_spawn_cursors_are_independent();
   test_spawn_record_ownership();
-  test_streaker_wait();
+  test_streaker_entry_and_recovery();
+  test_chain_platform_switches();
   test_bee_camera_and_descent();
   test_flyer_and_armor_range();
   return 0;

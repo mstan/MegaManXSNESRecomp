@@ -24,7 +24,10 @@ uint16_t MmxWidePolicy_BeeEntrance(uint8_t ram[0x20000], uint16_t object,
 bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index);
 /* Enemy-family identity, shared by original stages and fortress rematches. */
 bool MmxWidePolicy_IsBossEncounter(uint8_t object_id);
-bool MmxWidePolicy_StreakerWaiting(const uint8_t ram[0x20000], uint16_t object);
+void MmxWidePolicy_StreakerEntrance(uint8_t ram[0x20000], uint16_t object, unsigned margin);
+bool MmxWidePolicy_RecoverParkedStreaker(uint8_t ram[0x20000], uint16_t object, uint16_t authored_x);
+uint16_t MmxWidePolicy_ChainPlatformLine(const uint8_t ram[0x20000], uint16_t object,
+                                      uint16_t line, unsigned margin);
 
 typedef struct MmxWideSpawnCursor {
   uint16_t wide;

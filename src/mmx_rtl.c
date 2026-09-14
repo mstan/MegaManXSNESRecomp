@@ -327,7 +327,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 1u
+#define MMX_SAV_CHUNK_VERSION 2u /* Native-timed moving streaker entrances. */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -379,7 +379,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
-      g_load_chunk.version == MMX_SAV_CHUNK_VERSION)
+      g_load_chunk.version >= 1 && g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
     g_load_chunk_ok = 1;
   else
     fprintf(stderr, "[mmx_state] load: bad game chunk (magic=%08x ver=%u)\n",
@@ -391,6 +391,17 @@ static int MmxWsMargin(void);
 void MmxOnStateLoaded(uint32_t version) {
   MmxRendererReset();
   s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
+  if (g_mmx_custom_renderer && (!g_load_chunk_ok || g_load_chunk.version < 2)) {
+    for (uint16 object = 0xe68; object <= 0x1228; object += 64) {
+      uint16 flag = g_ram[object + 12] | (g_ram[object + 13] << 8);
+      if (flag < 0xfa00 || flag > 0xfffb) continue;
+      uint16 record = g_ram[flag + 3] | (g_ram[flag + 4] << 8);
+      if (record < 0x8000 || record > 0xfff9) continue;
+      const uint8 *event = RomPtr(0x850000u | record);
+      if ((event[0] & 15) == 3 && event[3] == 0x37)
+        MmxWidePolicy_RecoverParkedStreaker(g_ram, object, (event[5] | (event[6] << 8)) & 0x1fff);
+    }
+  }
   if (version < 5 || !g_load_chunk_ok) {
     /* Legacy v4 save: no chunk, no rebuild — preserve the historical
      * behavior exactly (live fibers limp along; loads are only reliable
@@ -1070,6 +1081,8 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint8 *descriptor = RomPtr(0x850000u | rec);
   const uint8 object_id = descriptor[3];
   if (s_ws_spawn_pass.collectibles) return kind == 0 && object_id == 0x0b;
+  if (!g_mmx_custom_renderer && kind == 3 && object_id == 0x37)
+    return anchor == s_ws_spawn_pass.wide_anchor;
   int allowed = 1;
   if (anchor == s_ws_spawn_pass.wide_anchor) {
     allowed = MmxWidePolicy_SpawnRecordAllowed(
@@ -1144,10 +1157,34 @@ uint16 MmxWsEnemyActivationDistance(uint16 v, uint16 object) {
   return (uint16)(v + m);
 }
 
-int MmxWsStreakerWaiting(uint16 object) {
+void MmxWsStreakerEntrance(uint16 object) {
   extern uint8_t g_ram[0x20000];
-  return g_mmx_custom_renderer && MmxWsSpawnWide() && MmxWsMargin() &&
-      MmxWidePolicy_StreakerWaiting(g_ram, object);
+  if (g_mmx_custom_renderer && MmxWsSpawnWide())
+    MmxWidePolicy_StreakerEntrance(g_ram, object, MmxWsMargin());
+}
+
+uint16 MmxWsChainPlatformLine(CpuState *cpu, uint16 line) {
+  if (!g_mmx_custom_renderer || !MmxWsSpawnWide() || cpu->X != 5) return line;
+  unsigned margin = MmxWsMargin();
+  uint16 adjusted = MmxWidePolicy_ChainPlatformLine(g_ram, cpu->D, line, margin);
+  if (adjusted == line) return line;
+  uint16 player = g_ram[0xbad] | (g_ram[0xbae] << 8);
+  bool right = (int16)(player - adjusted) >= 0;
+  bool inside = g_ram[cpu->D + 0xb] == 3 ? right : !right;
+  for (unsigned object = 0x1628; inside && object < 0x1928; object += 0x30)
+    if (g_ram[object] && g_ram[object + 10] == 0x0e) inside = false;
+  if (inside) {
+    /* F944 initializes the switch state without firing an edge. Catch up
+     * initial loads already inside the widened interval with the original
+     * idempotent allocator. Its later native call cannot double platforms. */
+    CpuState saved = *cpu;
+    uint8 scratch[0x20]; memcpy(scratch, g_ram, sizeof(scratch));
+    uint32 bank = (uint32)cpu->PB << 16;
+    (void)cpu_dispatch_call_pc(cpu, bank | 0xFAC5u, bank | 0xF97Au);
+    memcpy(g_ram, scratch, sizeof(scratch));
+    *cpu = saved;
+  }
+  return adjusted;
 }
 
 /* bank_03_FDD3 camera-line trigger compare. Tilemap screen staging

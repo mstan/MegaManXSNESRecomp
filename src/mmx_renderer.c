@@ -285,8 +285,7 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   if ((sc & 1) && (tx & 32)) a += 1024;
   if ((sc & 2) && (ty & 32)) a += (sc & 1) ? 2048 : 1024;
   uint16_t tile = r->vram[a & 0x7fff];
-  bool roof_sky = layer == 1 && frame.ram[0x1f7a] == 5 && word(frame.ram, 0x1e50) >= 0x300;
-  if (stage && size == 8 && layer < 2 && !roof_sky && (x < 0 || x >= 256)) {
+  if (stage && size == 8 && layer < 2 && (x < 0 || x >= 256)) {
     int wx, wy;
     if (layer == 0) {
       wx = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e4d), p->hScroll[0]) + x;

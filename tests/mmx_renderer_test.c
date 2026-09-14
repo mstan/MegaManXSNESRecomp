@@ -233,6 +233,26 @@ static void distant_doors(void) {
   capture(); assert(MmxRendererDraw(output, v, false));
   for (int x = 304; x < 336; ++x) assert(output[80 * v.width + v.extra + x - 500] == (x >= 320 ? 0xff0000u : 0));
 }
+static void storm_background_prefill(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 5;
+  put_word(0x1e50, 0x600); ram[0x1e89] = 0x0e;
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  ram[0xec01] = 1;
+  for (int i = 0; i < 256; ++i) put_word(0xa800 + i * 2, 1);
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 1);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 2;
+  ppu.bgXsc[1] = 8; ppu.cgram[1] = 31;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  /* The native VRAM tilemap remains blank, while the retained next screen
+   * contains the complete mountain/road map during Storm's arrival. */
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra + 128] == 0);
+  assert(output[80 * v.width + v.extra + 320] == 0xff0000);
+  assert(output[80 * v.width + v.extra - 320] == 0xff0000);
+}
 static void resource_decode(void) {
   memset(rom_bytes, 0, sizeof(rom_bytes));
   /* Two section lists: resource 1 is available in the future section only,
@@ -412,4 +432,4 @@ static void spark_effects(void) {
   assert(output[50 * v.width + v.extra - 100] == 0);
   assert(output[50 * v.width + v.extra + 100] == 0xff0000);
 }
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); resource_decode(); spark_effects(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); return 0; }

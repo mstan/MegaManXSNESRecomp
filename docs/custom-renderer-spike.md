@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, seventh batch)
+## Current owner playtest checklist (2026-09-14, eighth batch)
+
+- [x] F1: replace parked streakers with moving entrances that retain room timing.
+- [x] F3: prefill Storm Eagle's background so arrival has no blue gaps.
+- [x] F3: show the chain platforms throughout the adaptive view.
+
+These three fixes have capture/test evidence below; owner playtest acceptance
+is still pending.
+
+## Previous owner playtest checklist (seventh batch)
 
 - [x] F5: keep restored streaker/light visuals, but prevent attacks outside their room before entry.
 - [x] F6: preserve Spark Mandrill's ice covering when Shotgun Ice freezes him.
@@ -97,8 +106,9 @@ and OAM. The host compositor reads those snapshots without running guest code
 or writing guest memory. Native terrain samples use captured VRAM; wider BG1
 and BG2 samples use MMX's retained level maps and ROM metatile definitions.
 BG1 uses the full camera plus raster scroll phase. BG2 uses the streamer's
-retained coordinates. Stage edges reflect terrain. The existing Storm Eagle
-roof exception and Launch Octopus submarine entrance mask are retained.
+retained coordinates. Stage edges reflect terrain. Storm Eagle's airport sky
+also uses the complete retained map. The Launch Octopus submarine entrance
+mask is retained.
 
 The generated D76A hook records actual metasprite drawing data before native
 clipping. It neither widens the native OAM emission gate nor alters CPU state.
@@ -468,6 +478,8 @@ qualification are still needed before replacing the released renderer.
 
 ## Seventh playtest: streaker activation and Spark's ice coat
 
+The eighth batch below supersedes this batch's parked-streaker movement rule.
+
 The owner accepted the restored streaker/light rendering but reported that
 F5 still attacks outside the room. The updated F6 is now the Spark Mandrill
 fight with Shotgun Ice equipped. Immutable copies are in `seventh-saves`.
@@ -501,6 +513,56 @@ passes for every sample; Spark's corrected freeze/thaw frames also match the
 native image after asset repair. The existing wide light can intentionally
 alter native color-window pixels near entry. Capacity remains opt-in/off by
 default, saves are preserved, and all work remains on the spike branch.
+
+## Eighth playtest: moving entrances and Storm Eagle prefill
+
+Current F1 contains parked streakers saved by the seventh build. Current F3
+is Storm Eagle's arrival. Immutable source copies are in `eighth-saves`.
+
+- Streaker `$37` uses the original event column to start its encounter. The
+  initialization hook at `$87:A590`, after orientation and before drawing,
+  moves its starting point one wide margin plus 32 pixels toward its entrance
+  side. Its original six-pixel flight runs continuously; the accepted wide
+  light composition is unchanged. The old movement-skip hook is removed,
+  including when applying overrides to an existing generated tree. The legacy
+  renderer retains its earlier event ownership.
+- Old parked saves release only untouched, healthy, unstarted streakers whose
+  position matches their original event and remains ahead of the native scan.
+  The original event flag and light-window ownership are released together.
+  Game chunk version 2 distinguishes newly saved moving entrances; version 1
+  still loads, with the same 464-byte layout. Moving, damaged and fading actors
+  are excluded from the repair.
+- Storm's BG2 exception was wrapping a partially filled native tilemap. The
+  complete retained screen/metatile map already contains the mountain and road
+  art, so margins now use it during arrival as well as subsequent scrolling.
+- The chain's ten platforms come from `$81:FAC5`, rather than ordinary enemy
+  records. Only Storm's kind-2/id-4 parameter-3/4 create/remove switches widen
+  their horizontal interval. Initial loads inside that interval catch up via
+  the original idempotent allocator. Movement and ride collisions remain the
+  original routines; camera, resource and other mechanism switches stay native.
+
+Evidence under `build-custom/validation` (all runs use capacity off unless
+explicitly noted):
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-iqjeja5z` | F3 frame 300, camera 0: mountains/road prefilled across maximum Adaptive; ten live chain platforms, including visible pieces beyond 4:3 |
+| `mmx-render-oqsgfycs` | F1 held right to frame 190, camera 1219: no parked actors or premature streaker |
+| `mmx-render-2gj4hio1` | F1 frame 225: first entrance visible at the wide edge; allocation at frame 210/camera 1248, initialized world X 1942 at frame 211 |
+| `mmx-render-sqyydwhe` | F1 frame 245: X 1864 to 1768 over 16 frames confirms uninterrupted original flight speed; light visible |
+| `mmx-render-agvtge_m` | Same F1 entrance at live 32:9 |
+| `mmx-render-d1xatpnq` | Live 16:9 F1 remains free of parked enemies while stationary; F3 background prefilled |
+| `mmx-render-1ker7w9r` | F3 approach with capacity on: still ten moving platforms, no duplicate allocation; scripted jump misses the platform and reaches death with full wide output |
+| `mmx-render-de8pulv_` | Spark's Shotgun Ice freeze regression: blue ice coat retained |
+| `mmx-render-38invqko` / `mmx-render-2wyyw8g1` | Final executable: maximum Adaptive Storm prefill/platforms and live 21:9 streaker entrance |
+| `mmx-render-c5nfcolc` / `mmx-render-fual82y9` | Final executable: mod disabled gives native 256 output; legacy gives its existing 342 output, with no custom capture |
+
+The three CTests pass, including background prefill from empty native margin
+tiles, both entrance directions across margins, parked-save exclusions and
+isolated platform switches. Injector counts and strict renderer/policy warnings
+pass. Each capture is replayed at all five aspect settings with zero raw native
+oracle differences; live presentation matches its corresponding replay.
+These are targeted captures, not a completed airport or full-game playthrough.
 
 ## Validation recorded on 2026-09-13/14
 
