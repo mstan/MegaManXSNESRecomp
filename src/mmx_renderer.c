@@ -166,11 +166,12 @@ static void trace_objects(const uint8_t *ram) {
     if (log) fputs("frame,object,state,camera,player_x,enemy_x,enemy_y,pieces,stage,id,health,player_y\n", log);
   }
   unsigned stage = ram[0x1f7a];
-  if (!log || (stage != 0 && stage != 8)) return;
+  if (!log) return;
   for (unsigned i = 0; i < 16; ++i) {
     unsigned d = i == 15 ? 0xe18 : 0xe68 + i * 64;
     bool selected = i == 15 ? stage == 8 :
-        stage == 0 ? ram[d + 10] == 0x22 : ram[d + 10] == 0x36 || ram[d + 10] == 2;
+        MmxWidePolicy_IsBossEncounter(ram[d + 10]) ||
+        (stage == 8 && ram[d + 10] == 0x36) || (stage == 6 && ram[d + 10] == 0x37);
     unsigned state = ram[d] && selected ? ram[d + 1] + 1u : 0;
     if (state == previous[i] && (!state || (tick & 15))) continue;
     previous[i] = state;

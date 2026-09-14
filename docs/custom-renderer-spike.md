@@ -1,6 +1,12 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, fifth batch)
+## Current owner playtest checklist (2026-09-14, sixth batch)
+
+- [x] Restore streaker visibility outside the native view; remove mid-screen spawn regression.
+- [x] Keep the Heart Tank's colors correct near the wide-view edge.
+- [x] F10: defer Spark Mandrill until arena entry, with shared handling for all bosses.
+
+## Previous owner playtest checklist (fifth batch)
 
 - [x] F2: Chill Penguin's ice breath and other abilities use the wrong colors.
 - [x] F5: streaking enemies activate outside their designated room.
@@ -122,8 +128,8 @@ its duplicate in host margins. Native scripted doors retain live PPU output.
 
 Gameplay widening remains separate from drawing. Existing enemy, projectile,
 traffic and helicopter hooks use the custom view's rounded margin. Spawn
-anchors retain 32 pixels of lead beyond that margin. Spark Mandrill's kind-3
-mid-boss controller and kinds 0–2 keep their native scan, with independent
+anchors retain 32 pixels of lead beyond that margin. Boss encounter families
+and kinds 0–2 (except Heart Tanks and Highway traffic) keep their native scan, with independent
 cursors. Vile's protected interval starts earlier when necessary to stop the
 larger custom lookahead from reaching the allocation-sensitive room first.
 Early guest graphics/stage streaming remains disabled in custom mode.
@@ -366,8 +372,9 @@ The owner's updated F2/F5/F6/F7/F9/F10 saves are copied under
   palette bits during its states. When resource `$07` is current, those live
   variants are preserved. Substituting raw tiles from the generic resource
   had erased F10's submitted, collidable enemy.
-- Spark's streaker/controller `$37` now belongs to the native event scan,
-  preserving its room entry. Its color window is composed independently in
+- This batch moved Spark's streaker/controller `$37` to the native scan;
+  the sixth batch below reverses that change after the owner's pop-in report.
+  Its color window is composed independently in
   signed host coordinates using the rounded ROM profile at `$86:D136`.
   This removes the native generator's 0/255 clamp and offscreen entrance
   delay. Two lights, opposite directions, and shrinking exit beams retain
@@ -408,6 +415,51 @@ offscreen rounded lights in both directions and together, and actor-layer
 clipping without changing native BG2. These checks do not claim a complete
 stage playthrough or mid-boss defeat. Source saves remain unchanged; expanded
 sprite capacity remains off by default.
+
+## Sixth playtest: shared boss timing and edge visibility
+
+The current F5/F6/F9/F10 saves are copied under `build-custom/sixth-saves`.
+The new F10 is Spark Mandrill's double-door approach, not the older invisible
+enemy fixture. All three reported items are implemented and replay-validated.
+
+- Boss ownership now uses one stage-independent encounter classification.
+  The eight Mavericks and Bospider share initialization guard `$84:AADD`;
+  Rangda Bangda, D-Rex and Sigma/Velguarder use dedicated intro controllers.
+  Those families, plus Bee Blader and Thunder Slimer, belong to the
+  original native event scan. Independent scan cursors preserve each authored
+  entry boundary without a door-coordinate or per-stage boss exception.
+  Fortress rematches use the same IDs and therefore the same rule. Child
+  effects and ordinary enemies retain their existing allocation paths.
+  Vile's existing protected cutscene interval remains in place.
+- Streaker `$37` is an ordinary wide-spawned enemy again. At maximum width,
+  F5's first streaker allocates at frame 314, camera 832, enemy X 1526:
+  694 pixels from the native left edge, beyond the visible right edge of 640.
+  This restores early visibility instead of popping into the middle. The
+  existing host light composition remains in place.
+- `$81:E99D` binds Heart Tank collectible `$0B` directly to resource `$36`.
+  Its animation `$38` is absent from the enemy resource table. The explicit
+  collectible lookup now supplies its own art/colors when its old palette
+  slot is reused by a neighboring section, and retains current live bindings.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-8r8za99a` | F10 held right through frame 980: Spark allocates at frame 596 with X `$1D0C`, past the second door at `$1D00`; intro state 2 begins at frame 772 |
+| `mmx-render-dr2swwfd` | Mod-off run of the same F10 input: frame-980 RGB output exactly matches the fixed capture's native 256-pixel replay |
+| `mmx-render-_n4r81u1` | Chill Penguin still allocates at frame 605 with X `$1E0C`, past its second door at `$1E00` |
+| `mmx-render-0a1z4crt` | F5 early streaker allocation and movement through frame 550; capacity off |
+| `mmx-render-iuhr8rxk` | F6 widened allocation/render replay with expanded capacity on |
+| `mmx-render-bj16ivma`, `mmx-render-_rm0sfm_` | F9 backs away from resource section 5 into section 4; heart remains pink near X 600 while its old live palette slot contains unrelated blue/green colors |
+
+All custom snapshots pass the raw native oracle, all five aspect replays and
+live/replay agreement. All three CTests and strict C warnings pass. Tests cover
+every classified encounter in every stage, streaker ownership and the Heart
+Tank's dedicated collectible pool/resource lookup. Expanded capacity remains
+opt-in and off by default. The boss family coverage is verified against ROM
+initializers and policy tests; actual arena-entry replays cover Spark Mandrill
+and Chill Penguin. The owner's third-boss playtest and remaining full-stage
+qualification are still needed before replacing the released renderer.
 
 ## Validation recorded on 2026-09-13/14
 

@@ -22,6 +22,8 @@ uint16_t MmxWidePolicy_BeeEntrance(uint8_t ram[0x20000], uint16_t object,
  * is stable: mirrored top, four-way mirrored center, reversed bottom. Return
  * true when row_index belongs to a stack with that structural signature. */
 bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index);
+/* Enemy-family identity, shared by original stages and fortress rematches. */
+bool MmxWidePolicy_IsBossEncounter(uint8_t object_id);
 
 typedef struct MmxWideSpawnCursor {
   uint16_t wide;

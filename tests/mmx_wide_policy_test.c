@@ -123,8 +123,19 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 3, 0x22, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, true));
-  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, false));
-  assert(MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, true));
+  assert(MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, false));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, true));
+  /* The same boss IDs recur in fortress stages. No per-stage exception
+   * may put any encounter back into the widened ordinary-enemy scan. */
+  const uint8_t bosses[] = {2,5,7,0x0a,0x0c,0x14,0x31,0x52,0x5d,0x62,0x63,0x65,3,0x22};
+  for (unsigned stage = 0; stage < 13; ++stage) for (unsigned i = 0; i < sizeof(bosses); ++i) {
+    assert(MmxWidePolicy_IsBossEncounter(bosses[i]));
+    assert(!MmxWidePolicy_SpawnRecordAllowed(stage, 3, bosses[i], false));
+    assert(MmxWidePolicy_SpawnRecordAllowed(stage, 3, bosses[i], true));
+  }
+  assert(!MmxWidePolicy_IsBossEncounter(0x37)); /* A streaker is not an encounter. */
+  assert(!MmxWidePolicy_IsBossEncounter(0x0b)); /* Nor is a Heart Tank. */
+  assert(MmxWidePolicy_SpawnRecordAllowed(0, 3, 0x11, false)); /* Highway traffic enemy. */
   assert(MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x0b, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x0b, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(6, 2, 0x0b, false));

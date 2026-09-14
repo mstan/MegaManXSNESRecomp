@@ -118,6 +118,14 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
   if (!ram) return NULL;
+  /* $81:E99D binds collectible $0B directly to resource $36; animation
+   * $38 has no entry in the enemy resource table. Its old palette slot can
+   * be reused while the tank is still visible in the extended view. */
+  if (object >= 0x1628 && object < 0x1928 && (object - 0x1628) % 0x30 == 0 &&
+      ram[object + 10] == 0x0b && animation == 0x38) {
+    stage_assets(ram[0x1f7a], ram[0x1f08]);
+    return ready[0x36] == 1 ? &assets[0x36] : NULL;
+  }
   /* Penguin breath shares the body's CHR ($61) but deliberately borrows
    * the ice-statue palette ($62), $81:BCAA..BCBA. Animation identity alone
    * must not turn that valid mixed binding back into the boss palette. */

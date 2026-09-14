@@ -119,6 +119,33 @@ void MmxWidePolicy_EndWideSpawnPass(MmxWideSpawnCursor *cursor,
   cursor->valid = true;
 }
 
+bool MmxWidePolicy_IsBossEncounter(uint8_t object_id) {
+  /* The eight Mavericks and Bospider call the shared defeated-boss guard
+   * $84:AADD during initialization. The other fortress encounters have
+   * dedicated intro controllers. Classify the family once, independent of
+   * stage, so rematches obey the same native event scan as first encounters.
+   * These initializers can seize the camera/player before drawing a sprite. */
+  switch (object_id) {
+    case 0x02: /* Chill Penguin */
+    case 0x05: /* Boomer Kuwanger */
+    case 0x07: /* Launch Octopus */
+    case 0x0a: /* Sting Chameleon */
+    case 0x0c: /* Armored Armadillo */
+    case 0x14: /* Flame Mammoth */
+    case 0x31: /* Spark Mandrill */
+    case 0x52: /* Storm Eagle */
+    case 0x5d: /* Rangda Bangda controller */
+    case 0x62: /* D-Rex controller */
+    case 0x63: /* Bospider */
+    case 0x65: /* Sigma / Velguarder encounter controller */
+    case 0x03: /* Thunder Slimer */
+    case 0x22: /* Bee Blader */
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
                                       uint8_t object_id, bool native_pass) {
   kind &= 0x0f;
@@ -132,17 +159,10 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
   /* Heart Tanks are persistent collectibles, not camera/encounter events. */
   if (kind == 0 && object_id == 0x0b) return true;
 
-  /* Spark Mandrill's Thunder Slimer mid-boss controller is authored as kind
-   * 3 even though it is an encounter trigger, not an ordinary margin enemy.
-   * Spawning it early lets it tear itself down before the arena boundary and
-   * the native pass then refuses it, leaving the barrier permanently closed. */
-  /* Highway's Bee Blader also starts an arena camera push in its init,
-   * before its separate descent state. It must not initialize in a margin.
-   * Chill Penguin must wait until X has crossed the second boss door.
-   * Spark's id-$37 light controllers also retain their authored room entry. */
-  if ((stage == 0x06 && kind == 3 && (object_id == 0x03 || object_id == 0x37)) ||
-      (stage == 0x00 && kind == 3 && object_id == 0x22) ||
-      (stage == 0x08 && kind == 3 && object_id == 0x02))
+  /* Boss records belong to the native scan, just like camera/door events.
+   * Its independent cursor reaches them at the authored arena boundary.
+   * Ordinary enemies, including the light streakers, remain visible early. */
+  if (kind == 3 && MmxWidePolicy_IsBossEncounter(object_id))
     return native_pass;
 
   return native_pass ? kind != 3 : kind == 3;

@@ -255,6 +255,23 @@ static void resource_decode(void) {
   for (unsigned i = 0; i < 16; ++i) assert(asset->colors[i] == i);
   asset = MmxRenderAssetsSprite(0, 1, 7); assert(asset && asset->current);
 
+  /* Heart Tanks bind resource $36 without an enemy animation-table entry.
+   * Keep that identity both before and after its section's VRAM allocation. */
+  rom_bytes[0x32d2e] = 0x36;
+  memcpy(rom_bytes + 0x376f7 + 0x36 * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x36 * 2, 0x200);
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  memset(ram, 0, sizeof(ram)); ram[0x1632] = ram[0x1902] = 0x0b;
+  assert(!MmxRenderAssetsSprite(0, 0, 0x38));
+  asset = MmxRenderAssetsObjectSprite(ram, 0x1628, 0x38);
+  assert(asset && asset->id == 0x36 && !asset->current && asset->colors[5] == 5);
+  assert(MmxRenderAssetsObjectSprite(ram, 0x18f8, 0x38) == asset);
+  ram[0x1f08] = 1;
+  asset = MmxRenderAssetsObjectSprite(ram, 0x1628, 0x38);
+  assert(asset && asset->current);
+  ram[0x1632] = 7; assert(!MmxRenderAssetsObjectSprite(ram, 0x1628, 0x38));
+  assert(!MmxRenderAssetsObjectSprite(ram, 0x18f8, 0x37));
+
   /* The rotor borrows resource $2D's palette, but uses permanent page-zero
    * CHR. Its animation is deliberately absent from the enemy asset table. */
   rom_bytes[0x32d2e] = 0x2d; rom_bytes[0x325e5] = 0x2d;
