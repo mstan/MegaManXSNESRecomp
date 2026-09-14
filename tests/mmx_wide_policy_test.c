@@ -68,6 +68,15 @@ static void test_spawn_record_ownership(void) {
 }
 
 int main(void) {
+  assert(!MmxWidePolicy_ForceNativeSpawnTiming(9, 0x8ff, 0));
+  assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0x900, 0));
+  assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0xa80, 0));
+  assert(!MmxWidePolicy_ForceNativeSpawnTiming(9, 0xa81, 0));
+  /* 32:9: rounded margin 216 plus 32-pixel spawn slack. */
+  assert(!MmxWidePolicy_ForceNativeSpawnTiming(9, 0x807, 248));
+  assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0x808, 248));
+  assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0x880, 248));
+  assert(!MmxWidePolicy_ForceNativeSpawnTiming(0, 0x880, 248));
   test_boss_door_stack();
   test_non_door_stack();
   test_spawn_cursors_are_independent();

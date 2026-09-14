@@ -30,5 +30,9 @@ void MmxWidePolicy_EndWideSpawnPass(MmxWideSpawnCursor *cursor,
  * broad kind classification. */
 bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
                                       uint8_t object_id, bool native_pass);
+/* Protect allocation-sensitive Vile scripts before a larger lookahead can
+ * reach their room. A zero lookahead retains the shipped legacy interval. */
+bool MmxWidePolicy_ForceNativeSpawnTiming(uint8_t stage, uint16_t camera,
+                                         unsigned lookahead);
 
 #endif

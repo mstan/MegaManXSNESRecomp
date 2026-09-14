@@ -20,6 +20,7 @@
 #include "snes/ws_shadow.h"
 #include "widescreen.h"
 #include "mmx_wide_preview.h"
+#include "mmx_renderer.h"
 
 #include "types.h"
 #include "mmx_rtl.h"
@@ -160,6 +161,22 @@ static GamepadInfo g_gamepad[2];
 extern Snes *g_snes;
 
 static void MmxDisplay_PreparePpuFrame(void) {
+  if (g_mmx_custom_renderer) {
+    int w = 16, h = 9;
+    if (g_window && g_renderer_funcs.GetOutputSize) g_renderer_funcs.GetOutputSize(&w, &h);
+    g_mmx_custom_view = MmxRendererViewport(g_mmx_custom_aspect, w, h);
+    g_snes_width = g_mmx_custom_view.width;
+    g_ws_active = false;
+    g_ws_extra = 0;
+    PpuBeginDrawing(g_ppu, g_my_pixels, 256 * 4, g_ppu_render_flags);
+    PpuSetExtraSpace(g_ppu, 0);
+    PpuSetWsHudOamShift(g_ppu, 0);
+    PpuSetWsHudOamShiftRange2(g_ppu, 0, 0);
+    PpuSetWidescreenBg3Widen(g_ppu, 0);
+    PpuSetWidescreenLineEnhancer(g_ppu, NULL, NULL);
+    if (g_snes && g_snes->cart) MmxRendererSetRom(g_rom, g_snes->cart->romSize);
+    return;
+  }
   int width = MmxDisplay_ComputeFrameWidth(g_config.widescreen);
   /* Probe/CI determinism: SNESRECOMP_WS_EXTRA pins the margin so measured
    * widescreen geometry never silently follows the window aspect (a probe
@@ -255,7 +272,7 @@ void MmxDisplay_SetWidescreenEnabled(bool enabled) {
 }
 
 bool MmxDisplay_IsWidescreenEnabled(void) { return g_config.widescreen; }
-bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active; }
+bool MmxDisplay_IsWidescreenActive(void) { return g_ws_active || (g_mmx_custom_renderer && g_mmx_custom_view.extra); }
 int MmxDisplay_GetCurrentFrameWidth(void) { return g_snes_width > 0 ? g_snes_width : 256; }
 
 /* Resolve one BG2 8x8 tile directly from MMX's decompressed level map.
@@ -642,6 +659,30 @@ static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, v
 }
 
 void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
+  if (g_mmx_custom_renderer) {
+    static uint32_t output[MMX_RENDER_MAX_WIDTH * 224];
+    extern void MmxWsChrRebindSweep(void);
+    MmxWsChrRebindSweep();
+    MmxRendererBeginFrame(g_ram);
+    g_rtl_game_info->draw_ppu_frame();
+    bool valid = MmxRendererEndFrame((const uint32_t *)g_my_pixels) &&
+                 MmxRendererDraw(output, g_mmx_custom_view, g_mmx_custom_hud);
+    if (!valid) {
+      memset(output, 0, g_snes_width * 224 * sizeof(*output));
+      for (int y = 0; y < 224; ++y)
+        memcpy(output + y * g_snes_width + g_mmx_custom_view.extra,
+               g_my_pixels + y * 256 * 4, 256 * 4);
+    }
+    /* Shared pitch-aware blit and capture diagnostics; no PPU composition. */
+    RtlWidescreenPresent(pixel_buffer, pitch, (const uint8_t *)output, g_snes_width, 224);
+    const char *capture = getenv("MMX_RENDER_CAPTURE");
+    if (capture) {
+      static unsigned count;
+      const char *after = getenv("MMX_RENDER_CAPTURE_FRAME");
+      if (++count == (unsigned)(after ? atoi(after) : 1)) MmxRendererSaveCapture(capture);
+    }
+    return;
+  }
   MmxDisplay_PrepareBg2Shadow();
   /* WS-CHRBIND heal sweep: re-run bank_82_827D_M1X1's OAM tile-base/
    * palette bind for any object that latched it before its VRAM-CHR slot
@@ -877,6 +918,7 @@ static void SdlRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pi
   MmxDisplay_ComputeViewport(width, height, output_width, output_height,
                              SnesDisplayAspect_Clamp(g_config.display_aspect),
                              g_config.ignore_aspect_ratio, false, &viewport);
+  if (g_mmx_custom_renderer) viewport = MmxRendererDestination(g_mmx_custom_view, output_width, output_height);
   g_sdl_present_rect.x = viewport.x;
   g_sdl_present_rect.y = viewport.y;
   g_sdl_present_rect.w = viewport.width;
@@ -1148,14 +1190,12 @@ int main(int argc, char** argv) {
     argv[0] = (char *)AbsolutizePathArg(argv[0], rom_abs, sizeof(rom_abs));
   }
 
-  /* The config is config.ini next to the executable — nothing else,
-   * no directory walking. Anchoring cwd to the exe dir also pins
-   * keybinds.ini, rom.cfg and saves/ there, however the process was
-   * launched. (On read-only installs the anchor declines and cwd
-   * stays authoritative; see launcher.h.) */
+  /* By default anchor config, keybinds, ROM selection and saves to the exe.
+   * Explicit --config keeps the caller's cwd for isolated playtest data.
+   * Read-only installs also keep cwd authoritative; see launcher.h. */
   {
     extern int snesrecomp_anchor_to_exe_dir(void);
-    int anchored = snesrecomp_anchor_to_exe_dir();
+    int anchored = config_file ? 0 : snesrecomp_anchor_to_exe_dir();
     host_report_breadcrumb("exe-dir anchor: %s",
                            anchored ? "ok" : "declined (cwd stays authoritative)");
   }
@@ -1368,9 +1408,8 @@ int main(int argc, char** argv) {
 #endif
 
 #if defined(RECOMP_LAUNCHER)
-        /* cwd is anchored to the exe dir (snesrecomp_anchor_to_exe_dir above),
-         * and recomp_ui.cmake stages assets to <exe>/assets, so "." resolves
-         * assets correctly. */
+        /* Assets are relative to cwd. The default anchor uses the staged
+         * executable assets; an isolated --config runner supplies its own. */
         int act = recomp_launcher_run_window(
             MMX_LAUNCHER_TITLE,
             &ls, &gi, ".", init_rom, rom_path_buf, sizeof(rom_path_buf));
@@ -1941,6 +1980,10 @@ error_reading:;
     uint32 inputs = g_input_state | g_pad_buttons | g_gamepad[0].axis_buttons | g_gamepad[1].axis_buttons << 12;
     inputs |= TickScript();
     inputs |= debug_server_get_controller_inputs();
+    if (g_mmx_custom_renderer) {
+      MmxDisplay_PreparePpuFrame();
+      MmxRendererLatchSprites();
+    }
     RtlRunFrame(inputs | GetActiveControllers() | debug_server_get_controller_active_mask());
 
 #ifdef ENABLE_ORACLE_BACKEND
@@ -2189,6 +2232,7 @@ static void HandleCommand(uint32 j, bool pressed) {
       snesrecomp_sdl_show_cursor(g_cursor != 0);
       break;
     case kKeys_Reset:
+      MmxRendererReset();
       RtlReset(1);
       break;
     case kKeys_Pause: g_paused = !g_paused; break;

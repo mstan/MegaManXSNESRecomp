@@ -1,5 +1,6 @@
 #include "mmx_rtl.h"
 #include "mmx_wide_policy.h"
+#include "mmx_renderer.h"
 #include "variables.h"
 #include "common_cpu_infra.h"
 #include "snes/snes.h"
@@ -386,6 +387,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
 }
 
 void MmxOnStateLoaded(uint32_t version) {
+  MmxRendererReset();
   if (version < 5 || !g_load_chunk_ok) {
     /* Legacy v4 save: no chunk, no rebuild — preserve the historical
      * behavior exactly (live fibers limp along; loads are only reliable
@@ -652,6 +654,7 @@ void MmxDrawPpuFrame(void) {
   int trigger = g_snes->vIrqEnabled ? g_snes->vTimer + 1 : -1;
 
   for (int i = 0; i <= 224; i++) {
+    if (g_mmx_custom_renderer) MmxRendererCaptureLine(g_ppu, i);
     ppu_runLine(g_ppu, i);
     SimpleHdma_DoLine(&hdma_chans[0]);
     SimpleHdma_DoLine(&hdma_chans[1]);
@@ -853,8 +856,9 @@ static int MmxWsMargin(void) {
   extern bool g_ws_active;
   extern int g_ws_extra;
   extern uint8_t g_ram[0x20000];
-  if (!g_ws_active || g_ram[0xD1] != 0x02 || g_ram[0xD2] != 0x04)
+  if ((!g_ws_active && !g_mmx_custom_renderer) || g_ram[0xD1] != 0x02 || g_ram[0xD2] != 0x04)
     return 0;
+  if (g_mmx_custom_renderer) return (g_mmx_custom_view.extra + 7) & ~7;
   return (g_ws_extra + 7) & ~7;
 }
 
@@ -915,6 +919,7 @@ uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
  * D6A7 already packs bit 8 of D76A's 16-bit screen X into the SNES OAM high
  * table, and the widened PPU preserves those positive 256+ coordinates. */
 uint16 MmxWsOamRightLimit(uint16 vanilla_limit) {
+  if (g_mmx_custom_renderer) return vanilla_limit;
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   return (uint16)(vanilla_limit + m);
 }
@@ -927,6 +932,7 @@ uint16 MmxWsOamRightLimit(uint16 vanilla_limit) {
  * widened limit) OR the left-margin window x+16 in [-margin, 0). The
  * PPU's 9-bit OAM X path already renders the negative coordinates. */
 uint16 MmxWsOamXReject(uint16 x_plus_16, uint16 widened_limit) {
+  if (g_mmx_custom_renderer) return x_plus_16 >= widened_limit;
   if (x_plus_16 < widened_limit)
     return 0;
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
@@ -1010,7 +1016,8 @@ static int MmxWsForceNativeSpawnTiming(void) {
   if (g_ram[0x1f7a] != 0x09) return 0;
   uint16 column = (uint16)(g_ram[0x1e4d] |
                            ((uint16)g_ram[0x1e4e] << 8));
-  return column >= 0x0900 && column <= 0x0a80;
+  unsigned lookahead = g_mmx_custom_renderer ? (unsigned)MmxWsMargin() + 32 : 0;
+  return MmxWidePolicy_ForceNativeSpawnTiming(g_ram[0x1f7a], column, lookahead);
 }
 
 /* +32px slack past the visible margin: an anchor of exactly the margin
@@ -1110,6 +1117,7 @@ uint16 MmxWsEnemyActivationDistance(uint16 v) {
  * vertical margins; codes 0x16/0x17 are other trigger classes
  * (camera locks etc.) and must fire at authentic positions. */
 static int MmxWsStageWide(void) {
+  if (g_mmx_custom_renderer) return 0;
   static int s_on = -1;
   if (s_on < 0) {
     const char *e = getenv("SNESRECOMP_WS_STAGE");
@@ -1282,7 +1290,7 @@ static uint32_t s_ws_chrbind_copy_latches_created;
 static int MmxWsChrBindActive(void) {
   extern bool g_ws_active;
   extern uint8_t g_ram[0x20000];
-  return g_ws_active && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
+  return (g_ws_active || g_mmx_custom_renderer) && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
 }
 
 /* Residual Highway crusher repair. The crusher body owns the CHR binding;

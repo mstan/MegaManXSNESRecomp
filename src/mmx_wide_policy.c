@@ -1,5 +1,11 @@
 #include "mmx_wide_policy.h"
 
+bool MmxWidePolicy_ForceNativeSpawnTiming(uint8_t stage, uint16_t camera,
+                                         unsigned lookahead) {
+  unsigned start = lookahead < 0x900 ? 0x900 - lookahead : 0;
+  return stage == 9 && camera >= start && camera <= 0xa80;
+}
+
 bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index) {
   if (!words || (unsigned)row_index >= 3)
     return false;

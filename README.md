@@ -1,5 +1,10 @@
 # MegaManXSNESRecomp
 
+This branch contains the [custom widescreen renderer spike](docs/custom-renderer-spike.md),
+with 16:9, 21:9, 32:9, Adaptive, and HUD anchoring in the widescreen mod.
+The linked notes include the isolated launcher, validation and remaining
+acceptance work before replacing the legacy renderer.
+
 Static recompilation of *Mega Man X* (SNES) into native C, using the
 [snesrecomp](https://github.com/mstan/snesrecomp) framework. This repo
 is the per-game side: the runtime, the recompiled C output, the

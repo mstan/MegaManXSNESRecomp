@@ -7,6 +7,7 @@
 #include "glsl_shader.h"
 #include "config.h"
 #include "mmx_display.h"
+#include "mmx_renderer.h"
 
 #define CODE(...) #__VA_ARGS__
 
@@ -176,6 +177,7 @@ static void OpenGLRenderer_EndDraw(void) {
                              SnesDisplayAspect_Clamp(g_config.display_aspect),
                              g_config.ignore_aspect_ratio, false,
                              &viewport);
+  if (g_mmx_custom_renderer) viewport = MmxRendererDestination(g_mmx_custom_view, drawable_width, drawable_height);
   int viewport_width = viewport.width, viewport_height = viewport.height;
   int viewport_x = viewport.x;
   int viewport_y = viewport.y;

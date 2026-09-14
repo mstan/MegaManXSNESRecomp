@@ -42,6 +42,22 @@ if(BUILD_TESTING)
         tests/mmx_wide_policy_test.c src/mmx_wide_policy.c)
     target_include_directories(mmx_wide_policy_test PRIVATE src)
     add_test(NAME mmx_wide_policy COMMAND mmx_wide_policy_test)
+    add_executable(mmx_renderer_test tests/mmx_renderer_test.c src/mmx_renderer.c src/mmx_display.c src/mmx_wide_policy.c)
+    target_include_directories(mmx_renderer_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    add_test(NAME mmx_custom_renderer COMMAND mmx_renderer_test)
+    add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_display.c src/mmx_wide_policy.c)
+    target_include_directories(mmx_render_capture PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    foreach(mmx_test mmx_display_test mmx_wide_policy_test mmx_renderer_test)
+        if(MSVC)
+            target_compile_options(${mmx_test} PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(${mmx_test} PRIVATE -UNDEBUG)
+        endif()
+    endforeach()
+    if(NOT WIN32)
+        target_link_libraries(mmx_renderer_test PRIVATE m)
+        target_link_libraries(mmx_render_capture PRIVATE m)
+    endif()
 endif()
 
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
@@ -83,6 +99,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_SOURCES}
         # game-specific runtime (shared across both variants)
         src/mmx_display.c
+        src/mmx_renderer.c
         src/main.c
         src/mmx_wide_preview.c
         src/mmx_wide_policy.c
@@ -111,6 +128,9 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         add_custom_target(${TARGET}_widescreen_overrides
             COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py
+                    --gen-dir ${GEN_DIR}
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tools/apply_renderer_capture.py
                     --gen-dir ${GEN_DIR}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Applying ${TARGET} widescreen generated-code overrides"
