@@ -148,24 +148,41 @@ const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
   }
   return MmxRenderAssetsSprite(ram[0x1f7a], ram[0x1f08], animation);
 }
-/* Highway's kind-2 $16/$17 records select BG CHR/palette phases at X
- * boundaries. Other stages can use vertical switches or boss-state offsets;
- * keep their live resources until their ownership has been established. */
+bool MmxRenderAssetsRideArmorPalettePending(const uint8_t ram[0x20000], const uint16_t colors[16]) {
+  if (!ram || !colors || ram[0x1f7a] != 8) return false;
+  stage_assets(ram[0x1f7a], ram[0x1f08]);
+  /* Section 4 replaces resource $4A's cave palette in OBJ slot 5 with
+   * armor resource $49. Binding metadata advances before the palette DMA.
+   * Recognize the exact previous palette, leaving flashes/other colors alone. */
+  return ready[0x49] == 1 && ready[0x4a] == 1 && assets[0x49].current &&
+      memcmp(colors + 1, assets[0x4a].colors + 1, 15 * sizeof(*colors)) == 0 &&
+      memcmp(colors + 1, assets[0x49].colors + 1, 15 * sizeof(*colors)) != 0;
+}
+/* Highway and Chill Penguin's kind-2 $17 records select palettes at X
+ * boundaries. Chill's CHR also switches vertically, so only Highway gets
+ * the horizontal CHR projection below. */
 static bool prepare_background(const uint8_t *ram) {
   unsigned stage = ram[0x1f7a];
-  if (stage != 0 || !range(0x32280, 2)) return false;
+  if ((stage != 0 && stage != 8) || !range(0x32280, 2)) return false;
   if (bg_stage == stage) return true;
   bg_stage = stage;
   memset(bg_phase, 0, sizeof(bg_phase));
   memset(bg_chr_ready, 0, sizeof(bg_chr_ready));
   memset(bg_palette_ready, 0, sizeof(bg_palette_ready));
-  size_t pos = 0x28000 + (word(0x282c2) & 0x7fff);
+  size_t pos = 0x28000 + (word(0x282c2 + stage * 2) & 0x7fff);
   if (!range(pos, 1)) return false;
   unsigned column = rom[pos++];
+  bool first[2] = {true, true};
   for (unsigned guard = 0; guard < 512 && range(pos, 8); ++guard) {
     unsigned x = word(pos + 5), event = rom[pos + 3];
     if ((rom[pos] & 15) == 2 && (event == 0x16 || event == 0x17)) {
       unsigned line = x & 0x7fff;
+      /* The high nibble names the phase on the left of the first boundary.
+       * Chill's cave starts in palette phase 1, not phase 0. */
+      if (first[event - 0x16]) {
+        memset(bg_phase[event - 0x16], rom[pos + 4] >> 4, 8192);
+        first[event - 0x16] = false;
+      }
       if (line < 8192) memset(bg_phase[event - 0x16] + line, rom[pos + 4] & 15, 8192 - line);
     }
     pos += 7;
@@ -174,13 +191,13 @@ static bool prepare_background(const uint8_t *ram) {
   return true;
 }
 static size_t background_list(size_t base, unsigned phase) {
-  unsigned start = word(base), end = word(base + 2);
+  unsigned start = word(base + bg_stage * 2), end = word(base + bg_stage * 2 + 2);
   if (end < start || phase >= (end - start) / 2) return rom_size;
   return base + word(base + start + phase * 2);
 }
 const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
                                             int world_x, unsigned vram_word) {
-  if (!ram || world_x < 0 || world_x >= 8192 || vram_word >= 0x8000 || !prepare_background(ram)) return NULL;
+  if (!ram || ram[0x1f7a] != 0 || world_x < 0 || world_x >= 8192 || vram_word >= 0x8000 || !prepare_background(ram)) return NULL;
   unsigned phase = bg_phase[0][world_x];
   /* RAM records the requested phase before DMA completes. Use private
    * resources even when it matches, so margin art cannot briefly regress. */
@@ -200,10 +217,7 @@ const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
   }
   return bg_chr_valid[phase][vram_word / 16] ? bg_chr[phase] + vram_word * 2 : NULL;
 }
-const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
-                                                             int world_x) {
-  if (!ram || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
-  unsigned phase = bg_phase[1][world_x];
+static const MmxBackgroundPalette *background_palette(unsigned phase) {
   if (!bg_palette_ready[phase]) {
     bg_palette_ready[phase] = true;
     memset(&bg_palette[phase], 0, sizeof(bg_palette[phase]));
@@ -211,6 +225,8 @@ const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0
     for (unsigned guard = 0; guard < 32 && range(p, 3) && word(p) != 0xffff; ++guard, p += 3) {
       size_t source = 0x28000 + (word(p) & 0x7fff);
       unsigned first = rom[p + 2];
+      /* Chill's cave/outdoor phases leave the $20 group unchanged. */
+      if (bg_stage == 8 && first == 0x20) continue;
       if (first + 16 > 128 || !range(source, 32)) continue;
       for (unsigned i = 0; i < 16; ++i) {
         bg_palette[phase].colors[first + i] = (uint16_t)word(source + i * 2);
@@ -219,4 +235,33 @@ const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0
     }
   }
   return &bg_palette[phase];
+}
+const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
+                                                             int world_x) {
+  if (!ram || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
+  return background_palette(bg_phase[1][world_x]);
+}
+uint16_t MmxRenderAssetsFadeColor(uint16_t color, unsigned amount) {
+  unsigned result = 0;
+  for (unsigned shift = 0; shift < 15; shift += 5) {
+    unsigned c = ((color >> shift) & 31) + amount;
+    result |= (c > 31 ? 31 : c) << shift;
+  }
+  return (uint16_t)result;
+}
+unsigned MmxRenderAssetsDeathPaletteFade(const uint8_t ram[0x20000], const uint16_t colors[256]) {
+  if (!ram || !colors || ram[0xd3] != 6 || !prepare_background(ram)) return 0;
+  const MmxBackgroundPalette *base = background_palette(ram[0x1f0a] & 15);
+  /* Death adds the same saturating RGB amount to the live palettes. Infer
+   * only an exact transform of every owned opaque color, from captured CGRAM
+   * (RAM can be a DMA ahead), then apply it to private margin resources too. */
+  for (unsigned fade = 0; fade <= 31; ++fade) {
+    unsigned checked = 0; bool match = true;
+    for (unsigned i = 0; i < 128 && match; ++i) if ((i & 15) && base->valid[i]) {
+      ++checked;
+      match = MmxRenderAssetsFadeColor(base->colors[i], fade) == colors[i];
+    }
+    if (checked && match) return fade;
+  }
+  return 0;
 }

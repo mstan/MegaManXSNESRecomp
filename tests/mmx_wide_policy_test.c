@@ -121,6 +121,8 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(0x06, 3, 0x03, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(0x00, 3, 0x22, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 3, 0x22, true));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, true));
 
   /* Highway traffic remains eligible in both passes. */
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, false));
@@ -128,6 +130,12 @@ static void test_spawn_record_ownership(void) {
 }
 
 int main(void) {
+  memset(ram, 0, sizeof(ram)); ram[0xd1] = 2; ram[0xd2] = 4;
+  for (int scene = 0; scene <= 8; scene += 2) {
+    ram[0xd3] = (uint8_t)scene; assert(MmxWidePolicy_IsStageScene(ram));
+  }
+  ram[0xd3] = 10; assert(!MmxWidePolicy_IsStageScene(ram));
+  ram[0xd2] = 2; ram[0xd3] = 2; assert(!MmxWidePolicy_IsStageScene(ram));
   assert(!MmxWidePolicy_ForceNativeSpawnTiming(9, 0x8ff, 0));
   assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0x900, 0));
   assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0xa80, 0));

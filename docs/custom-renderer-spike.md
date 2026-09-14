@@ -1,6 +1,14 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14 morning)
+## Current owner playtest checklist (2026-09-14, fourth batch)
+
+- [x] F1: outdoor pillar uses inverted colors before approach.
+- [x] F1: Ride Armor briefly flickers to the wrong palette.
+- [x] F2: preserve Adaptive width throughout death and respawn.
+- [x] F3: show each boss door in the wide view without duplicate columns.
+- [x] F4: Chill Penguin must wait until X enters the room through the second door.
+
+## Previous owner playtest checklist (third batch)
 
 - [x] F1: foreground building CHR is scrambled until X moves right.
 - [x] F2: foreground building palettes change correct/wrong/correct on approach.
@@ -100,8 +108,8 @@ HUD selection preserves MMX's first-16-slot reserve and signature-checked
 boss-health runs. The custom compositor relocates those sprites before layer
 composition, leaving their native positions free of duplicates. Door handling
 uses the existing structural three-metatile signature, requires an adjacent
-mate, and skips the authored pair in host margins while retaining native
-scripted doors.
+mate, and retains the column facing the current room while replacing only
+its duplicate in host margins. Native scripted doors retain live PPU output.
 
 Gameplay widening remains separate from drawing. Existing enemy, projectile,
 traffic and helicopter hooks use the custom view's rounded margin. Spawn
@@ -156,7 +164,7 @@ PPU pixels first, then reports `repaired_native_pixels` separately. Correcting
 an invisible native-area enemy intentionally changes those pixels. Raw oracle
 agreement by itself never establishes that a guest graphics binding is valid.
 `MMX_RENDER_OBJECT_TRACE=<csv path>` optionally records Highway bee, Chill
-Penguin flyer, and Ride Armor states with player/enemy positions. It logs
+Penguin boss/flyer, and Ride Armor states with player/enemy positions. It logs
 transitions and periodic samples while those objects are alive.
 
 ## Second playtest: arena push, descent and propellers
@@ -219,8 +227,9 @@ earlier per-side palette substitution. Highway kind-2 events `$16`/`$17`
 select the private CHR/palette phase. BG1 uses its world position; Highway's
 half-speed BG2 projects that position back into the event coordinate system.
 Only the groups/tiles owned by those transfers are replaced. The native
-256-pixel background continues to use captured PPU data. Other stages retain
-their live resources until their vertical/encounter phase rules are verified.
+256-pixel background continues to use captured PPU data. Other stages retained
+their live resources in this batch; Chill's foreground palette ownership is
+added in the fourth batch below.
 
 The private resources remain authoritative in the margins even when RAM says
 the requested phase is current: RAM changes before DMA finishes. A moving F1
@@ -279,6 +288,60 @@ Evidence in `build-custom/validation`:
 
 Source saves are unchanged. All seven reports have fixes and evidence; broader
 full-game qualification and owner acceptance remain open before retiring Legacy.
+
+## Fourth playtest: palettes, death/arrival and Chill doors
+
+The five current reports are fixed on the same branch. The owner's updated
+F1-F4 saves were copied to `build-custom/fourth-saves` for reproducible runs.
+
+Chill's kind-2 `$17` event at world X `$1021` assigns foreground palettes to
+the cave/outdoor sides. The first event's high nibble establishes phase 1 on
+the cave side, rather than assuming phase 0. The compositor projects the
+owned BG1 palette groups into the margins. BG2 keeps its live palette because
+the sky also changes with elevation; Chill's CHR remains live for the same
+reason. The distant outdoor pillar now stays cyan before and after approach.
+
+The usable armor's section binding advances before CGRAM receives its new
+palette. Its exact old cave palette (resource `$4A`) is recognized in the
+captured OBJ colors and replaced with armor resource `$49` during that gap.
+Arbitrary live damage/flash palettes are not treated as a pending transfer.
+
+Stage dispatch `$80:997B` keeps the world active in `$D3` states `$00`, `$02`,
+`$04`, `$06` and `$08`. Those states now retain the selected width through
+level arrival, READY, death and stage clear. Password state `$0A` remains
+pillarboxed. During death, an exact saturating RGB transform inferred from
+captured CGRAM also applies the white fade to private margin resources.
+
+Door deduplication previously removed both columns of a distant closed pair.
+It now keeps the column facing the camera's room, suppressing only the mate.
+Opening/closing still follows the guest's live tilemap edits. Chill Penguin's
+kind-3/id-`$02` allocation belongs to the native scan so the wider lookahead
+cannot start the encounter from the hallway.
+
+Evidence under `build-custom/validation`:
+
+- `mmx-render-gl5p7yv5` captures the corrected distant F1 pillar;
+  `mmx-render-foii88zg` captures F1 at frame 170 during the actual pending
+  armor palette transfer. The armor remains green/yellow. The input harness
+  now accepts button chords such as `right+b` to traverse the cave exit.
+- `mmx-render-bsrahrce` captures F3/F4 with both distant doors present as
+  single columns and a continuous, correctly colored sky.
+- `mmx-render-883h206u` reaches frame 550 of F4's rightward traversal: X is
+  still in the hallway and no Penguin object exists. The full 1,000-frame
+  run `mmx-render-qhrk63h_` first allocates Penguin at frame 605, player X
+  `$1E0C`, after crossing the second-door boundary `$1E00`; its introduction
+  advances to state 2 at frame 781. This verifies entry, not boss defeat.
+- `mmx-render-upregn_g` verifies the full-width death flash at frame 220.
+  `mmx-render-mfll_eq3` and `mmx-render-brf3c59i` sample level setup/black
+  transition and the full-width READY scene at frames 330 and 450.
+- `mmx-render-j_s_x1p9` confirms F9's password screen stays pillarboxed with
+  expanded sprite capacity enabled. The current F1-F4 checks use capacity
+  off; that remains the default.
+- All custom captures replay at 4:3, 16:9, 21:9, 32:9 and maximum Adaptive
+  width with zero raw native pixel differences. Live maximum-width output
+  matches replay. All three CTests and strict C warnings pass, including
+  new tests for scene ownership, both door-facing directions, palette phases,
+  exact pending armor colors, death fades and Penguin event ownership.
 
 ## Validation recorded on 2026-09-13/14
 

@@ -461,6 +461,14 @@ static int g_script_phase;    // 0=holding, 1=waiting
 static int g_script_counter;  // frames left in current phase
 
 static uint32 ParseButtonMask(const char *name) {
+  /* Scripted movement must be able to jump while holding a direction. */
+  const char *plus = strchr(name, '+');
+  if (plus) {
+    char first[64]; size_t length = (size_t)(plus - name);
+    if (!length || length >= sizeof(first)) return 0;
+    memcpy(first, name, length); first[length] = 0;
+    return ParseButtonMask(first) | ParseButtonMask(plus + 1);
+  }
   if (strcmp(name, "start")  == 0) return 0x0008;
   if (strcmp(name, "select") == 0) return 0x0004;
   if (strcmp(name, "up")     == 0) return 0x0010;

@@ -1,9 +1,9 @@
 #include "mmx_wide_policy.h"
 
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
-  /* D1/D2 survive the transition to the password screen; D3 selects the
-   * actual stage loop ($04), password ($0A), and other menu substates. */
-  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] == 4;
+  /* $80:997B: level setup, arrival, play, death and stage-clear all retain
+   * the stage view. The next state ($0A) changes to the password/menu flow. */
+  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] <= 8 && !(ram[0xd3] & 1);
 }
 
 static uint16_t read_word(const uint8_t *ram, unsigned a) {
@@ -134,9 +134,11 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
    * Spawning it early lets it tear itself down before the arena boundary and
    * the native pass then refuses it, leaving the barrier permanently closed. */
   /* Highway's Bee Blader also starts an arena camera push in its init,
-   * before its separate descent state. It must not initialize in a margin. */
+   * before its separate descent state. It must not initialize in a margin.
+   * Chill Penguin must wait until X has crossed the second boss door. */
   if ((stage == 0x06 && kind == 3 && object_id == 0x03) ||
-      (stage == 0x00 && kind == 3 && object_id == 0x22))
+      (stage == 0x00 && kind == 3 && object_id == 0x22) ||
+      (stage == 0x08 && kind == 3 && object_id == 0x02))
     return native_pass;
 
   return native_pass ? kind != 3 : kind == 3;

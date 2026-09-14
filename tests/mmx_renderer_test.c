@@ -148,8 +148,28 @@ static void background_resources(void) {
   /* Camera travel cannot recolor the same authored column. */
   put_word(0x1e4d, 0x900);
   assert(MmxRenderAssetsBackgroundPalette(ram, 0x84f)->colors[0x71] == 1);
-  ram[0x1f7a] = 8;
+  uint16_t faded[256] = {0};
+  for (unsigned i = 0; i < 16; ++i) {
+    unsigned red = i + 26;
+    faded[0x70 + i] = (uint16_t)((red > 31 ? 31 : red) | (10 << 5) | (10 << 10));
+  }
+  ram[0xd3] = 4; assert(MmxRenderAssetsDeathPaletteFade(ram, faded) == 0);
+  ram[0xd3] = 6; assert(MmxRenderAssetsDeathPaletteFade(ram, faded) == 10);
+  assert(MmxRenderAssetsFadeColor(0, 10) == ((10 << 10) | (10 << 5) | 10));
+  assert(MmxRenderAssetsFadeColor(0x1234, 31) == 0x7fff);
+  faded[0x71] = 0; assert(MmxRenderAssetsDeathPaletteFade(ram, faded) == 0);
+  ram[0x1f7a] = 7;
   assert(!MmxRenderAssetsBackgroundPalette(ram, 0x84f));
+  /* Chill's cave palette is phase 1; its first X boundary changes to 2.
+   * No X projection is allowed for its vertically switched CHR. */
+  rom_word(0x282c2 + 16, 0x9000); rom_bytes[0x29005] = 0x12;
+  rom_word(0x32260 + 16, 0x20); rom_word(0x32260 + 18, 0x26);
+  rom_word(0x32284, 0x50); rom_word(0x322b0, 0xa000); rom_bytes[0x322b2] = 0x70; rom_word(0x322b3, 0xffff);
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0x1f7a] = 8;
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x84f)->colors[0x71] == 17);
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x850)->colors[0x71] == 1);
+  assert(!MmxRenderAssetsBackgroundTile(ram, 0x850, 0x3500));
 }
 static void dialogue_and_password(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
@@ -187,6 +207,31 @@ static void highway_arena_sky(void) {
   capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
   assert(MmxRendererDraw(output, v, false));
   for (int x = 0; x < v.width; ++x) assert(output[80 * v.width + x] == 0xff0000);
+}
+static void distant_doors(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 8;
+  put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  const unsigned tiles[3][4] = {{0x6df,0x46df,0x6ef,0x46ef},
+      {0x6ff,0x46ff,0x86ff,0xc6ff}, {0x86ef,0xc6ef,0x86df,0xc6df}};
+  /* Two back-to-back door columns at world 304/320, outside the native view. */
+  ram[0xe801] = 1;
+  for (int y = 0; y < 3; ++y) {
+    for (int x = 3; x <= 4; ++x) put_word(0x2200 + ((y + 4) * 16 + x) * 2, y + 1);
+    for (int q = 0; q < 4; ++q) {
+      rom_word((y + 1) * 8 + q * 2, tiles[y][q]);
+      for (int row = 0; row < 8; ++row) ppu.vram[(tiles[y][q] & 1023) * 16 + row] = 255;
+    }
+  }
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 1;
+  ppu.bgXsc[0] = 0x50; ppu.cgram[17] = 31;
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  for (int x = 304; x < 336; ++x) assert(output[80 * v.width + v.extra + x] == (x < 320 ? 0xff0000u : 0));
+  put_word(0x1e4d, 500); ppu.hScroll[0] = 500;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  for (int x = 304; x < 336; ++x) assert(output[80 * v.width + v.extra + x - 500] == (x >= 320 ? 0xff0000u : 0));
 }
 static void resource_decode(void) {
   memset(rom_bytes, 0, sizeof(rom_bytes));
@@ -244,7 +289,21 @@ static void resource_decode(void) {
   asset = MmxRenderAssetsObjectSprite(ram, 0xe18, 0x4a);
   assert(asset && asset->id == 0x49 && !asset->current && !asset->live_tiles);
   assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x4a));
+  /* The cave palette can survive after the section/armor bind advances.
+   * Repair only that known stale palette, preserving arbitrary live flashes. */
+  rom_bytes[0x32d1e] = 0x4a; rom_word(0x32d1f, 0); rom_word(0x32d21, 4);
+  rom_bytes[0x32d23] = 0x40; rom_bytes[0x32d24] = 255;
+  memcpy(rom_bytes + 0x376f7 + 0x4a * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x4a * 2, 0x200);
+  rom_word(0x30137, 0x9100); rom_bytes[0x31100] = 16; rom_word(0x31101, 0x9100); rom_bytes[0x31103] = 128;
+  uint16_t old_colors[16];
+  for (unsigned i = 0; i < 16; ++i) { old_colors[i] = (uint16_t)(i + 16); rom_word(0x29100 + i * 2, old_colors[i]); }
+  rom_word(0x32cee + 16, 0x20); rom_word(0x32cee + 18, 0x24);
+  ram[0x1f7a] = 8; ram[0x1f08] = 1;
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  assert(MmxRenderAssetsRideArmorPalettePending(ram, old_colors));
+  old_colors[1] = 0x7fff; assert(!MmxRenderAssetsRideArmorPalettePending(ram, old_colors));
   MmxRenderAssetsSetRom(NULL, 0);
   assert(!MmxRenderAssetsSprite(0, 0, 7));
 }
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); resource_decode(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); resource_decode(); return 0; }

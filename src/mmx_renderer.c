@@ -169,7 +169,8 @@ static void trace_objects(const uint8_t *ram) {
   if (!log || (stage != 0 && stage != 8)) return;
   for (unsigned i = 0; i < 16; ++i) {
     unsigned d = i == 15 ? 0xe18 : 0xe68 + i * 64;
-    bool selected = i == 15 ? stage == 8 : ram[d + 10] == (stage == 0 ? 0x22 : 0x36);
+    bool selected = i == 15 ? stage == 8 :
+        stage == 0 ? ram[d + 10] == 0x22 : ram[d + 10] == 0x36 || ram[d + 10] == 2;
     unsigned state = ram[d] && selected ? ram[d + 1] + 1u : 0;
     if (state == previous[i] && (!state || (tick & 15))) continue;
     previous[i] = state;
@@ -310,10 +311,16 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       }
       if (stage_id == 1 && word(frame.ram, 0x1e4d) >= 0xa70 && word(frame.ram, 0x1e4d) < 0xac0 &&
           y >= 0x50 && y < 0xb0 && wx >= 0xbc0 && wx < 0xc40) wx -= 256;
-      if (door_body(wx, wy) && (door_body(wx - 16, wy) || door_body(wx + 16, wy))) {
-        int step = x < 0 ? -16 : 16;
-        /* Skip the whole authored pair, retaining the native scripted door. */
-        for (int i = 0; i < 2 && door_body(wx, wy); ++i) wx += step;
+      if (door_body(wx, wy)) {
+        bool left = door_body(wx - 16, wy), right = door_body(wx + 16, wy);
+        if (left || right) {
+          int boundary = (wx & ~15) + (right ? 16 : 0);
+          bool view_left = word(frame.ram, 0x1e4d) + 128 < (unsigned)boundary;
+          /* Retain the column facing the current room. Only its duplicate
+           * samples the neighboring wall; a distant closed door stays visible. */
+          if (view_left && left) wx += 16;
+          if (!view_left && right) wx -= 16;
+        }
       }
     }
     uint16_t mapped;
@@ -322,6 +329,9 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       /* The city moves at half speed. Express its map column as the player
        * X at which it crosses the native view's center (camera+128). */
       asset_x = layer == 1 && frame.ram[0x1f7a] == 0 ? wx * 2 - 128 : wx;
+      /* Chill's BG2 sky palette also changes with elevation. Its cave-exit
+       * X transition owns foreground art only; keep the live sky colors. */
+      if (layer == 1 && frame.ram[0x1f7a] == 8) asset_x = -1;
     }
   }
   int cx = px & (size - 1), cy = py & (size - 1);
@@ -427,6 +437,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
   bool stage = MmxWidePolicy_IsStageScene(frame.ram);
+  unsigned palette_fade = stage && g_mmx_render_asset_repairs ?
+      MmxRenderAssetsDeathPaletteFade(frame.ram, frame.lines[0].palette) : 0;
   const Piece *pieces = frame.expand && g_mmx_render_asset_repairs ? frame.expanded : frame.pieces;
   unsigned piece_count = frame.expand && g_mmx_render_asset_repairs ? frame.expanded_count : frame.piece_count;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
@@ -436,7 +448,9 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     /* Keep current allocations and their live flashes/animation. Repair
      * missing or stale bindings using the ROM resource's own palette. */
     if (a && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
-        ((s->attr >> 8) & 0x2f) != (unsigned)(a->attributes | s->palette_bits))) piece_assets[i] = a;
+        ((s->attr >> 8) & 0x2f) != (unsigned)(a->attributes | s->palette_bits) ||
+        (s->object == 0xe18 && MmxRenderAssetsRideArmorPalettePending(frame.ram,
+            frame.lines[0].palette + 128 + ((s->attr >> 9) & 7) * 16)))) piece_assets[i] = a;
   }
   for (int y = 0; y < 224; ++y) {
     const Raster *r = &frame.lines[y]; Ppu p;
@@ -501,6 +515,12 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         if (p.mosaic & (1 << layer)) { int size = (p.mosaic >> 4) + 1;
           bx -= ((bx % size) + size) % size; by -= by % size; }
         bg[layer] = background(&p, r, layer, bx, by, stage, &bg_colors[layer]);
+      }
+      if (palette_fade) {
+        for (int layer = 0; layer < 3; ++layer) if (bg_colors[layer] >= 0)
+          bg_colors[layer] = MmxRenderAssetsFadeColor((uint16_t)bg_colors[layer], palette_fade);
+        if (object_colors[sx] >= 0)
+          object_colors[sx] = MmxRenderAssetsFadeColor((uint16_t)object_colors[sx], palette_fade);
       }
       for (int sub = 0; sub < 2; ++sub) {
         for (int layer = 0; layer < 3; ++layer)

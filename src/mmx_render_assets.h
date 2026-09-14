@@ -14,6 +14,9 @@ void MmxRenderAssetsSetRom(const uint8_t *rom, size_t size);
 const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, unsigned sprite);
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation);
+bool MmxRenderAssetsRideArmorPalettePending(const uint8_t ram[0x20000], const uint16_t colors[16]);
+unsigned MmxRenderAssetsDeathPaletteFade(const uint8_t ram[0x20000], const uint16_t colors[256]);
+uint16_t MmxRenderAssetsFadeColor(uint16_t color, unsigned amount);
 typedef struct MmxBackgroundPalette {
   uint16_t colors[128];
   bool valid[128];
