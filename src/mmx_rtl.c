@@ -954,8 +954,9 @@ int MmxWsRealSpawnActive(void) {
  * The normal DCDB call uses the host-owned wide cursor/anchor and admits
  * ordinary type-3 enemies plus narrowly identified Highway traffic. A second
  * host-paired DCDB call restores the guest's native cursor and unmodified 4:3
- * anchor for kinds 0-2. Spark Mandrill's kind-3/id-$03 mid-boss controller is
- * also native-owned. The guest cursor remains save-state-authoritative, so a
+ * anchor for kinds 0-2. Spark's kind-3/id-$03 and Highway's kind-3/id-$22
+ * encounter controllers are also native-owned. The guest cursor remains
+ * save-state-authoritative, so a
  * rejected wide record is still present when native timing reaches it.
  * Type-3 ownership otherwise stays strictly disjoint: an early enemy can be
  * killed before its native anchor without respawning. */
@@ -1082,7 +1083,7 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
   MmxWsSpawnWriteCursor(dpage, s_ws_spawn_pass.native_cursor_before);
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.native_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.native_anchor >> 8);
-  (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Du);
+  (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
   *cpu = saved;
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.wide_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.wide_anchor >> 8);
@@ -1095,13 +1096,15 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
  * 32px of sprite-footprint lead so the large helicopter's outer tiles enter
  * naturally instead of its controller waking only when the center reaches
  * the widened edge. */
-uint16 MmxWsEnemyActivationDistance(uint16 v) {
-  /* Custom mode can prepare the helicopter's art independently. Its entrance
-   * is vertical, from above the screen, so retain the native descent trigger
-   * even when the ordinary enemy scan has already allocated its controller. */
-  if (g_mmx_custom_renderer) return v;
+uint16 MmxWsEnemyActivationDistance(uint16 v, uint16 object) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
+  /* The arena push stays native; only the visible descent gets widescreen
+   * lead. Also release prematurely latched locks in older spike saves. */
+  if (g_mmx_custom_renderer) {
+    extern uint8_t g_ram[0x20000];
+    return MmxWidePolicy_BeeEntrance(g_ram, object, (uint16)(v + m));
+  }
   return (uint16)(v + m);
 }
 

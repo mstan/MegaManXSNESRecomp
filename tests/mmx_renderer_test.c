@@ -155,6 +155,33 @@ static void resource_decode(void) {
   for (unsigned i = 0; i < 32; ++i) assert(asset->tiles[i] == 0x55);
   for (unsigned i = 0; i < 16; ++i) assert(asset->colors[i] == i);
   asset = MmxRenderAssetsSprite(0, 1, 7); assert(asset && asset->current);
+
+  /* The rotor borrows resource $2D's palette, but uses permanent page-zero
+   * CHR. Its animation is deliberately absent from the enemy asset table. */
+  rom_bytes[0x32d2e] = 0x2d; rom_bytes[0x325e5] = 0x2d;
+  memcpy(rom_bytes + 0x376f7 + 0x2d * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x2d * 2, 0x200);
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  memset(ram, 0, sizeof(ram));
+  ram[0x1932] = 0x1f; ram[0x193e] = 0x36; put_word(0x1934, 0xe68); ram[0xe72] = 0x22;
+  asset = MmxRenderAssetsObjectSprite(ram, 0x1928, 0x36);
+  assert(asset && asset->live_tiles && asset->attributes == 0x28);
+  ram[0xe72] = 0x29; assert(!MmxRenderAssetsObjectSprite(ram, 0x1928, 0x36));
+  ram[0xe72] = 0x22; /* A dead parent's retained identity is sufficient. */
+  memset(&ppu, 0, sizeof(ppu)); MmxRendererReset();
+  ram[0xd1] = 2; ram[0xd2] = 4;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16;
+  for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
+  for (int y = 0; y < 8; ++y) ppu.vram[0x40 * 16 + y] = 255;
+  rom_bytes[0x103] = 0x40; put_word(0x18, 0x8100); ram[0x1a] = 0x80;
+  put_word(0, 40); put_word(2, 40);
+  MmxRendererSetRom(rom_bytes, sizeof(rom_bytes)); g_mmx_custom_renderer = true;
+  MmxRendererObserveObject(ram, 0x1928); MmxRendererRecordPiece(ram, 0);
+  MmxRendererLatchSprites(); capture();
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0);
+  assert(MmxRendererDraw(output, v, false));
+  assert(output[40 * v.width + v.extra + 40] == 0x080000);
+  g_mmx_custom_renderer = false;
   MmxRenderAssetsSetRom(NULL, 0);
   assert(!MmxRenderAssetsSprite(0, 0, 7));
 }

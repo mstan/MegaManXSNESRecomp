@@ -130,6 +130,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # edit must invalidate the affected bank in this same build.
         set_property(SOURCE ${GEN_DIR}/bank00_part0a_v2.c APPEND PROPERTY
             OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_renderer_capture.py)
+        set_property(SOURCE ${GEN_DIR}/bank82_part07_v2.c APPEND PROPERTY
+            OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py)
         add_custom_target(${TARGET}_widescreen_overrides
             COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py

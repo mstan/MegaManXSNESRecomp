@@ -331,10 +331,10 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
     int dx = x + c, dest = dx + view.extra;
     if (dest < 0 || dest >= view.width || (margins_only && dx >= 0 && dx < 256)) continue;
     int cx = attr & 0x4000 ? size - 1 - c : c;
-    unsigned number = asset ? raw_tile : attr & 255;
+    unsigned number = asset && !asset->live_tiles ? raw_tile : attr & 255;
     unsigned tile = ((((number >> 4) + row / 8) & 15) << 4) | (((number & 15) + cx / 8) & 15);
     unsigned pixel;
-    if (asset) {
+    if (asset && !asset->live_tiles) {
       const uint8_t *bits = asset->tiles + tile * 32 + (row & 7) * 2;
       unsigned shift = 7 - (cx & 7);
       pixel = ((bits[0] >> shift) & 1) | (((bits[1] >> shift) & 1) << 1) |
@@ -400,7 +400,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
-    const MmxSpriteAsset *a = MmxRenderAssetsSprite(frame.ram[0x1f7a], frame.ram[0x1f08], s->animation);
+    const MmxSpriteAsset *a = MmxRenderAssetsObjectSprite(frame.ram, s->object, s->animation);
     /* Keep current allocations and their live flashes/animation. Repair
      * missing or stale bindings using the ROM resource's own palette. */
     if (a && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
@@ -437,7 +437,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           replaced[slot] = true; center = true;
         }
       }
-      unsigned attr = asset ? (s.attr & 0xd000) | 0x2000 | ((asset->attributes & 15) << 8) : s.attr;
+      unsigned attr = asset ? (s.attr & 0xd000) | 0x2000 | ((asset->attributes & 15) << 8) |
+          (asset->live_tiles ? s.attr & 255 : 0) : s.attr;
       sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset, s.tile, object_colors, true);
     }
     int bar_first = -1, bar_count = 0;

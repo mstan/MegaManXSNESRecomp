@@ -95,8 +95,9 @@ mid-boss controller and kinds 0–2 keep their native scan, with independent
 cursors. Vile's protected interval starts earlier when necessary to stop the
 larger custom lookahead from reaching the allocation-sensitive room first.
 Early guest graphics/stage streaming remains disabled in custom mode.
-The Highway bee's vertical descent keeps its native player-distance trigger;
-allocating its controller in the wider scan no longer advances that entrance.
+The Highway bee controller now belongs to the native scan because its
+initialization starts the arena camera push. Once that boundary is reached,
+its vertical descent receives widescreen lead independently of the lock.
 The extra background view projects ROM-authored palette transitions separately
 from guest CGRAM, including Highway's half-speed BG2 parallax.
 
@@ -121,12 +122,13 @@ captured frames did not exhaust the retail submission budget.
   with 200 submitted pieces confirms that the additional 88 pieces appear
   only when the option is enabled; the available 112 gameplay slots remain
   the cutoff when it is disabled.
-- A controlled bee-boundary test (`mmx-render-ks0qm66s`) uses copies of F3
+- The first controlled bee-boundary test (`mmx-render-ks0qm66s`) uses copies of F3
   with the bee put in waiting state and X placed on either side of the native
   distance threshold. At a distance of 160 it stays in state 2; at 96 it enters
   descent state 4, even with a 32:9 view. This is a boundary test, not a claim
   that a complete F4-to-bee route was played through. The simple walk script
   fell into the intervening gap before reaching the encounter.
+  This distance-only fix is superseded by the encounter correction below.
 - Expanded-capacity regression samples cover Chill Penguin, Highway, the
   Chill door, and the previously healthy Vile fight (`mmx-render-87xxty6j`,
   `mmx-render-c67u9alu`, `mmx-render-l7pb3jrn`). Mod-off and Legacy still produce
@@ -140,6 +142,59 @@ an invisible native-area enemy intentionally changes those pixels. Raw oracle
 agreement by itself never establishes that a guest graphics binding is valid.
 `MMX_RENDER_OBJECT_TRACE=<csv path>` optionally records Highway bee state
 transitions with player/enemy positions for timing investigations.
+
+## Second playtest: arena push, descent and propellers
+
+The owner's new F1/F2 saves exposed two separate gates. `82:B8E6` saves the
+camera limits at object offsets `$3B`/`$31`, then locks both limits to
+`objectX-$F0` immediately. Allocating this controller in the margin therefore
+started a two-pixel-per-frame camera push early. `82:B964` separately waits
+for the player-distance threshold before descending. Restoring only that
+second threshold made the bee late without fixing the premature camera push.
+
+Highway kind-3/id-`$22` now initializes in the native scan, like the existing
+Thunder Slimer exception. For the first bee at `$0AF4`, the native scan reaches
+its 32-pixel column when the camera reaches `$09E0`. After that boundary, the
+descent uses the visible margin plus the existing 32-pixel lead. Older spike
+saves with a waiting bee and its exact premature lock recover the saved
+camera limits until the same native boundary. This recovery does not write
+player/camera positions or unwind an encounter that has already started.
+
+The rotor is effect id `$1F`, animation `$36`, with a Bee Blader parent. Its
+`82:F486` initialization clears the tile base and OBJ page bit: it uses
+permanent page-zero graphics and borrows only resource `$2D`'s palette.
+Renderer repair now recognizes that relationship, retains the live rotor
+animation/CHR, and supplies the missing palette. Substituting the body's
+graphics would be incorrect. Correct current bindings retain live colors.
+This repair works with expanded sprite capacity off; that option stays off
+by default.
+
+Validation artifacts under `build-custom/validation`:
+
+- `mmx-render-iknia7ot` confirms new F1's saved arena lock is released and F2
+  begins descent on the first loaded frame at 32:9. Final rotor verification
+  uses `mmx-render-z4kmde74` (capacity off) and `mmx-render-9a6ex5ri` (on),
+  with all three F1/F2/old-F3 samples passing the
+  raw native pixel oracle and live/replay agreement; expanded queues match
+  the observed submissions in order.
+- A copied, controlled F2 fixture removes only the already allocated bee,
+  its rotor and its own event flag, restores the saved camera limits, and
+  places X/camera just before the spawn column. `mmx-render-3fnlazqz` shows
+  no bee before entry. `mmx-render-qvv_l50q` and `mmx-render-99u5_xvh` show
+  allocation at camera `$09E0` in both 32:9 and 16:9, then lock and descent.
+  These are boundary checks, not a complete Highway playthrough.
+- F2 walking samples pass at 16:9, 21:9 and Adaptive in
+  `mmx-render-6x4patdu`, `mmx-render-pl7kv8ec`, `mmx-render-ul6vxykl`.
+  At 16:9 descent starts after 26 pixels of movement from this manually
+  positioned save, instead of the previous 105-pixel wait.
+- All three CTests pass. Added checks cover the exact camera-lock boundary,
+  recovery without moving X, preserving active encounters, and drawing a
+  rotor from live CHR with the borrowed palette. Strict C warnings pass.
+- The final executable also passes the Chill door snapshots
+  (`mmx-render-fbbwthcq`) and mod-off isolation (`mmx-render-qq6l14m5`).
+
+The existing checkpoint is `384a5fe` on `codex/mmx-custom-renderer-spike`.
+All follow-up work remains on that branch; no main/master merge is intended.
 
 ## Validation recorded on 2026-09-13/14
 

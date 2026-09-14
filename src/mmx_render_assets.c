@@ -90,6 +90,7 @@ static void stage_assets(unsigned stage, unsigned section) {
       a->id = (uint8_t)id; a->tile_base = (uint8_t)(word(p + 1) >> 4);
       a->attributes = (uint8_t)(0x20 | ((word(p + 1) >> 12) & 1) | (rom[p + 5] >> 3));
       a->current = pass == 1;
+      a->live_tiles = false;
       ready[id] = tiles(id, a->tiles) && palette(pal, a->colors) ? 1 : 2;
     }
   }
@@ -108,6 +109,32 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
   stage_assets(stage, section);
   unsigned id = sprite < 256 ? sprite_resource[sprite] : 255;
   return id < 254 && ready[id] == 1 ? &assets[id] : NULL;
+}
+const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
+                                                unsigned object, unsigned animation) {
+  if (!ram) return NULL;
+  /* 82:F486's rotor effect uses animation $36, but binds resource $2D
+   * directly through $7F832D. It is absent from the enemy animation table.
+   * Verify its Bee Blader parent; unrelated users of animation $36 must
+   * retain their own art. The parent need not remain live after detachment. */
+  if (ram[0x1f7a] == 0 && animation == 0x36 && object >= 0x1928 && object <= 0x1be8 &&
+      (object & 31) == 8 && ram[object + 10] == 0x1f) {
+    unsigned parent = ram_word(ram, object + 12);
+    if (parent >= 0xe68 && parent <= 0x1228 && (parent & 63) == 0x28 && ram[parent + 10] == 0x22) {
+      stage_assets(ram[0x1f7a], ram[0x1f08]);
+      if (ready[0x2d] != 1) return NULL;
+      /* F48C clears the tile base and F492 clears the OBJ page bit. The
+       * rotor uses permanent page-zero CHR, borrowing only the bee palette.
+       * Substituting the body's CHR would turn its blades into body tiles. */
+      static MmxSpriteAsset rotor;
+      memcpy(rotor.colors, assets[0x2d].colors, sizeof(rotor.colors));
+      rotor.id = 0x2d; rotor.tile_base = 0;
+      rotor.attributes = assets[0x2d].attributes & 0xfe;
+      rotor.current = assets[0x2d].current; rotor.live_tiles = true;
+      return &rotor;
+    }
+  }
+  return MmxRenderAssetsSprite(ram[0x1f7a], ram[0x1f08], animation);
 }
 void MmxRenderAssetsMarginPalette(const uint8_t ram[0x20000], int extra,
                                 uint16_t colors[128], bool changed[128]) {

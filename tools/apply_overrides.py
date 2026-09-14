@@ -632,8 +632,8 @@ def apply_bank02(lines, verbose):
 
 def activation_snippet(indent, var):
     return (f"{indent}/*WS-ACTIVATE*/ {{ extern uint16 "
-            f"MmxWsEnemyActivationDistance(uint16); {var} = "
-            f"MmxWsEnemyActivationDistance({var}); }}\n")
+            f"MmxWsEnemyActivationDistance(uint16, uint16); {var} = "
+            f"MmxWsEnemyActivationDistance({var}, cpu->D); }}\n")
 
 
 def apply_bank82_shot_cull(lines, verbose):
@@ -713,7 +713,7 @@ def apply_bank82_presentation_cull(lines, verbose):
 
 
 def apply_bank82_activation(lines, verbose):
-    """Widen the Chill Penguin intro helicopter's player-distance gate.
+    """Widen the Highway helicopter's descent gate after native arena entry.
 
     bank_82_B964 holds the helicopter just above the viewport until its
     controller is 0x80 pixels ahead of X.  That is exactly the native
@@ -721,6 +721,7 @@ def apply_bank82_activation(lines, verbose):
     large sprite's lead distance while preserving 0x80 when widescreen
     spawning is disabled.
     """
+    lines = [line for line in lines if '/*WS-ACTIVATE*/' not in line]
     out = []
     cur_block = None
     n = 0
@@ -1043,7 +1044,9 @@ def main():
         for fn, marker in appliers:
             with open(path, "r", encoding="utf-8") as f:
                 contents = f.read()
-            if marker in contents:
+            stale_activation = (fn is apply_bank82_activation and
+                                'MmxWsEnemyActivationDistance(uint16);' in contents)
+            if marker in contents and not stale_activation:
                 effective_counts[marker] = (
                     effective_counts.get(marker, 0) + contents.count(marker))
                 already += 1
