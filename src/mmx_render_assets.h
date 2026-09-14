@@ -7,7 +7,7 @@ typedef struct MmxSpriteAsset {
   uint8_t tiles[8192];
   uint16_t colors[16];
   uint8_t id, tile_base, attributes;
-  bool current, live_tiles;
+  bool current, live_tiles, live_colors;
 } MmxSpriteAsset;
 
 void MmxRenderAssetsSetRom(const uint8_t *rom, size_t size);
@@ -27,3 +27,4 @@ const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
                                             int world_x, unsigned vram_word);
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
                                                              int world_x);
+const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalettePhase(const uint8_t ram[0x20000], unsigned phase);

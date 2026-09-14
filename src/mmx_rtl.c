@@ -934,7 +934,9 @@ uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   bool traffic = g_ram[0x1f7a] == 0 && g_ram[(uint16)(dpage + 0x0a)] == 0x21;
   bool armor = g_mmx_custom_renderer && dpage == 0xe18;
-  if (!m || (!traffic && !armor))
+  bool grinder = g_mmx_custom_renderer && dpage >= 0xe68 && dpage < 0x1228 &&
+      (dpage & 63) == 0x28 && g_ram[dpage + 10] == 0x2c;
+  if (!m || (!traffic && !armor && !grinder))
     return v >= 0x1c0 ? 1 : 0;
   return ((uint16)(v + m) >= (uint16)(0x1c0 + 2 * m)) ? 1 : 0;
 }
@@ -1080,7 +1082,7 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint16 rec = MmxWsSpawnReadCursor(dpage);
   uint8 *descriptor = RomPtr(0x850000u | rec);
   const uint8 object_id = descriptor[3];
-  if (s_ws_spawn_pass.collectibles) return kind == 0 && object_id == 0x0b;
+  if (s_ws_spawn_pass.collectibles) return kind == 0 && MmxWidePolicy_IsCollectible(object_id);
   if (!g_mmx_custom_renderer && kind == 3 && object_id == 0x37)
     return anchor == s_ws_spawn_pass.wide_anchor;
   int allowed = 1;
@@ -1114,29 +1116,37 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.native_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.native_anchor >> 8);
   (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
-  if (g_mmx_custom_renderer) {
-    /* A loaded narrow-view save can already expose a Heart Tank column
-     * behind the new leading anchor. Let the game's allocator catch up
-     * collectible records across the visible range; its persistent pickup
-     * flags remain authoritative. No enemy or scripted event is admitted. */
-    int margin = MmxWsMargin();
-    int camera = g_ram[0x1e4d] | (g_ram[0x1e4e] << 8);
-    uint8 scratch[16]; memcpy(scratch, g_ram + dpage + 0x10, sizeof(scratch));
-    s_ws_spawn_pass.collectibles = 1;
-    for (int column = (camera - margin - 32) & ~31; column <= camera + 256 + margin + 32; column += 32) {
-      if (column < 0 || column >= 8192) continue;
-      g_ram[dpage] = (uint8)column;
-      g_ram[dpage + 1] = (uint8)(column >> 8);
-      *cpu = saved;
-      (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
-    }
-    s_ws_spawn_pass.collectibles = 0;
-    memcpy(g_ram + dpage + 0x10, scratch, sizeof(scratch));
-  }
   *cpu = saved;
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.wide_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.wide_anchor >> 8);
   s_ws_spawn_pass.active = 0;
+}
+
+void MmxWsCollectiblePass(CpuState *cpu) {
+  extern uint8_t g_ram[0x20000];
+  int margin = g_mmx_custom_renderer && MmxWidePolicy_IsStageScene(g_ram) ? MmxWsMargin() : 0;
+  if (!margin) return;
+  /* DC92 runs even when no camera column changed. This matters on a cold
+   * state load: visible pickups must not wait for X to move a full column.
+   * DCDB remains the allocator, with its collected/live flags untouched. */
+  CpuState saved = *cpu;
+  uint16 dpage = cpu->D;
+  uint8 scratch[32]; memcpy(scratch, g_ram + dpage, sizeof(scratch));
+  int camera = g_ram[0x1e4d] | (g_ram[0x1e4e] << 8);
+  int y = (g_ram[0x1e50] | (g_ram[0x1e51] << 8)) - 32;
+  g_ram[dpage + 2] = (uint8)y; g_ram[dpage + 3] = (uint8)(y >> 8);
+  y += 0x120;
+  g_ram[dpage + 4] = (uint8)y; g_ram[dpage + 5] = (uint8)(y >> 8);
+  s_ws_spawn_pass.active = s_ws_spawn_pass.collectibles = 1;
+  for (int column = (camera - margin - 32) & ~31; column <= camera + 256 + margin + 32; column += 32) {
+    if (column < 0 || column >= 8192) continue;
+    g_ram[dpage] = (uint8)column; g_ram[dpage + 1] = (uint8)(column >> 8);
+    *cpu = saved;
+    (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
+  }
+  s_ws_spawn_pass.active = s_ws_spawn_pass.collectibles = 0;
+  memcpy(g_ram + dpage, scratch, sizeof(scratch));
+  *cpu = saved;
 }
 
 /* bank_82_B964 controls the intro-stage helicopter's entrance. Vanilla

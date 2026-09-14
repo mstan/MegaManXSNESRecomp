@@ -186,7 +186,15 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x0b, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x0b, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(6, 2, 0x0b, false));
-  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x05, false));
+  for (unsigned id = 1; id <= 5; ++id) {
+    assert(MmxWidePolicy_IsCollectible(id));
+    assert(MmxWidePolicy_SpawnRecordAllowed(3, 0, id, false));
+    assert(MmxWidePolicy_SpawnRecordAllowed(3, 0, id, true));
+    assert(!MmxWidePolicy_SpawnRecordAllowed(3, 2, id, false));
+  }
+  assert(!MmxWidePolicy_IsCollectible(7)); /* Minecart. */
+  assert(!MmxWidePolicy_IsCollectible(10)); /* Stage mechanism. */
+  assert(!MmxWidePolicy_SpawnRecordAllowed(3, 0, 7, false));
 
   /* Highway traffic remains eligible in both passes. */
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, false));
@@ -199,6 +207,12 @@ int main(void) {
     ram[0xd3] = (uint8_t)scene; assert(MmxWidePolicy_IsStageScene(ram));
   }
   ram[0xd3] = 10; assert(!MmxWidePolicy_IsStageScene(ram));
+  ram[0xd3] = 4; ram[0xc3] = 0xc0; ram[0x1f10] = 2;
+  assert(MmxWidePolicy_IsStageScene(ram)); /* Spark's light HDMA remains gameplay. */
+  ram[0x1f10] = 8;
+  assert(!MmxWidePolicy_IsStageScene(ram)); /* Weapons menu, same outer game mode. */
+  ram[0xc3] = 0;
+  assert(MmxWidePolicy_IsStageScene(ram)); /* A hidden HUD alone is not a menu. */
   ram[0xd2] = 2; ram[0xd3] = 2; assert(!MmxWidePolicy_IsStageScene(ram));
   assert(!MmxWidePolicy_ForceNativeSpawnTiming(9, 0x8ff, 0));
   assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0x900, 0));

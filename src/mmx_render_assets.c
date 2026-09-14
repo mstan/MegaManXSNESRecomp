@@ -1,4 +1,5 @@
 #include "mmx_render_assets.h"
+#include "mmx_wide_policy.h"
 #include <string.h>
 
 /* The same ROM compression/transfer format used by mmx_wide_preview.c,
@@ -96,6 +97,7 @@ static void stage_assets(unsigned stage, unsigned section) {
       a->attributes = (uint8_t)(0x20 | ((word(p + 1) >> 12) & 1) | (rom[p + 5] >> 3));
       a->current = pass == 1;
       a->live_tiles = false;
+      a->live_colors = false;
       ready[id] = tiles(id, a->tiles) && palette(pal, a->colors) ? 1 : 2;
     }
   }
@@ -118,6 +120,18 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
   if (!ram) return NULL;
+  /* Sub Tanks bind resource $8C directly at $81:E4D3, outside the enemy
+   * animation table. Cold loads must not depend on previously resident CHR. */
+  if (object >= 0x1628 && object < 0x1928 && (object - 0x1628) % 0x30 == 0 &&
+      ram[object + 10] == 5 && animation == 0x96) {
+    stage_assets(ram[0x1f7a], ram[0x1f08]);
+    if (ready[0x8c] != 1) return NULL;
+    static MmxSpriteAsset tank;
+    tank = assets[0x8c]; tank.current = false; tank.live_colors = true;
+    /* E4E9 explicitly borrows permanent OBJ palette 2. Resource $8C's
+     * section palette belongs to its other art and would turn the tank green. */
+    return &tank;
+  }
   /* Spark's freeze state ($88:A25E) deliberately selects palette $0A,
    * and thawing returns it to $08. Its ice chips share animation $91 and
    * the live ice palette. Native-timed bosses have current art; replacing
@@ -189,7 +203,12 @@ const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
       return &rotor;
     }
   }
-  return MmxRenderAssetsSprite(ram[0x1f7a], ram[0x1f08], animation);
+  const MmxSpriteAsset *asset = MmxRenderAssetsSprite(ram[0x1f7a], ram[0x1f08], animation);
+  /* Native-timed bosses own current resources. Their palette changes are
+   * intentional damage/weapon effects, including Armadillo's hit flash. */
+  if (asset && asset->current && object >= 0xe68 && object < 0x1228 &&
+      (object & 63) == 0x28 && MmxWidePolicy_IsBossEncounter(ram[object + 10])) return NULL;
+  return asset;
 }
 bool MmxRenderAssetsRideArmorPalettePending(const uint8_t ram[0x20000], const uint16_t colors[16]) {
   if (!ram || !colors || ram[0x1f7a] != 8) return false;
@@ -201,12 +220,12 @@ bool MmxRenderAssetsRideArmorPalettePending(const uint8_t ram[0x20000], const ui
       memcmp(colors + 1, assets[0x4a].colors + 1, 15 * sizeof(*colors)) == 0 &&
       memcmp(colors + 1, assets[0x49].colors + 1, 15 * sizeof(*colors)) != 0;
 }
-/* Highway and Chill Penguin's kind-2 $17 records select palettes at X
- * boundaries. Chill's CHR also switches vertically, so only Highway gets
- * the horizontal CHR projection below. */
+/* Kind-2 $17 records select background resources. Highway/Launch use
+ * horizontal CHR projection, Highway/Chill use horizontal palettes, and
+ * Armadillo's shaft continuation requests its destination palette explicitly. */
 static bool prepare_background(const uint8_t *ram) {
   unsigned stage = ram[0x1f7a];
-  if ((stage != 0 && stage != 8) || !range(0x32280, 2)) return false;
+  if ((stage != 0 && stage != 1 && stage != 3 && stage != 8) || !range(0x32280, 2)) return false;
   if (bg_stage == stage) return true;
   bg_stage = stage;
   memset(bg_phase, 0, sizeof(bg_phase));
@@ -240,7 +259,7 @@ static size_t background_list(size_t base, unsigned phase) {
 }
 const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
                                             int world_x, unsigned vram_word) {
-  if (!ram || ram[0x1f7a] != 0 || world_x < 0 || world_x >= 8192 || vram_word >= 0x8000 || !prepare_background(ram)) return NULL;
+  if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 1) || world_x < 0 || world_x >= 8192 || vram_word >= 0x8000 || !prepare_background(ram)) return NULL;
   unsigned phase = bg_phase[0][world_x];
   /* RAM records the requested phase before DMA completes. Use private
    * resources even when it matches, so margin art cannot briefly regress. */
@@ -281,8 +300,11 @@ static const MmxBackgroundPalette *background_palette(unsigned phase) {
 }
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
                                                              int world_x) {
-  if (!ram || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
+  if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 8) || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
   return background_palette(bg_phase[1][world_x]);
+}
+const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalettePhase(const uint8_t ram[0x20000], unsigned phase) {
+  return ram && phase < 16 && prepare_background(ram) ? background_palette(phase) : NULL;
 }
 uint16_t MmxRenderAssetsFadeColor(uint16_t color, unsigned amount) {
   unsigned result = 0;

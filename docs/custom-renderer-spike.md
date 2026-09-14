@@ -1,12 +1,27 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, tenth batch)
+## Current owner playtest checklist (2026-09-14, eleventh batch)
+
+- [x] F1: show the E-Tank behind the grinder on a fresh launch and save load.
+- [x] F2: show the health pickups above X throughout the adaptive range.
+- [x] F3: prefill scenery during the vertical drop instead of popping it in.
+- [x] F3: keep the grinder visible as it moves away from X.
+- [x] F5: preserve Armored Armadillo's damage flashing.
+- [x] F6: pillarbox the weapons pause menu to hide garbled side margins.
+- [x] New F2: render the complete Launch Octopus boat.
+- [x] F9: prevent the next submerged enemy from poking through early.
+- [x] F10: keep underwater scenery stable while walking left and right.
+
+Implemented and verified against isolated saves and targeted regressions below.
+These checks are not owner acceptance or full-game qualification.
+
+## Previous owner playtest checklist (tenth batch)
 
 - [x] F1: preserve left terrain while the submarine waits underground.
 - [x] F1: prevent the right-hand container from duplicating during that wait.
 - [x] Verify both remain correct through the submarine's emergence.
 
-The transition captures and regression test pass; owner acceptance is pending.
+The transition captures and regression test pass; the owner confirmed this fix.
 
 ## Previous owner playtest checklist (ninth batch)
 
@@ -677,6 +692,58 @@ Evidence under `build-custom/validation`:
 | `mmx-render-thkqlrn3` | Fixed buried wait, frame 100: intact slope and one complete container |
 | `mmx-render-6wzgiyak` | Fixed emergence, frame 160: terrain intact while the body rises |
 | `mmx-render-n6hdrs92` | Fixed active enemy, frame 240: terrain and container remain complete |
+
+## Eleventh playtest: cold pickups, Armadillo and Launch Octopus
+
+The original Armadillo fixtures are frozen in `eleventh-saves`; the later F2,
+F9 and F10 Launch fixtures are in `eleventh-extra-saves`. Each capture starts
+a fresh process with a copied save, so earlier visits cannot prime its assets.
+
+- The collectible catch-up now runs at `$00:DC92` even without camera movement.
+  It admits only health, weapon energy, Sub Tanks and Heart Tanks to the native
+  allocator; the game's collected/live flags still prevent duplicates.
+  Sub Tanks bind resource `$8C` directly at `$81:E4D3`, outside the enemy
+  animation table. Private CHR plus their permanent live OBJ palette 2 makes
+  the blue tank available on cold loads without borrowing the resource palette.
+- The Armadillo shaft relocates camera `$1F00,$0600` to `$0100,$0800` at
+  `$81:F9B7`. Margins now project the destination below the join before that
+  relocation, including its palette. Grinder `$2C` also needs the `$82:808F`
+  presentation range extended independently of its lifetime check.
+- Resident bosses retain live art/colors, preserving damage flashes and weapon
+  effects. Pause detection combines the suspended HUD task and menu HDMA bit;
+  either condition alone also occurs during gameplay. The weapons menu uses
+  the stock centered frame and black margins.
+- Signed BG2 source scroll fixes the boat's negative entrance Y. Its body is
+  restricted to the authored source screen; Launch's foreground uses private
+  CHR where the boat has replaced resident art. Submarine bounds now include
+  the leading nose while preserving the previous terrain-scroll fix.
+- Walking right in F10 exposes an otherwise occluded BG2 band containing
+  foreground scraps. In this Launch background mode, the margins continue
+  adjacent seabed artwork across source `$0500..06FF,$0370..038F`. Rows outside
+  that band and native pixels retain their original sources.
+
+Release capture evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-ilf7oabi` | Cold F1 blue Sub Tank, both F2 overhead health pickups, F5 boss and F6 pillarboxed menu |
+| `mmx-render-p1pwvdiy`, `mmx-render-etfjxwll` | F3 frames 90/120: matching lower shaft scenery before/after relocation |
+| `mmx-render-rqulcyjt` | F3 frame 450: grinder still submits 49 pieces beyond the native range |
+| `mmx-render-re5y61w8`, `mmx-render-264fsc0o` | F5 frames 45/90: live boss colors, including the bright hit effect |
+| `mmx-render-b8y85_r8` | New F2 complete boat and F9 hidden submarine nose |
+| `mmx-render-46td4nr9` | F10 held right, frame 140: previously malformed seabed is complete |
+| `mmx-render-zcxkaixj` | F10 held left then right: seabed remains complete on return |
+| `mmx-render-17r6cpcc`, `mmx-render-ns5781sm` | Earlier Storm panorama, water, buried enemy, Spark lights, Heart Tank and boss hallway fixtures |
+| `mmx-render-ylm4k9h8`, `mmx-render-xjm0scgz` | Previous submarine slope/container fix remains intact during wait and rise |
+| `mmx-render-ohc1pjqc` | Spark Mandrill still renders his blue ice coat after Shotgun Ice contact |
+
+All three CTests, strict C warnings and injector checks pass. Added tests cover blank-VRAM cold
+Sub Tank art with its live blue palette, collectible record ownership, boss
+palette ownership, pause isolation, signed boat scroll, submarine nose bounds,
+and both terrain continuations. Every release capture replays at 4:3, 16:9,
+21:9, 32:9 and maximum Adaptive with zero raw native differences and matching
+live/replay output. Spark's saved ice-coat sequence also passes. Expanded
+capacity remains off; ROMs, saves and capture artifacts remain untracked.
 
 ## Validation recorded on 2026-09-13/14
 

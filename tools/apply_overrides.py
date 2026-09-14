@@ -490,6 +490,11 @@ def apply_bank00_spawn_pass(lines, verbose):
                 out.append(line)
                 n += 1
                 continue
+        if cur_fn == "bank_00_DC36" and cur_block == 0x00DC92 and line.strip() == "cpu->coprocessor_master_cycles = cpu->master_cycles;":
+            out.append(line)
+            out.append("    /*WS-SPAWN-PASS*/ { extern void MmxWsCollectiblePass(CpuState *); MmxWsCollectiblePass(cpu); }\n")
+            n += 1
+            continue
         out.append(line)
     if verbose and n:
         print(f"  WS-SPAWN-PASS injected {n} site(s)")
@@ -1124,7 +1129,14 @@ def main():
                 contents = f.read()
             stale_activation = (fn is apply_bank82_activation and
                                 'MmxWsEnemyActivationDistance(uint16);' in contents)
-            if marker in contents and not stale_activation:
+            stale_collectibles = (fn is apply_bank00_spawn_pass and 'RecompReturn bank_00_DC36_' in contents
+                                  and 'MmxWsCollectiblePass(cpu)' not in contents)
+            if stale_collectibles:
+                lines = [line for line in contents.splitlines(keepends=True) if marker not in line]
+                if not args.check:
+                    with open(path, 'w', encoding='utf-8', newline='') as f:
+                        f.writelines(lines)
+            if marker in contents and not stale_activation and not stale_collectibles:
                 effective_counts[marker] = (
                     effective_counts.get(marker, 0) + contents.count(marker))
                 already += 1
@@ -1155,7 +1167,8 @@ def main():
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
     if not args.restore:
         for marker, expected in (("/*WS-FLYER-LEASH*/", 1), ("/*WS-ARMOR-CULL*/", 1),
-                                 ("/*WS-STREAKER-ENTRY*/", 1), ("/*WS-CHAIN-PLATFORM*/", 2)):
+                                 ("/*WS-STREAKER-ENTRY*/", 1), ("/*WS-CHAIN-PLATFORM*/", 2),
+                                 ("/*WS-SPAWN-PASS*/", 4)):
             if effective_counts.get(marker, 0) != expected:
                 print(f"ERROR: expected exactly {expected} {marker} hook(s), found {effective_counts.get(marker, 0)}", file=sys.stderr)
                 return 1

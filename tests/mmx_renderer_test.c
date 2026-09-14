@@ -189,6 +189,11 @@ static void dialogue_and_password(void) {
   assert(MmxRendererGetStats().fallback_lines == 224);
   for (int y = 0; y < 224; ++y) for (int x = 0; x < v.width; ++x)
     assert(output[y * v.width + x] == (x >= v.extra && x < v.extra + 256 ? 0x123456u : 0));
+  ram[0xd3] = 4; ram[0x1f10] = 8; ram[0xc3] = 0x80; /* Weapons menu keeps the gameplay scene number. */
+  capture(); assert(MmxRendererDraw(output, v, true));
+  assert(MmxRendererGetStats().fallback_lines == 224);
+  for (int y = 0; y < 224; ++y) for (int x = 0; x < v.width; ++x)
+    assert(output[y * v.width + x] == (x >= v.extra && x < v.extra + 256 ? 0x123456u : 0));
   memset(stock, 0, sizeof(stock));
 }
 static void highway_arena_sky(void) {
@@ -374,12 +379,40 @@ static void resource_decode(void) {
   assert(asset && asset->id == 0x61 && asset->current && asset->attributes == 0x2b && asset->colors[1] == 17);
   assert(asset->tiles[0] == 0x55);
   assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x68)->id == 0x62);
-  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)->colors[1] == 1);
+  assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)); /* Current boss owns its palette. */
+  ram[0xe72] = 0x14;
+  assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)); /* Armadillo damage colors, too. */
+  ram[0xe72] = 4;
+  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)); /* Unrelated enemies still get repair. */
   ram[0x1472] = 0x12;
   assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x67)->colors[1] == 1);
   ram[0xe72] = 0x0d; ram[0xe80] = 8;
   assert(MmxRenderAssetsSprite(8, 0, 1)->id == 7);
   assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 1));
+  /* A cold Sub Tank binds resource $8C without an enemy-table animation. */
+  rom_bytes[0x32d1e] = 0x8c;
+  memcpy(rom_bytes + 0x376f7 + 0x8c * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x8c * 2, 0x200);
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0x1632] = 5;
+  assert(!MmxRenderAssetsSprite(8, 0, 0x96));
+  asset = MmxRenderAssetsObjectSprite(ram, 0x1628, 0x96);
+  assert(asset && asset->id == 0x8c && asset->tiles[0] == 0x55 && asset->live_colors && !asset->current);
+  memset(&ppu, 0, sizeof(ppu)); MmxRendererReset();
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16;
+  ppu.cgram[175] = 31 << 10; /* Permanent blue pickup palette; CHR stays blank. */
+  for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
+  rom_bytes[0x100] = 1; memset(rom_bytes + 0x101, 0, 4);
+  put_word(0x18, 0x8100); ram[0x1a] = 0x80; put_word(0, 400); put_word(2, 40);
+  ram[0xf] = 0x25; ram[0xb] = ram[0x10] = 0; ram[0x163e] = 0x96;
+  g_mmx_custom_renderer = true;
+  MmxRendererObserveObject(ram, 0x1628); MmxRendererRecordPiece(ram, 0);
+  MmxRendererLatchSprites(); capture();
+  v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, v, false));
+  assert(output[40 * v.width + v.extra + 401] == 0x0000ff);
+  g_mmx_custom_renderer = false;
+  ram[0x1632] = 7; assert(!MmxRenderAssetsObjectSprite(ram, 0x1628, 0x96));
   MmxRenderAssetsSetRom(NULL, 0);
   assert(!MmxRenderAssetsSprite(0, 0, 7));
 }
@@ -498,9 +531,11 @@ static void buried_submarine(void) {
   capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
   assert(MmxRendererDraw(output, v, false));
   assert(output[96 * v.width + v.extra + 389] == 0); /* Hidden at the owner's earlier camera. */
+  assert(output[96 * v.width + v.extra + 365] == 0); /* Nose before the next 32-pixel boundary. */
   ram[0xe6a] = 4; /* The native emergence state owns presentation now. */
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[96 * v.width + v.extra + 389] == 0xff0000);
+  assert(output[96 * v.width + v.extra + 365] == 0xff0000);
   ram[0xe69] = 2; ram[0xe6a] = 0;
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[96 * v.width + v.extra + 389] == 0xff0000);
@@ -540,4 +575,42 @@ static void buried_submarine(void) {
   }
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); return 0; }
+static void background_continuations(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 1; ram[0x1e89] = 0x0c;
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  ram[0xec0b] = 1;
+  for (int i = 0; i < 256; ++i) { put_word(0xa800 + i * 2, 1); put_word(0xaa00 + i * 2, 2); }
+  for (int q = 0; q < 4; ++q) { rom_word(8 + q * 2, 1); rom_word(16 + q * 2, 0x401); }
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 2; ppu.bgXsc[1] = 8;
+  ppu.cgram[1] = 31; ppu.cgram[17] = 31 << 10;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  put_word(0x1e8d, 0xa40); put_word(0x1e90, 0xffe0); ppu.hScroll[1] = 0x240; ppu.vScroll[1] = 0x3e0;
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra + 320] == 0xff0000); /* Full boat past native edge, cold VRAM blank. */
+  assert(output[8 * v.width + v.extra + 320] == 0); /* Above its negative entrance scroll. */
+  assert(output[80 * v.width + v.extra + 500] == 0); /* No repeated ship. */
+  assert(output[80 * v.width + v.extra + 128] == 0); /* Native field untouched. */
+
+  ram[0x1e89] = 0x0e; put_word(0x1e8d, 0x740); put_word(0x1e90, 0x300);
+  ppu.hScroll[1] = 0x340; ppu.vScroll[1] = 0x300;
+  ram[0xec00 + 3 * 32 + 6] = 2; ram[0xec00 + 3 * 32 + 7] = 1;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[120 * v.width + v.extra - 288] == 0xff0000); /* Fill the otherwise occluded scraps. */
+  assert(output[96 * v.width + v.extra - 288] == 0x0000ff); /* Preserve rows outside that band. */
+
+  ram[0x1f7a] = 3; put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  ram[0xe800 + 8 * 32 + 2] = 1;
+  for (int i = 0; i < 256; ++i) put_word(0x2200 + i * 2, 1);
+  ppu.screenEnabled[0] = 1; ppu.bgXsc[0] = 8;
+  put_word(0x1e4d, 0x1f00); put_word(0x1e50, 0x600); ppu.hScroll[0] = 0x100; ppu.vScroll[0] = 0x200;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  uint32_t before = output[80 * v.width + v.extra + 320];
+  put_word(0x1e4d, 0x100); put_word(0x1e50, 0x800); ppu.vScroll[0] = 0;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(before == 0xff0000 && output[80 * v.width + v.extra + 320] == before);
+}
+
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); return 0; }

@@ -305,7 +305,7 @@ static void prepare_stage_planes(void) {
         word(r, 0x1f28) == word(top, 0) && word(r, 0x1f2a) == word(bottom, 0) &&
         shift > 0 && shift <= 0x50;
     submarine_bodies[submarine_count++] = (SubmarineBody){
-        ((int)word(r, d + 5) + 16) & ~31, (int)word(top, 0), (int)word(bottom, 0) + 1,
+        ((int)word(r, d + 5)) & ~31, (int)word(top, 0), (int)word(bottom, 0) + 1,
         shift, r[d + 2] != 4, scrolling};
   }
 }
@@ -323,6 +323,7 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
    * extending those outside the native arena duplicates dormant bubbles. */
   if (stage && layer == 1 && margin && frame.ram[0x1f7a] == 6 && frame.ram[0x1e89] == 0x0c) return 0;
   int asset_x = -1;
+  bool armadillo_lower_shaft = false;
   unsigned bpp = layer == 2 ? 2 : 4, size = PPU_bigTiles(p, layer) ? 16 : 8;
   int px = (x + p->hScroll[layer]) & 1023, py = (y + p->vScroll[layer]) & 1023;
   unsigned sc = p->bgXsc[layer], tx = px / size, ty = py / size;
@@ -335,6 +336,13 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
     if (layer == 0) {
       wx = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e4d), p->hScroll[0]) + x;
       wy = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e50), p->vScroll[0]) + y;
+      /* $81:F9B7 joins the shaft at camera $1F00,$0600 to $0100,$0800.
+       * Project its continuation before that native-coordinate relocation,
+       * so the wide sides already show the lower room while X falls. */
+      if (frame.ram[0x1f7a] == 3 && word(frame.ram, 0x1e4d) == 0x1f00 &&
+          word(frame.ram, 0x1e50) >= 0x500 && word(frame.ram, 0x1e50) <= 0x600 && wy >= 0x600) {
+        wx -= 0x1e00; wy += 0x200; armadillo_lower_shaft = true;
+      }
       for (unsigned i = 0; i < submarine_count; ++i) {
         const SubmarineBody *body = &submarine_bodies[i];
         /* $82:B414 subtracts the burial offset into $C4; the $80:84CB
@@ -343,14 +351,24 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
          * outside its columns in the wider view, including during the rise.
          * Match the captured IRQ value so other raster bands stay intact. */
         if (body->scrolling && (p->vScroll[0] & 1023) == (word(frame.ram, 0xc4) & 1023)) {
-          if (wx < body->left || wx >= body->left + 128) wy += body->shift;
+          if (wx < body->left || wx >= body->left + 160) wy += body->shift;
           break;
         }
       }
     } else {
-      int stream_x = word(frame.ram, 0x1e8d), stream_y = word(frame.ram, 0x1e90);
+      int stream_x = (int16_t)word(frame.ram, 0x1e8d), stream_y = (int16_t)word(frame.ram, 0x1e90);
       wx = stream_x + (((p->hScroll[1] - stream_x + 512) & 1023) - 512) + x;
       wy = stream_y + (((p->vScroll[1] - stream_y + 512) & 1023) - 512) + y;
+      /* The boat's BG2 body occupies one source screen; surrounding map
+       * cells are staging art. The controller scrolls that screen into view. */
+      if (frame.ram[0x1f7a] == 1 && frame.ram[0x1e89] == 0x0c &&
+          (wx < 0xb00 || wx >= 0xc00 || wy < 0 || wy >= 256)) return 0;
+      /* The sea floor behind the raised bank was never exposed by the
+       * native camera: its $0370..038F band includes foreground scraps.
+       * Continue the adjacent authored seabed across that occluded band. */
+      if (frame.ram[0x1f7a] == 1 && frame.ram[0x1e89] == 0x0e &&
+          wx >= 0x500 && wx < 0x700 && wy >= 0x370 && wy < 0x390)
+        wx = 0x700 | (wx & 255);
       /* Highway's final arena switches to the sky plane at BG2 x=$A00.
        * Earlier columns are intentionally empty at this vertical scroll;
        * extend the arena's sky edge when a wide view reaches behind it. */
@@ -376,7 +394,7 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       }
       for (unsigned i = 0; i < submarine_count; ++i) {
         const SubmarineBody *body = &submarine_bodies[i];
-        if (body->hidden && wx >= body->left && wx < body->left + 128 && wy >= body->top && wy < body->bottom) {
+        if (body->hidden && wx >= body->left && wx < body->left + 160 && wy >= body->top && wy < body->bottom) {
           wx -= 256; break; /* The preceding water screen has no source body. */
         }
       }
@@ -408,7 +426,7 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   if (tile & 0x8000) cy = size - 1 - cy;
   unsigned number = ((tile & 1023) + cx / 8 + cy / 8 * 16) & 1023;
   unsigned address = (PPU_bgTileAdr(p, layer) + number * bpp * 4) & 0x7fff;
-  const uint8_t *bits = g_mmx_render_asset_repairs && bpp == 4 ?
+  const uint8_t *bits = g_mmx_render_asset_repairs && bpp == 4 && !(frame.ram[0x1f7a] == 1 && layer == 1) ?
       MmxRenderAssetsBackgroundTile(frame.ram, asset_x, address) : NULL;
   unsigned pixel;
   if (bits) {
@@ -420,7 +438,8 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   if (!pixel) return 0;
   unsigned index = (((tile >> 10) & 7) << bpp) | pixel;
   const MmxBackgroundPalette *palette = g_mmx_render_asset_repairs ?
-      MmxRenderAssetsBackgroundPalette(frame.ram, asset_x) : NULL;
+      (armadillo_lower_shaft ? MmxRenderAssetsBackgroundPalettePhase(frame.ram, 1) :
+       MmxRenderAssetsBackgroundPalette(frame.ram, asset_x)) : NULL;
   if (palette && palette->valid[index]) *private_color = palette->colors[index];
   unsigned priority = tile & 0x2000 ? (layer == 2 && (p->bgmode & 8) ? 15 : high[layer]) : low[layer];
   return (uint16_t)((priority << 12) | (layer << 8) | index);
@@ -451,7 +470,7 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
     } else pixel = tile_pixel(r->vram, base + tile * 16, cx & 7, row & 7, 4);
     if (pixel) {
       out[dest] = (uint16_t)(z | pixel);
-      object_color[dest] = asset ? asset->colors[pixel] : -1;
+      object_color[dest] = asset && !asset->live_colors ? asset->colors[pixel] : -1;
       if (x + c < 0 || x + c >= 256) ++stats.margin_sprite_pixels;
     }
   }
@@ -602,6 +621,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       }
       unsigned attr = asset ? (s.attr & 0xd000) | 0x2000 | ((asset->attributes & 15) << 8) |
           (asset->live_tiles ? s.attr & 255 : 0) : s.attr;
+      if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
       sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset, s.tile, object_colors, true);
     }
     int bar_first = -1, bar_count = 0;

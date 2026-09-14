@@ -2,8 +2,18 @@
 
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
   /* $80:997B: level setup, arrival, play, death and stage-clear all retain
-   * the stage view. The next state ($0A) changes to the password/menu flow. */
-  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] <= 8 && !(ram[0xd3] & 1);
+   * the stage view. The next state ($0A) changes to the password/menu flow.
+   * The weapon menu suspends the HUD task ($1F10=8) and owns HDMA channel 7.
+   * Neither condition alone identifies it: cutscenes hide the HUD, while
+   * Spark's moving lights also use that HDMA channel during gameplay. */
+  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] <= 8 && !(ram[0xd3] & 1) &&
+      !(ram[0x1f10] == 8 && (ram[0xc3] & 0x80));
+}
+
+bool MmxWidePolicy_IsCollectible(uint8_t object_id) {
+  /* Health/weapon-energy pickups, Sub Tanks, and Heart Tanks. Other kind-0
+   * records include vehicles and mechanisms and retain native timing. */
+  return (object_id >= 1 && object_id <= 5) || object_id == 0x0b;
 }
 
 static uint16_t read_word(const uint8_t *ram, unsigned a) {
@@ -181,8 +191,8 @@ bool MmxWidePolicy_IsBossEncounter(uint8_t object_id) {
     case 0x05: /* Boomer Kuwanger */
     case 0x07: /* Launch Octopus */
     case 0x0a: /* Sting Chameleon */
-    case 0x0c: /* Armored Armadillo */
-    case 0x14: /* Flame Mammoth */
+    case 0x0c: /* Flame Mammoth */
+    case 0x14: /* Armored Armadillo */
     case 0x31: /* Spark Mandrill */
     case 0x52: /* Storm Eagle */
     case 0x5d: /* Rangda Bangda controller */
@@ -207,8 +217,7 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
   if (stage == 0x00 && kind == 1 && object_id == 0x21)
     return true;
 
-  /* Heart Tanks are persistent collectibles, not camera/encounter events. */
-  if (kind == 0 && object_id == 0x0b) return true;
+  if (kind == 0 && MmxWidePolicy_IsCollectible(object_id)) return true;
 
   /* Boss records belong to the native scan, just like camera/door events.
    * Its independent cursor reaches them at the authored arena boundary.
