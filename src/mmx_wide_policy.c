@@ -129,14 +129,18 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
   if (stage == 0x00 && kind == 1 && object_id == 0x21)
     return true;
 
+  /* Heart Tanks are persistent collectibles, not camera/encounter events. */
+  if (kind == 0 && object_id == 0x0b) return true;
+
   /* Spark Mandrill's Thunder Slimer mid-boss controller is authored as kind
    * 3 even though it is an encounter trigger, not an ordinary margin enemy.
    * Spawning it early lets it tear itself down before the arena boundary and
    * the native pass then refuses it, leaving the barrier permanently closed. */
   /* Highway's Bee Blader also starts an arena camera push in its init,
    * before its separate descent state. It must not initialize in a margin.
-   * Chill Penguin must wait until X has crossed the second boss door. */
-  if ((stage == 0x06 && kind == 3 && object_id == 0x03) ||
+   * Chill Penguin must wait until X has crossed the second boss door.
+   * Spark's id-$37 light controllers also retain their authored room entry. */
+  if ((stage == 0x06 && kind == 3 && (object_id == 0x03 || object_id == 0x37)) ||
       (stage == 0x00 && kind == 3 && object_id == 0x22) ||
       (stage == 0x08 && kind == 3 && object_id == 0x02))
     return native_pass;

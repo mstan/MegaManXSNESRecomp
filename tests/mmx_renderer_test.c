@@ -303,7 +303,81 @@ static void resource_decode(void) {
   MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
   assert(MmxRenderAssetsRideArmorPalettePending(ram, old_colors));
   old_colors[1] = 0x7fff; assert(!MmxRenderAssetsRideArmorPalettePending(ram, old_colors));
+  /* Penguin's projectile combines body CHR with the distinct ice palette.
+   * The body and unrelated effect users must keep the original mapping. */
+  const unsigned ids[] = {0x61, 0x62, 7};
+  for (unsigned i = 0; i < 3; ++i) {
+    unsigned p = 0x32d1e + i * 6;
+    rom_bytes[p] = (uint8_t)ids[i]; rom_word(p + 1, i == 1 ? 0x400 : 0x1000);
+    rom_word(p + 3, i == 1 ? 4 : 2); rom_bytes[p + 5] = i == 1 ? 0x50 : 0x40;
+    memcpy(rom_bytes + 0x376f7 + ids[i] * 5, rom_bytes + 0x376fc, 5);
+    rom_word(0x371b7 + ids[i] * 2, 0x200);
+  }
+  rom_bytes[0x32d30] = 255; rom_word(0x32cee + 18, 0x22);
+  rom_bytes[0x325e6] = 0x67; rom_bytes[0x325e7] = 0x61;
+  rom_bytes[0x325e4 + 12 * 2] = 1; rom_bytes[0x325e5 + 12 * 2] = 7;
+  ram[0x1f08] = 0; ram[0x1472] = 0x1a;
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  asset = MmxRenderAssetsObjectSprite(ram, 0x1468, 0x67);
+  assert(asset && asset->id == 0x61 && asset->current && asset->attributes == 0x2b && asset->colors[1] == 17);
+  assert(asset->tiles[0] == 0x55);
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x68)->id == 0x62);
+  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)->colors[1] == 1);
+  ram[0x1472] = 0x12;
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x67)->colors[1] == 1);
+  ram[0xe72] = 0x0d; ram[0xe80] = 8;
+  assert(MmxRenderAssetsSprite(8, 0, 1)->id == 7);
+  assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 1));
   MmxRenderAssetsSetRom(NULL, 0);
   assert(!MmxRenderAssetsSprite(0, 0, 7));
 }
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); resource_decode(); return 0; }
+static void spark_effects(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 6;
+  ram[0x1f0a] = 4; ram[0x1e89] = 2;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.cgram[0] = ppu.fixedColor = 0x7fff;
+  ppu.cgadsub = 0xa0; /* Backdrop is dark until a light disables subtraction. */
+  static const uint8_t profile[] = {0,0,0,0,0,0,1,1,2,3,3,4,8,8,7,6,6,5,5,5,5,5,5,3,0};
+  memcpy(rom_bytes + 0x35136, profile, sizeof(profile));
+  ram[0xe68] = 1; ram[0xe69] = 2; ram[0xe72] = 0x37; ram[0xe95] = 0x40;
+  put_word(0xe8a, 400); put_word(0xe8c, 100); /* Outside native range, light state still zero. */
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[76 * v.width + v.extra + 436] == 0xffffff);
+  assert(output[76 * v.width + v.extra + 435] == 0);
+  assert(output[100 * v.width + v.extra + 424] == 0xffffff);
+  assert(output[75 * v.width + v.extra + 500] == 0);
+  /* A second, mirrored light can occupy the other margin simultaneously. */
+  memcpy(ram + 0xea8, ram + 0xe68, 64); ram[0xeb3] = 1; ram[0xed5] = 0x80;
+  put_word(0xeca, (uint16_t)-100);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[76 * v.width + v.extra - 136] == 0xffffff);
+  assert(output[76 * v.width + v.extra - 135] == 0);
+  assert(output[100 * v.width + v.extra + 500] == 0xffffff);
+  g_mmx_render_asset_repairs = false;
+  assert(MmxRendererDraw(output, v, false));
+  assert(output[100 * v.width + v.extra + 500] == 0);
+  g_mmx_render_asset_repairs = true;
+  ram[0xea8] = 0; ram[0xe6b] = 1; ram[0xea3] = 13; ram[0xe87] = 24;
+  put_word(0xe9e, 90);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[90 * v.width + v.extra + 500] == 0xffffff);
+  assert(output[103 * v.width + v.extra + 500] == 0);
+  assert(output[90 * v.width + v.extra + 616] == 0);
+  /* Thunder Slimer's BG2 actor tiles must never repeat into the margins. */
+  memset(ram + 0xe68, 0, 128); ram[0x1f0a] = 1;
+  ppu.cgadsub = 0; ppu.cgram[0] = 0; ppu.cgram[1] = 31;
+  ppu.screenEnabled[0] = 2; ppu.bgXsc[1] = 0x50;
+  for (int i = 0; i < 1024; ++i) ppu.vram[0x5000 + i] = 1;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  for (int q = 0; q < 4; ++q) rom_word(q * 2, 1);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[50 * v.width + v.extra - 100] == 0xff0000);
+  ram[0x1e89] = 0x0c;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[50 * v.width + v.extra - 100] == 0);
+  assert(output[50 * v.width + v.extra + 100] == 0xff0000);
+}
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); resource_decode(); spark_effects(); return 0; }

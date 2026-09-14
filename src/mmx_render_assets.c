@@ -118,6 +118,31 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
   if (!ram) return NULL;
+  /* Penguin breath shares the body's CHR ($61) but deliberately borrows
+   * the ice-statue palette ($62), $81:BCAA..BCBA. Animation identity alone
+   * must not turn that valid mixed binding back into the boss palette. */
+  if (ram[0x1f7a] == 8 && object >= 0x1268 && object <= 0x18e8 &&
+      (object & 63) == 0x28 && ram[object + 10] == 0x1a &&
+      (animation == 0x67 || animation == 0x68)) {
+    stage_assets(8, ram[0x1f08]);
+    if (ready[0x62] != 1) return NULL;
+    if (animation == 0x68) return &assets[0x62];
+    if (ready[0x61] != 1) return NULL;
+    static MmxSpriteAsset breath;
+    breath = assets[0x61];
+    memcpy(breath.colors, assets[0x62].colors, sizeof(breath.colors));
+    breath.attributes = (assets[0x62].attributes & 0xfe) | (assets[0x61].attributes & 1);
+    breath.current = assets[0x61].current && assets[0x62].current;
+    return &breath;
+  }
+  /* Enemy $0D's $88:8F42 setup chooses tile offsets 0/8, and its damage
+   * states change palette bits explicitly. Its active resource uses live
+   * page-zero art; treating these authored variants as stale erases it. */
+  if (object >= 0xe68 && object <= 0x1228 && (object & 63) == 0x28 &&
+      ram[object + 10] == 0x0d && animation == 1) {
+    stage_assets(ram[0x1f7a], ram[0x1f08]);
+    if (ready[7] == 1 && assets[7].current) return NULL;
+  }
   /* The usable Ride Armor has a dedicated slot/animation; the enemy table
    * maps its pilot ($4F), not the armor's own $4A animation, to resource $49.
    * Early visibility must not borrow CHR/palettes from the current cave set. */

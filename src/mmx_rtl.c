@@ -981,6 +981,7 @@ static struct {
   uint16 native_cursor_before;
   uint16 dpage;
   int active;
+  int collectibles;
 } s_ws_spawn_pass;
 
 static uint16 MmxWsSpawnReadCursor(uint16 dpage) {
@@ -1068,6 +1069,7 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint16 rec = MmxWsSpawnReadCursor(dpage);
   uint8 *descriptor = RomPtr(0x850000u | rec);
   const uint8 object_id = descriptor[3];
+  if (s_ws_spawn_pass.collectibles) return kind == 0 && object_id == 0x0b;
   int allowed = 1;
   if (anchor == s_ws_spawn_pass.wide_anchor) {
     allowed = MmxWidePolicy_SpawnRecordAllowed(
@@ -1099,6 +1101,25 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.native_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.native_anchor >> 8);
   (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
+  if (g_mmx_custom_renderer) {
+    /* A loaded narrow-view save can already expose a Heart Tank column
+     * behind the new leading anchor. Let the game's allocator catch up
+     * collectible records across the visible range; its persistent pickup
+     * flags remain authoritative. No enemy or scripted event is admitted. */
+    int margin = MmxWsMargin();
+    int camera = g_ram[0x1e4d] | (g_ram[0x1e4e] << 8);
+    uint8 scratch[16]; memcpy(scratch, g_ram + dpage + 0x10, sizeof(scratch));
+    s_ws_spawn_pass.collectibles = 1;
+    for (int column = (camera - margin - 32) & ~31; column <= camera + 256 + margin + 32; column += 32) {
+      if (column < 0 || column >= 8192) continue;
+      g_ram[dpage] = (uint8)column;
+      g_ram[dpage + 1] = (uint8)(column >> 8);
+      *cpu = saved;
+      (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
+    }
+    s_ws_spawn_pass.collectibles = 0;
+    memcpy(g_ram + dpage + 0x10, scratch, sizeof(scratch));
+  }
   *cpu = saved;
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.wide_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.wide_anchor >> 8);

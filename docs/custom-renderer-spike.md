@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, fourth batch)
+## Current owner playtest checklist (2026-09-14, fifth batch)
+
+- [x] F2: Chill Penguin's ice breath and other abilities use the wrong colors.
+- [x] F5: streaking enemies activate outside their designated room.
+- [x] F6: incoming streaking enemies have malformed or missing light beams.
+- [x] F7: the next room's enemy bubble is visible outside its room bounds.
+- [x] F9: the heart pickup only appears at the native 4:3 edge.
+- [x] F10: an enemy underneath X causes damage while invisible.
+
+## Previous owner playtest checklist (fourth batch)
 
 - [x] F1: outdoor pillar uses inverted colors before approach.
 - [x] F1: Ride Armor briefly flickers to the wrong palette.
@@ -342,6 +351,63 @@ Evidence under `build-custom/validation`:
   matches replay. All three CTests and strict C warnings pass, including
   new tests for scene ownership, both door-facing directions, palette phases,
   exact pending armor colors, death fades and Penguin event ownership.
+
+## Fifth playtest: six-item burndown
+
+The owner's updated F2/F5/F6/F7/F9/F10 saves are copied under
+`build-custom/fifth-saves`. These fixes remain on the isolated spike branch.
+
+- Penguin's `$81:BCAA` breath setup combines body resource `$61` CHR with
+  ice resource `$62` colors. Animation `$67` alone therefore cannot identify
+  its palette. Projectile id `$1A` now resolves that mixed binding; its
+  statue animation `$68` resolves resource `$62`. Current bindings retain
+  their live colors. The body and other effect identities keep their own art.
+- Enemy `$0D` explicitly chooses tile offsets 0/8 at `$88:8F42` and changes
+  palette bits during its states. When resource `$07` is current, those live
+  variants are preserved. Substituting raw tiles from the generic resource
+  had erased F10's submitted, collidable enemy.
+- Spark's streaker/controller `$37` now belongs to the native event scan,
+  preserving its room entry. Its color window is composed independently in
+  signed host coordinates using the rounded ROM profile at `$86:D136`.
+  This removes the native generator's 0/255 clamp and offscreen entrance
+  delay. Two lights, opposite directions, and shrinking exit beams retain
+  their separate state. The guest's HDMA tables and PPU remain unchanged.
+- Spark BG2 mode `$0C` is the Thunder Slimer actor surface. It keeps its
+  native arena rendering; retained actor staging tiles are no longer decoded
+  as scrolling terrain in the margins. F7's two stray bubbles were these
+  background tiles, not active enemy/projectile objects.
+- Heart Tanks (kind 0/id `$0B`) are allowed in the wide scan. A collectible-only
+  pass catches up columns already exposed by a loaded save at the next
+  camera-column scan, using the original guest allocator and pickup flags.
+  Its existing widened lifetime/presentation path then shows the live heart.
+  This scan excludes enemies and scripted room events. It does not implement
+  general enemy activation after a sudden resize.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-r4gmm3dl` | F2 blue breath/statues, F7 no stray bubbles, F10 visible enemy; expanded capacity on |
+| `mmx-render-r2bkvrsc` | F5 held right to frame 550, camera `$0416`: no streaker allocated |
+| `mmx-render-2wy0kwwj` | Same F5 route to frame 700, camera `$04F3`: first streaker active near its room |
+| `mmx-render-0xwxjpqs` | F6 moved/jumped right to frame 260: a newly spawned streaker and its continuous wide light; expanded capacity on |
+| `mmx-render-fj2vzq0_` | F9 frame 64: heart at world `$15D6` appears around screen X 438, beyond the native edge |
+| `mmx-render-atipiy5l` | F9 repeated scans through frame 200 retain exactly one heart |
+| `mmx-render-h8o6lw26` | Copied F9 with only collected flag `$1F9C` bit `$40` set: zero hearts after the same route |
+| `mmx-render-c52jjbzj`, `mmx-render-n697lhi4` | Mod Off and Legacy still select their stock/legacy output paths |
+
+All custom captures pass the raw native oracle and live/replay agreement,
+with replays at 4:3, 16:9, 21:9, 32:9 and maximum Adaptive width. F2/F10 now
+have zero repaired-native pixels in their supplied frames: preserving the
+correct native binding removes the bad substitution. Signed light projection
+can intentionally differ from the clamped/delayed native color window.
+
+All three CTests and strict C warnings pass. Added tests cover mixed Penguin
+resources, preserving enemy `$0D` variants, room/collectible record ownership,
+offscreen rounded lights in both directions and together, and actor-layer
+clipping without changing native BG2. These checks do not claim a complete
+stage playthrough or mid-boss defeat. Source saves remain unchanged; expanded
+sprite capacity remains off by default.
 
 ## Validation recorded on 2026-09-13/14
 

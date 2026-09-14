@@ -123,6 +123,12 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 3, 0x22, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, true));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, true));
+  assert(MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x0b, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x0b, true));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 2, 0x0b, false));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(6, 0, 0x05, false));
 
   /* Highway traffic remains eligible in both passes. */
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, false));

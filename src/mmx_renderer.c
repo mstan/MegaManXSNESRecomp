@@ -272,6 +272,10 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   /* Stage BG3 is a screen-space overlay (dialogue), not a repeating world
    * map. Keep its original scroll/window processing inside the native view. */
   if (stage && layer == 2 && margin) return 0;
+  /* Spark's BG2 mode $0C is the Thunder Slimer actor surface, not the
+   * scrolling level map. The retained map contains its staging tiles;
+   * extending those outside the native arena duplicates dormant bubbles. */
+  if (stage && layer == 1 && margin && frame.ram[0x1f7a] == 6 && frame.ram[0x1e89] == 0x0c) return 0;
   int asset_x = -1;
   unsigned bpp = layer == 2 ? 2 : 4, size = PPU_bigTiles(p, layer) ? 16 : 8;
   int px = (x + p->hScroll[layer]) & 1023, py = (y + p->vScroll[layer]) & 1023;
@@ -401,6 +405,53 @@ static bool window(const Ppu *p, int layer, int x, int extra) {
     case 0: return a || b; case 1: return a && b; case 2: return a != b; default: return a == b;
   }
 }
+typedef struct LightBeam { int left[224], right[224]; } LightBeam;
+static unsigned spark_lights(LightBeam beams[2], int extra) {
+  /* $87:A7F6 builds 8-bit HDMA windows from the ROM's rounded beam profile.
+   * Rebuild only that color window in signed host coordinates. The native
+   * generator clamps a left-moving light at zero and waits for a right-side
+   * arrival to enter 256 pixels; neither limitation describes a wide view. */
+  if (!g_mmx_render_asset_repairs || frame.ram[0x1f7a] != 6 ||
+      frame.ram[0x1f0a] != 4 || frame.ram[0x1e89] != 2) return 0;
+  const uint8_t *curve = rom_at(0x86d136, 25);
+  if (!curve) return 0;
+  /* Sprite/HDMA submission precedes the next camera update in frame.ram.
+   * Use the captured raster scroll, as terrain reconstruction does. */
+  int camera_x = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e4d),
+      (uint16_t)word(frame.lines[0].registers, 14));
+  int camera_y = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e50),
+      (uint16_t)word(frame.lines[0].registers, 22));
+  unsigned count = 0;
+  for (unsigned d = 0xe68; d <= 0x1228 && count < 2; d += 64) {
+    const uint8_t *r = frame.ram;
+    if (!r[d] || r[d + 10] != 0x37 || r[d + 1] != 2 || r[d + 0x1c] ||
+        (r[d + 0x2d] != 0x40 && r[d + 0x2d] != 0x80)) continue;
+    bool right = r[d + 0x0b] == 1, fading = r[d + 3] != 0;
+    int tip = (int16_t)(word(r, d + 0x22) - camera_x) + (right ? -24 : 24);
+    int top = fading ? (int16_t)word(r, d + 0x36) :
+        (int16_t)(word(r, d + 0x24) - camera_y) - 24;
+    unsigned height = fading ? r[d + 0x3b] : 49;
+    int inset = fading ? r[d + 0x1f] : 0;
+    LightBeam *beam = &beams[count++];
+    for (int y = 0; y < 224; ++y) { beam->left[y] = 1; beam->right[y] = 0; }
+    unsigned index = 0, remaining = curve[0]; int edge = fading ? 0 : 12;
+    for (unsigned row = 0; row < height && row < 49; ++row) {
+      int y = top + (int)row;
+      if (y >= 0 && y < 224) {
+        beam->left[y] = right ? -extra + inset : tip + edge;
+        beam->right[y] = right ? tip - edge : 255 + extra - inset;
+      }
+      if (!fading) {
+        if (remaining) --remaining;
+        else if (index < 25) {
+          remaining = curve[index++];
+          if (remaining >= 5) { remaining -= 5; ++edge; } else --edge;
+        }
+      }
+    }
+  }
+  return count;
+}
 static bool condition(unsigned mode, bool inside) { return mode == 3 || (mode == 1 && !inside) || (mode == 2 && inside); }
 static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3]) {
   unsigned rgb = palette[main & 255], layer = (main >> 8) & 15;
@@ -437,6 +488,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
   bool stage = MmxWidePolicy_IsStageScene(frame.ram);
+  LightBeam beams[2];
+  unsigned beam_count = stage ? spark_lights(beams, view.extra) : 0;
   unsigned palette_fade = stage && g_mmx_render_asset_repairs ?
       MmxRenderAssetsDeathPaletteFade(frame.ram, frame.lines[0].palette) : 0;
   const Piece *pieces = frame.expand && g_mmx_render_asset_repairs ? frame.expanded : frame.pieces;
@@ -455,6 +508,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   for (int y = 0; y < 224; ++y) {
     const Raster *r = &frame.lines[y]; Ppu p;
     memcpy(&p, r->registers, PPU_SAVESTATE_REGS_SIZE);
+    if (beam_count) p.cgwsel = (p.cgwsel & 0xcf) | 0x20;
     if ((p.bgmode & 7) != 1 || !stage) {
       memcpy(out + y * view.width + view.extra, frame.stock + y * 256, 256 * sizeof(*out));
       ++stats.fallback_lines; continue;
@@ -529,7 +583,13 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         if ((p.screenEnabled[sub] & 16) && (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, view.extra)) &&
             objects[sx] > screens[sub]) screens[sub] = objects[sx];
       }
-      out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], window(&p, 5, x, view.extra), object_colors[sx], bg_colors);
+      bool color_window = window(&p, 5, x, view.extra);
+      if (beam_count) {
+        color_window = false;
+        for (unsigned i = 0; i < beam_count; ++i)
+          color_window |= x >= beams[i].left[y] && x <= beams[i].right[y];
+      }
+      out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], color_window, object_colors[sx], bg_colors);
     }
   }
   return true;
