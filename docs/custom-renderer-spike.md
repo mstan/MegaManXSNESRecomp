@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-18, fourteenth batch)
+## Current owner playtest checklist (2026-09-19, fifteenth batch)
+
+- [x] F1: preserve the left background and foreground rock colors while moving right.
+- [x] F1: hide garbled side margins when opening the weapons menu with Start.
+
+The fixture is frozen in `fifteenth-saves`. Fresh captures cover movement in
+both directions, pause opening, the open menu, and return to adaptive gameplay.
+Owner acceptance remains pending.
+
+## Previous owner playtest checklist (2026-09-18, fourteenth batch)
 
 - [x] F1: show Dr. Light inside the capsule during Sting Chameleon's dialogue.
 
@@ -974,3 +983,44 @@ or unloaded resources still repair. Fresh captures replay at all five widths
 with zero raw or repaired native differences and matching live/replay output.
 This verifies dialogue rendering and progression, not a full capsule upgrade
 playthrough. Original saves are preserved.
+
+## Fifteenth playtest: forest palettes and pause margins
+
+F1 starts in Sting Chameleon's Ride Armor area, near the first background
+palette boundary. Its kind-2 `$17` events at X `$1390`, `$1900`, and `$1E00`
+replace the `$20..70` palette groups. The wider view was using current CGRAM
+for earlier scenery, turning the left sky purple and changing the rock colors
+when the next region's palette loaded. Stage 2 now uses the existing authored
+palette projection for margin terrain, with half-speed coordinates for BG2.
+The native center and live CHR remain unchanged.
+
+The menu setup at `$80:C47C` requests HUD state `$1F10=6`; `$80:DB2B` normally
+advances it to 8. In this fixture gameplay updates stop with state 6 still
+pending. The menu check previously accepted only 8. It now recognizes either
+suspended state together with menu HDMA ownership, preserving Spark's moving
+lights and cutscenes that hide the HUD without opening the menu. The menu
+copies the native frame with black margins; resuming restores adaptive width.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-gfg47h6q` | Before: holding Right changes the left sky and rock colors |
+| `mmx-render-d47ainal` | Before: open menu has HUD state 6 and malformed margins |
+| `mmx-render-yumrnbm_` | Final executable, same Right input at frame 155: scenery colors restored |
+| `mmx-render-7dgegt34` | Returning left: earlier terrain and background retain their palettes |
+| `mmx-render-6gsjhkol` | Opening the menu: native blank transition remains blank across the frame |
+| `mmx-render-qi22nni7` | Open menu: native image preserved with black margins |
+| `mmx-render-1hwe8u3h` | After Start resumes: adaptive forest view returns correctly |
+| `mmx-render-x2asrfvq` | Prior capsule fixture: Dr. Light and his speaking portrait still render |
+
+Windows build, all three CTests, strict C warnings, and generated override
+checks pass. Tests cover all three palette boundaries, foreground/BG2 sampling
+across camera movement, live native CGRAM, both suspended HUD states, and
+full menu margins followed by restored gameplay. Fresh captures replay at
+five widths with zero raw native differences and matching live/replay output.
+Existing Ride Armor sprite repairs still change native pixels in the movement
+fixtures; the same frame before and after this patch reports 2,157 repaired
+pixels. Menu and capsule captures report zero repaired native pixels.
+All ten original saves were backed up and their hashes remained unchanged.
+These checks cover the reported area, not a full Sting Chameleon playthrough.

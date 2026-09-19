@@ -717,4 +717,73 @@ static void launch_background_palettes(void) {
   assert(output[80 * v.width + v.extra - 96] == 0); /* Boat staging remains separate. */
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); return 0; }
+static void sting_background_palettes(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 2;
+  rom_word(0x282c6, 0x9000); rom_bytes[0x29000] = 0x42;
+  const unsigned boundaries[] = {0x1390, 0x1900, 0x1e00};
+  const unsigned colors[] = {31, 31 << 5, 31 << 10, 0x3ff};
+  for (unsigned i = 0; i < 3; ++i) {
+    unsigned p = 0x29001 + i * 7;
+    rom_bytes[p] = 2; rom_bytes[p + 3] = 0x17; rom_bytes[p + 4] = (uint8_t)(i * 16 + i + 1);
+    rom_word(p + 5, boundaries[i] | (i == 2 ? 0x8000 : 0));
+  }
+  rom_bytes[0x29016] = 0x42;
+  rom_word(0x32264, 0x20); rom_word(0x32266, 0x28);
+  for (unsigned i = 0; i < 4; ++i) {
+    rom_word(0x32280 + i * 2, 0x40 + i * 8);
+    unsigned p = 0x322a0 + i * 8;
+    rom_word(p, 0xa000 + i * 32); rom_bytes[p + 2] = 0x40; rom_word(p + 3, 0xffff);
+    for (unsigned c = 0; c < 16; ++c) rom_word(0x2a000 + i * 32 + c * 2, colors[i]);
+  }
+  for (unsigned i = 0; i < 3; ++i) {
+    assert(MmxRenderAssetsBackgroundPalette(ram, boundaries[i] - 1)->colors[0x41] == colors[i]);
+    assert(MmxRenderAssetsBackgroundPalette(ram, boundaries[i])->colors[0x41] == colors[i + 1]);
+  }
+  assert(!MmxRenderAssetsBackgroundTile(ram, 0x1390, 16)); /* No horizontal CHR replacement. */
+  put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  for (unsigned i = 0; i < 256; ++i) { put_word(0x2000 + i * 2, 1); put_word(0xa600 + i * 2, 1); }
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 0x1001);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.bgXsc[0] = ppu.bgXsc[1] = 8;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  for (int i = 0x800; i < 0xc00; ++i) ppu.vram[i] = 0x1001;
+  ppu.cgram[0x41] = 0x7fff; /* Current palette must not recolor distant terrain. */
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  for (unsigned layer = 0; layer < 2; ++layer) {
+    ppu.screenEnabled[0] = (uint8_t)(1 << layer);
+    for (unsigned step = 0; step < 3; ++step) {
+      unsigned camera = step == 1 ? 0x1420 : 0x1400;
+      put_word(0x1e4d, camera); put_word(0x1e8d, camera / 2);
+      ppu.hScroll[0] = camera & 1023; ppu.hScroll[1] = (camera / 2) & 1023;
+      ram[0x1f0a] = (uint8_t)step; /* Pending/current DMA phase cannot change a column's colors. */
+      capture(); assert(MmxRendererDraw(output, v, false));
+      assert(output[80 * v.width + v.extra - 256] == 0xff0000);
+      assert(output[80 * v.width + v.extra + 300] == 0x00ff00);
+      assert(output[80 * v.width + v.extra + 128] == 0xffffff); /* Native CGRAM retained. */
+    }
+  }
+}
+
+static void weapons_menu_margins(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0);
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0xc3] = 0x80;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.cgram[0] = 31;
+  for (unsigned i = 0; i < 256 * 224; ++i) stock[i] = i + 1;
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  for (unsigned hud = 6; hud <= 8; hud += 2) {
+    ram[0x1f10] = (uint8_t)hud;
+    capture(); assert(MmxRendererDraw(output, v, true));
+    assert(MmxRendererGetStats().fallback_lines == 224);
+    for (int y = 0; y < 224; ++y) for (int x = 0; x < v.width; ++x)
+      assert(output[y * v.width + x] == (x < v.extra || x >= v.extra + 256 ? 0 : stock[y * 256 + x - v.extra]));
+  }
+  ram[0x1f10] = 0; ram[0xc3] = 0;
+  capture(); assert(MmxRendererDraw(output, v, true));
+  assert(MmxRendererGetStats().custom_lines == 224 && output[0] == 0xff0000);
+  memset(stock, 0, sizeof(stock));
+}
+
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); weapons_menu_margins(); return 0; }

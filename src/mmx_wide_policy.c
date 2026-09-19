@@ -3,11 +3,13 @@
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
   /* $80:997B: level setup, arrival, play, death and stage-clear all retain
    * the stage view. The next state ($0A) changes to the password/menu flow.
-   * The weapon menu suspends the HUD task ($1F10=8) and owns HDMA channel 7.
+   * $80:C47C suspends the HUD task ($1F10=6, then 8 after $80:DB2B)
+   * for the weapon menu, which owns HDMA channel 7. The task can remain at
+   * 6 throughout the menu when gameplay updates stop before it runs.
    * Neither condition alone identifies it: cutscenes hide the HUD, while
    * Spark's moving lights also use that HDMA channel during gameplay. */
   return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] <= 8 && !(ram[0xd3] & 1) &&
-      !(ram[0x1f10] == 8 && (ram[0xc3] & 0x80));
+      !((ram[0x1f10] == 6 || ram[0x1f10] == 8) && (ram[0xc3] & 0x80));
 }
 
 bool MmxWidePolicy_IsCollectible(uint8_t object_id) {

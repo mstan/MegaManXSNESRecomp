@@ -417,9 +417,9 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
     uint16_t mapped;
     if (MmxRendererStageTile(frame.ram, layer, wx, wy, &mapped)) {
       tile = mapped; px = wx; py = wy;
-      /* The city moves at half speed. Express its map column as the player
+      /* These backdrops move at half speed. Express the map column as the player
        * X at which it crosses the native view's center (camera+128). */
-      asset_x = layer == 1 && (frame.ram[0x1f7a] == 0 || frame.ram[0x1f7a] == 1) ? wx * 2 - 128 : wx;
+      asset_x = layer == 1 && frame.ram[0x1f7a] <= 2 ? wx * 2 - 128 : wx;
       /* Late Launch BG2 remains ocean/ruins behind the hallway. The later
        * foreground palette events belong to the cliff and boss room. */
       if (layer == 1 && frame.ram[0x1f7a] == 1 && frame.ram[0x1e89] == 0x0e &&

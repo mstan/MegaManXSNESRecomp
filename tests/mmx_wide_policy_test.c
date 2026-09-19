@@ -240,10 +240,12 @@ int main(void) {
   ram[0xd3] = 10; assert(!MmxWidePolicy_IsStageScene(ram));
   ram[0xd3] = 4; ram[0xc3] = 0xc0; ram[0x1f10] = 2;
   assert(MmxWidePolicy_IsStageScene(ram)); /* Spark's light HDMA remains gameplay. */
-  ram[0x1f10] = 8;
-  assert(!MmxWidePolicy_IsStageScene(ram)); /* Weapons menu, same outer game mode. */
-  ram[0xc3] = 0;
-  assert(MmxWidePolicy_IsStageScene(ram)); /* A hidden HUD alone is not a menu. */
+  for (unsigned hud = 6; hud <= 8; hud += 2) {
+    ram[0x1f10] = (uint8_t)hud; ram[0xc3] = 0x80;
+    assert(!MmxWidePolicy_IsStageScene(ram)); /* Menu, before/after the HUD hides. */
+    ram[0xc3] = 0;
+    assert(MmxWidePolicy_IsStageScene(ram)); /* A hidden HUD alone is not a menu. */
+  }
   ram[0xd2] = 2; ram[0xd3] = 2; assert(!MmxWidePolicy_IsStageScene(ram));
   assert(!MmxWidePolicy_ForceNativeSpawnTiming(9, 0x8ff, 0));
   assert(MmxWidePolicy_ForceNativeSpawnTiming(9, 0x900, 0));

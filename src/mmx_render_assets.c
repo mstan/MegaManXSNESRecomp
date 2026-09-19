@@ -228,11 +228,11 @@ bool MmxRenderAssetsRideArmorPalettePending(const uint8_t ram[0x20000], const ui
       memcmp(colors + 1, assets[0x49].colors + 1, 15 * sizeof(*colors)) != 0;
 }
 /* Kind-2 $17 records select background resources. Highway/Launch project
- * CHR horizontally; they and Chill also project palettes. Armadillo's shaft
+ * CHR horizontally; they, Sting and Chill also project palettes. Armadillo's shaft
  * continuation requests its destination palette explicitly. */
 static bool prepare_background(const uint8_t *ram) {
   unsigned stage = ram[0x1f7a];
-  if ((stage != 0 && stage != 1 && stage != 3 && stage != 8) || !range(0x32280, 2)) return false;
+  if ((stage != 0 && stage != 1 && stage != 2 && stage != 3 && stage != 8) || !range(0x32280, 2)) return false;
   if (bg_stage == stage) return true;
   bg_stage = stage;
   memset(bg_phase, 0, sizeof(bg_phase));
@@ -323,7 +323,7 @@ static const MmxBackgroundPalette *background_palette(unsigned phase) {
 }
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
                                                              int world_x) {
-  if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 1 && ram[0x1f7a] != 8) || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
+  if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 1 && ram[0x1f7a] != 2 && ram[0x1f7a] != 8) || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
   return background_palette(bg_phase[1][world_x]);
 }
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalettePhase(const uint8_t ram[0x20000], unsigned phase) {
