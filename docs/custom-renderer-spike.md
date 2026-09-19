@@ -1,6 +1,14 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-18, thirteenth batch)
+## Current owner playtest checklist (2026-09-18, fourteenth batch)
+
+- [x] F1: show Dr. Light inside the capsule during Sting Chameleon's dialogue.
+
+The owner fixture is frozen in `fourteenth-saves`. Fresh captures verify the
+hologram and dialogue portrait during typing and later dialogue pages. Owner
+acceptance remains pending.
+
+## Previous owner playtest checklist (2026-09-18, thirteenth batch)
 
 - [x] F4: show Boomer Kuwanger's elevator platform throughout the adaptive view.
 - [x] F5: restore the small green lift inside the tower, to X's left.
@@ -934,3 +942,35 @@ Each capture replays at five widths with zero raw native pixel differences;
 live maximum-Adaptive output matches replay. These checks verify visibility,
 movement, and initial boarding, not a complete tower playthrough. Original
 saves remain unchanged; ROMs, saves, and capture artifacts are excluded.
+
+
+## Fourteenth playtest: capsule hologram and dialogue portrait
+
+F1 is frozen in `fourteenth-saves`. The ordinary renderer shows Dr. Light
+from this same save. His shared capsule actor `$5C` overrides the section's
+zero tile base with `$20` at `$88:A7BB`; both the hologram and portrait use
+that binding. The custom asset repair misclassified this deliberate offset
+as stale and substituted blank resource tiles.
+
+The renderer now preserves this actor's live graphics and palette when its
+resource is current, across stages. Nonresident resources and unrelated
+actors retain their existing repairs. Guest submission still controls the
+hologram's intentional flicker; the renderer does not synthesize extra actors.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-r0xpfo3t` | Before: 1,677 native pixels replaced by asset repair, erasing the doctor and portrait |
+| `mmx-render-2xbcaest` | Original renderer from the same frozen F1 shows Dr. Light |
+| `mmx-render-vfdbymv4` | Final executable, cold load at frame 45: hologram restored, zero native pixels replaced |
+| `mmx-render-vsf7zq1t` | Frame 150: hologram and fully formed speaking portrait visible |
+| `mmx-render-yr445778` | Frame 360 with dialogue advances: hologram and portrait remain visible on the next page |
+
+All three CTests, strict C warnings, and generated override checks pass.
+The regression exercises the intentional `$20` offset in the native center
+and adaptive margin, preserves blank blink frames, and checks that unrelated
+or unloaded resources still repair. Fresh captures replay at all five widths
+with zero raw or repaired native differences and matching live/replay output.
+This verifies dialogue rendering and progression, not a full capsule upgrade
+playthrough. Original saves are preserved.

@@ -204,6 +204,13 @@ const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
     }
   }
   const MmxSpriteAsset *asset = MmxRenderAssetsSprite(ram[0x1f7a], ram[0x1f08], animation);
+  /* Dr. Light ($88:A7BB) deliberately overrides the section's tile base
+   * with $20 for both the hologram and dialogue portrait. Their current
+   * VRAM is authoritative; treating that offset as stale replaces the
+   * doctor with blank resource tiles. Preserve the shared capsule actor
+   * across stages, including its live colors and guest-controlled flicker. */
+  if (asset && asset->current && object >= 0xe68 && object < 0x1228 &&
+      (object & 63) == 0x28 && ram[object + 10] == 0x5c) return NULL;
   /* Native-timed bosses own current resources. Their palette changes are
    * intentional damage/weapon effects, including Armadillo's hit flash. */
   if (asset && asset->current && object >= 0xe68 && object < 0x1228 &&

@@ -303,6 +303,38 @@ static void resource_decode(void) {
   assert(output[40 * flash_view.width + flash_view.extra + 400] != 0xffffff);
   g_mmx_custom_renderer = false;
 
+  /* Dr. Light's actor overrides a current allocation's zero base with $20.
+   * Private resource tile 1 is blank; live tile $21 contains the hologram.
+   * Preserve it in both the native view and the adaptive margin. */
+  rom_bytes[0x325e4] = 0;
+  rom_bytes[0x325e4 + 0x5b * 2] = 0x9a;
+  rom_bytes[0x325e5 + 0x5b * 2] = 1;
+  MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0x1f08] = 1; ram[0xe72] = 0x5c; ram[0xe7e] = 0x9a;
+  assert(MmxRenderAssetsSprite(0, 1, 0x9a)->current);
+  assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x9a));
+  ram[0xe72] = 4;
+  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x9a)); /* Unrelated actor still repairs. */
+  ram[0xe72] = 0x5c; ram[0x1f08] = 0;
+  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x9a)); /* Missing resource still repairs. */
+  ram[0x1f08] = 1;
+  MmxRendererReset(); g_mmx_custom_renderer = true;
+  rom_bytes[0x103] = 1; ram[0xf] = 0x28; ram[0x10] = 0x20;
+  ppu.cgram[193] = (31 << 5) | (31 << 10);
+  for (int y = 0; y < 8; ++y) ppu.vram[0x21 * 16 + y] = 255;
+  for (int x = 40; x <= 400; x += 360) {
+    put_word(0, x); put_word(2, 40); MmxRendererObserveObject(ram, 0xe68); MmxRendererRecordPiece(ram, 0);
+  }
+  MmxRendererLatchSprites(); capture();
+  assert(MmxRendererDraw(output, flash_view, false));
+  assert(output[40 * flash_view.width + flash_view.extra + 40] == 0x00ffff);
+  assert(output[40 * flash_view.width + flash_view.extra + 400] == 0x00ffff);
+  /* A frame the guest intentionally omits must stay blank (hologram blink). */
+  MmxRendererLatchSprites(); capture();
+  assert(MmxRendererDraw(output, flash_view, false));
+  assert(output[40 * flash_view.width + flash_view.extra + 400] == 0);
+  g_mmx_custom_renderer = false;
+
   /* Heart Tanks bind resource $36 without an enemy animation-table entry.
    * Keep that identity both before and after its section's VRAM allocation. */
   rom_bytes[0x32d2e] = 0x36;
