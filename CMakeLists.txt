@@ -133,7 +133,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         set_property(SOURCE ${GEN_DIR}/bank82_part00_v2.c ${GEN_DIR}/bank82_part07_v2.c APPEND PROPERTY
             OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py)
         set_property(SOURCE ${GEN_DIR}/bank83_part01_v2.c ${GEN_DIR}/bank83_part0b_v2.c
-            ${GEN_DIR}/bank87_part04_v2.c ${GEN_DIR}/bank01_v2.c
+            ${GEN_DIR}/bank87_part04_v2.c ${GEN_DIR}/bank87_part0e_v2.c ${GEN_DIR}/bank01_v2.c
             ${GEN_DIR}/bank81_part0f_v2.c APPEND PROPERTY
             OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py)
         add_custom_target(${TARGET}_widescreen_overrides

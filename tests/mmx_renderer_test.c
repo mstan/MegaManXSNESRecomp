@@ -889,7 +889,26 @@ static void dialogue_backdrop(void) {
   assert(output[80 * v.width + v.extra + 128] == 0x0000ff); /* Return to gameplay. */
 }
 
+static void captive_zero_tiles(void) {
+  memset(rom_bytes, 0, sizeof(rom_bytes));
+  unsigned info = 0x376f7 + 0x51 * 5;
+  rom_word(info, 64); rom_long(info + 2, 0x908000);
+  for (unsigned i = 0; i < 8; ++i) rom_bytes[0x80001 + i * 2] = i < 4 ? 0x55 : 0xaa;
+  rom_word(0x2a96e + 0x20 * 2, 0xaa00 - 0xa96e);
+  const uint8_t transfers[] = {2, 0, 0, 0x7f, 0x64, 2, 32, 0, 0x7f, 0xe5};
+  memcpy(rom_bytes + 0x2aa00, transfers, sizeof(transfers));
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  const MmxSpriteAsset *a = MmxRenderAssetsCaptiveZero();
+  assert(a && a->live_colors && !a->live_tiles);
+  for (unsigned i = 0; i < sizeof(a->tiles); ++i)
+    assert(a->tiles[i] == (i >= 0x800 && i < 0x820 ? 0x55 : i >= 0xa00 && i < 0xa20 ? 0xaa : 0));
+  rom_bytes[0x2aa06] = 48; /* Refuse a DMA extending beyond the resource. */
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  assert(!MmxRenderAssetsCaptiveZero());
+}
+
 static void fortress_actor_presentation(void) {
+  captive_zero_tiles();
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
   memset(rom_bytes, 0, sizeof(rom_bytes)); MmxRendererReset();
   ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4;
@@ -911,6 +930,22 @@ static void fortress_actor_presentation(void) {
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[vile] == 0xff0000 && output[zero] == 0x00ff00);
   assert(!ram[0xe68] && !ram[0xea8]); /* Presentation never creates guest actors. */
+  /* Preview the separate electrical animation, then relinquish it to the
+   * native effect or the capsule's destruction state. */
+  rom_long(0x68000 + 0x9d * 3, 0x908400);
+  rom_long(0x80403, 0x908500); rom_long(0x80406, 0x908508);
+  rom_bytes[0x80500] = rom_bytes[0x80508] = 1;
+  rom_bytes[0x80503] = rom_bytes[0x8050b] = 1; rom_bytes[0x80509] = 8;
+  rom_bytes[0x80502] = rom_bytes[0x8050a] = (uint8_t)-32;
+  ram[0x18396] = 0x2c;
+  unsigned spark = 107 * v.width + v.extra + 607;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[spark] == 0x00ff00);
+  ram[0xb9c] = 1;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[spark] == 0 && output[spark + 8] == 0x00ff00);
+  ram[0xee8] = 1; ram[0xef2] = 0x64; ram[0xee9] = 4;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[spark + 8] == 0);
+  ram[0xee8] = 0; ram[0xb9c] = 0;
   ram[0xe68] = 1; ram[0xe72] = 0x67;
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[vile] == 0xff0000); /* Wait through allocation, until initialization. */
@@ -949,6 +984,14 @@ static void fortress_actor_presentation(void) {
   assert(output[ghost] == 0);
   ram[0xe6a] = 8;
   capture(); assert(MmxRendererDraw(output, v, false)); assert(output[ghost] == 0x00ff00);
+  ram[0x1f08] = 4;
+  ram[0x1948] = 1; ram[0x1952] = 0x10; ram[0x1953] = 0x2e; ram[0x195e] = 0x9d;
+  MmxRendererObserveObject(ram, 0x1948);
+  put_word(0x18, 0x8500); ram[0x1a] = 0x90; put_word(0, 300); put_word(2, 50);
+  MmxRendererRecordPiece(ram, 0); MmxRendererLatchSprites();
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[spark] == 0); /* Real electrical actor replaces the preview. */
+  assert(output[18 * v.width + v.extra + 300] == 0x00ff00);
   g_mmx_custom_renderer = false; MmxRendererReset();
 }
 

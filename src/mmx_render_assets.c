@@ -7,6 +7,8 @@
 static const uint8_t *rom;
 static size_t rom_size;
 static MmxSpriteAsset assets[256];
+static MmxSpriteAsset captive_zero;
+static unsigned captive_zero_ready;
 static uint8_t ready[256], sprite_resource[256];
 static unsigned cached_stage = ~0u, cached_section = ~0u;
 static unsigned bg_stage = ~0u;
@@ -23,13 +25,13 @@ void MmxRenderAssetsSetRom(const uint8_t *bytes, size_t size) {
   rom = bytes; rom_size = size;
   cached_stage = cached_section = ~0u;
   bg_stage = ~0u;
+  captive_zero_ready = 0;
 }
-static bool tiles(unsigned id, uint8_t out[8192]) {
-  uint8_t decoded[65536];
+static size_t decode_resource(unsigned id, uint8_t decoded[65536]) {
   size_t info = 0x376f7 + id * 5;
-  if (!range(info, 5)) return false;
+  if (!range(info, 5)) return 0;
   size_t count = word(info), pos = lorom(word(info + 2) | (rom[info + 4] << 16));
-  if (!count || count > sizeof(decoded)) return false;
+  if (!count || count > 65536) return 0;
   for (size_t n = 0; n < count;) {
     if (!range(pos, 2)) return false;
     unsigned control = rom[pos++], repeat = rom[pos++];
@@ -38,6 +40,12 @@ static bool tiles(unsigned id, uint8_t out[8192]) {
       decoded[n++] = (uint8_t)((control & bit) ? rom[pos++] : repeat);
     }
   }
+  return count;
+}
+static bool tiles(unsigned id, uint8_t out[8192]) {
+  uint8_t decoded[65536];
+  size_t count = decode_resource(id, decoded);
+  if (!count) return false;
   size_t spec = 0x371b7 + word(0x371b7 + id * 2), source = 0;
   memset(out, 0, 8192);
   for (unsigned guard = 0; guard < 256; ++guard) {
@@ -54,6 +62,31 @@ static bool tiles(unsigned id, uint8_t out[8192]) {
     if (destination & 128) return true;
   }
   return false;
+}
+const MmxSpriteAsset *MmxRenderAssetsCaptiveZero(void) {
+  if (captive_zero_ready) return captive_zero_ready == 1 ? &captive_zero : NULL;
+  captive_zero_ready = 2;
+  uint8_t decoded[65536];
+  size_t count = decode_resource(0x51, decoded);
+  if (!count || !range(0x2a96e + 0x20 * 2, 2)) return NULL;
+  /* $88:D1F5 / $84:8FCA upload Zero's CHR on pose changes. His waiting pose
+   * is not in VRAM before initialization. Reproduce frame $20's ROM DMA list
+   * privately; frame $21 only adds an eye tile and has no further transfer. */
+  size_t list = 0x2a96e + word(0x2a96e + 0x20 * 2);
+  memset(&captive_zero, 0, sizeof(captive_zero));
+  for (unsigned n = 0; n < 64; ++n, list += 5) {
+    if (!range(list, 5) || !rom[list] || rom[list + 3] != 0x7f) return NULL;
+    unsigned length = rom[list] * 16, source = word(list + 1);
+    int dest = (((int)rom[list + 4] & 127) * 256 - 0x6000) * 2;
+    if (source + length > count || dest < 0 || dest + length > 8192) return NULL;
+    memcpy(captive_zero.tiles + dest, decoded + source, length);
+    if (rom[list + 4] & 128) {
+      captive_zero.id = 0x51; captive_zero.live_colors = true;
+      captive_zero_ready = 1;
+      return &captive_zero;
+    }
+  }
+  return NULL;
 }
 static bool palette(unsigned id, uint16_t out[16]) {
   size_t p = 0x30000 + (word(0x30133 + id) & 0x7fff);

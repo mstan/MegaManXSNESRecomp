@@ -6,6 +6,25 @@
 static uint8_t ram[0x20000];
 static void put(unsigned a, unsigned v) { ram[a] = (uint8_t)v; ram[a + 1] = (uint8_t)(v >> 8); }
 static unsigned get(unsigned a) { return ram[a] | (ram[a + 1] << 8); }
+static void test_fortress_barrier(void) {
+  memset(ram, 0, sizeof(ram)); ram[0x1f7a] = 11; ram[0x1d12] = 2;
+  ram[0xe72] = 0x17; put(0x1e4d, 0xe70); put(0xe6d, 0xd91);
+  assert(!MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 0x601, true));
+  assert(MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 0x601, false) == 0x601);
+  for (unsigned x = 0xe2f; x <= 0xfb0; ++x) {
+    put(0xe6d, x);
+    assert(MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 0x601, true) ==
+        (x >= 0xe30 && x < 0xfb0 ? 0x601 : 0));
+  }
+  ram[0xe72] = 0x0c; /* A boss must finish dying, even outside that window. */
+  assert(MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 0x6ff, true) == 0x6ff);
+  ram[0xe72] = 0x17; ram[0x1d09] = 2;
+  assert(MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 1, true) == 1);
+  ram[0x1d09] = 0; ram[0x1d12] = 3;
+  assert(MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 1, true) == 1);
+  ram[0x1d12] = 2; ram[0x1f7a] = 2;
+  assert(MmxWidePolicy_BarrierEnemyState(ram, 0x1d08, 0xe68, 1, true) == 1);
+}
 static void test_zero_departure(void) {
   memset(ram, 0, sizeof(ram)); ram[0x1f7a] = 9;
   ram[0xe68] = 1; ram[0xe69] = 2; ram[0xe6a] = 0x0e; ram[0xe6b] = 8; ram[0xe72] = 0x33;
@@ -300,5 +319,6 @@ int main(void) {
   test_elevator_presentation();
   test_visible_lift_recovery();
   test_zero_departure();
+  test_fortress_barrier();
   return 0;
 }

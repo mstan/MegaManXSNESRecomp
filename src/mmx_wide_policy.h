@@ -28,6 +28,8 @@ uint16_t MmxWidePolicy_BeeEntrance(uint8_t ram[0x20000], uint16_t object,
 bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index);
 /* Enemy-family identity, shared by original stages and fortress rematches. */
 bool MmxWidePolicy_IsBossEncounter(uint8_t object_id);
+uint16_t MmxWidePolicy_BarrierEnemyState(const uint8_t ram[0x20000], uint16_t controller,
+                                       uint16_t object, uint16_t state, bool custom);
 bool MmxWidePolicy_IsCollectible(uint8_t object_id);
 bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object_id);
 void MmxWidePolicy_StreakerEntrance(uint8_t ram[0x20000], uint16_t object, unsigned margin);

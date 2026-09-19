@@ -1027,6 +1027,10 @@ static uint16 MmxWsSpawnPreparePasses(uint16 native_anchor,
   return wide_anchor;
 }
 
+uint16 MmxWsBarrierEnemyState(uint16 controller, uint16 object, uint16 state) {
+  return MmxWidePolicy_BarrierEnemyState(g_ram, controller, object, state, g_mmx_custom_renderer);
+}
+
 /* Sigma stage 1's Vile room is an allocation-order-sensitive scripted
  * encounter.  Keep its spawn scan at original timing while retaining the
  * widened renderer, OAM window, and object culling.  Moving any of the room's

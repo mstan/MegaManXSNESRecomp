@@ -133,7 +133,7 @@ static unsigned fortress_waiting_pieces(Piece out[128], const Piece *pieces, uns
   unsigned camera = word(r, 0x1e4d);
   if (r[0x1f7a] != 9 || r[0x1f08] != 4 || r[0x1f7d] >= 2 ||
       camera < 0x900 || camera > 0xa80 || word(r, 0x1e50) != 0x500) return 0;
-  bool live[2] = {false, false};
+  bool live[3] = {false, false, false};
   for (unsigned d = 0xe68; d < 0x1228; d += 64) if (r[d]) {
     bool submitted = false;
     for (unsigned i = 0; i < piece_count; ++i) submitted |= pieces[i].object == d;
@@ -143,19 +143,33 @@ static unsigned fortress_waiting_pieces(Piece out[128], const Piece *pieces, uns
       live[0] = submitted || r[d + 1] != 2 || r[d + 2] != 0x1a || r[d + 3] != 0;
     if (r[d + 10] == 0x66 && r[d + 1] == 2 && r[d + 2] >= 8 && r[d + 3])
       live[1] = submitted || r[d + 2] != 8 || r[d + 3] != 2;
+    if (r[d + 10] == 0x64 && r[d + 1] >= 4) live[2] = true;
   }
-  /* $83:E858 and $88:D3DB start these stationary poses. Section 4 has
-   * already loaded their graphics/palettes before the door opens. Preview
-   * only the unseen margins until each real actor initializes: changing
+  /* $87:EDBB creates a separate looping electrical effect (kind 1, $10/$2E).
+   * Its later allocation must not leave an empty cage between the previews
+   * and native actors. Once submitted, retain its original animation timing. */
+  for (unsigned d = 0x1928; d < 0x1d08; d += 32)
+    if (r[d] && r[d + 10] == 0x10 && r[d + 11] == 0x2e && r[d + 22] == 0x9d)
+      for (unsigned i = 0; i < piece_count; ++i) live[2] |= pieces[i].object == d;
+  /* $83:E858 and $88:D3DB start these waiting poses. Section 4 has loaded
+   * the shared resources; Zero's pose needs its private dynamic CHR transfer.
+   * Preview only the margins until each real actor submits art: changing
    * native allocation order here breaks the Vile/Zero cutscene handoff. */
   unsigned count = 0;
-  for (unsigned actor = 0; actor < 2; ++actor) if (!live[actor]) {
-    unsigned animation = actor ? 0x53 : 0x52;
-    const uint8_t *a = sprite_arrangement(animation, actor ? 0x20 : 0);
+  for (unsigned actor = 0; actor < 3; ++actor) if (!live[actor]) {
+    unsigned animation = actor == 2 ? 0x9d : actor ? 0x53 : 0x52;
+    /* Zero's $11 sequence blinks every six frames. The cage's $01 sequence
+     * cycles through frames $01..$0F, one frame each. */
+    unsigned pose = actor == 2 ? 1 + word(r, 0xb9c) % 15 :
+                    actor ? 0x20 + (word(r, 0xb9c) % 12 >= 6) : 0;
+    const uint8_t *a = sprite_arrangement(animation, pose);
     if (!a) continue;
+    int x = actor == 2 ? 0xb5f : actor ? 0xb60 : 0xb30;
+    int y = actor == 2 ? 0x58b : 0x58e;
+    unsigned attributes = actor == 2 ? r[0x18396] : actor ? 0x2c : 0x29;
     for (unsigned i = 0; i < a[0] && count < 128; ++i)
-      out[count++] = make_piece(a + i * 4, (actor ? 0xb60 : 0xb30) - (int)camera,
-          0x58e - (int)word(r, 0x1e50), 0, actor ? 0x2c : 0x29, 0, animation, 0);
+      out[count++] = make_piece(a + i * 4, x - (int)camera,
+          y - (int)word(r, 0x1e50), 0, attributes, actor == 2 ? r[0x18296] : 0, animation, 0);
   }
   return count;
 }
@@ -634,6 +648,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   Piece waiting[128];
   unsigned waiting_count = stage && g_mmx_render_asset_repairs ?
       fortress_waiting_pieces(waiting, pieces, piece_count) : 0;
+  const MmxSpriteAsset *waiting_zero = waiting_count ? MmxRenderAssetsCaptiveZero() : NULL;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
@@ -675,7 +690,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     for (int x = 0; x < view.width; ++x) object_colors[x] = -1;
     for (int i = (int)waiting_count - 1; i >= 0; --i) {
       Piece s = waiting[i];
-      sprite(&p, r, s.x, s.y, s.attr, s.size, y, view, objects, true, NULL, 0, object_colors, true);
+      const MmxSpriteAsset *asset = s.animation == 0x53 ? waiting_zero : NULL;
+      sprite(&p, r, s.x, s.y, s.attr, s.size, y, view, objects, true, asset, s.tile, object_colors, true);
     }
     bool replaced[128] = {false};
     for (int i = (int)piece_count - 1; i >= 0; --i) {

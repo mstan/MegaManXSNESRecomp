@@ -268,7 +268,7 @@ import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
            "/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/", "/*WS-STREAKER-WAIT*/",
-           "/*WS-STREAKER-ENTRY*/", "/*WS-CHAIN-PLATFORM*/",
+           "/*WS-STREAKER-ENTRY*/", "/*WS-CHAIN-PLATFORM*/", "/*WS-BARRIER-ENEMIES*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
            "/*WS-CHRBIND-PARENT*/", "/*MSU1-MUSIC*/", "/*MSU1-STAGE*/")
@@ -501,6 +501,25 @@ def apply_bank00_spawn_pass(lines, verbose):
     if verbose and n:
         print(f"  WS-SPAWN-PASS injected {n} site(s)")
     return out, n
+
+
+def apply_barrier_enemies(lines, verbose):
+    """Keep the fortress empty-room check independent of adjacent wide enemies."""
+    out, block, count = [], None, 0
+    for line in lines:
+        out.append(line)
+        match = RE_TRACE.search(line)
+        if match:
+            block = canon_pc24(int(match.group(1), 16))
+        if block == 0x07F7C5:
+            match = re.match(r"^(\s*)uint16 (_v\d+) = cpu_read16\(cpu,.*cpu->X", line)
+            if match:
+                indent, var = match.groups()
+                out.append(f"{indent}/*WS-BARRIER-ENEMIES*/ {{ extern uint16 MmxWsBarrierEnemyState(uint16, uint16, uint16); {var} = MmxWsBarrierEnemyState(cpu->D, cpu->X, {var}); }}\n")
+                count += 1
+    if verbose and count:
+        print(f"  WS-BARRIER-ENEMIES injected {count} site(s)")
+    return out, count
 
 
 def oam_limit_snippet(indent, var):
@@ -1099,6 +1118,7 @@ def main():
         (apply_flyer_leash, "/*WS-FLYER-LEASH*/"),
         (apply_streaker_entry, "/*WS-STREAKER-ENTRY*/"),
         (apply_chain_platform, "/*WS-CHAIN-PLATFORM*/"),
+        (apply_barrier_enemies, "/*WS-BARRIER-ENEMIES*/"),
         (apply_ride_armor_cull, "/*WS-ARMOR-CULL*/"),
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
@@ -1172,6 +1192,7 @@ def main():
     if not args.restore:
         for marker, expected in (("/*WS-FLYER-LEASH*/", 1), ("/*WS-ARMOR-CULL*/", 1),
                                  ("/*WS-SHOT-CULL*/", 4),
+                                 ("/*WS-BARRIER-ENEMIES*/", 1),
                                  ("/*WS-STREAKER-ENTRY*/", 1), ("/*WS-CHAIN-PLATFORM*/", 2),
                                  ("/*WS-SPAWN-PASS*/", 4)):
             if effective_counts.get(marker, 0) != expected:

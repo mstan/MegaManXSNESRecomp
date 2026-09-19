@@ -251,6 +251,21 @@ bool MmxWidePolicy_IsBossEncounter(uint8_t object_id) {
   }
 }
 
+uint16_t MmxWidePolicy_BarrierEnemyState(const uint8_t ram[0x20000], uint16_t controller,
+                                       uint16_t object, uint16_t state, bool custom) {
+  /* $87:F7C5 waits for an empty enemy pool before opening a fortress barrier.
+   * Wide lifetime retains enemies from adjacent rooms. Count those the native
+   * horizontal lifetime would retain, and always wait for boss cleanup. */
+  if (!custom || !ram || !state || ram[0x1f7a] < 9 || ram[0x1f7a] > 11 ||
+      controller < 0x1d08 || controller >= 0x1e08 || (controller & 15) != 8 ||
+      ram[controller + 10] != 2 || ram[controller + 1] ||
+      object < 0xe68 || object >= 0x1228 || (object & 63) != 0x28 ||
+      MmxWidePolicy_IsBossEncounter(ram[object + 10]) || ram[object + 10] == 0x67)
+    return state;
+  uint16_t distance = (uint16_t)(read_word(ram, object + 5) - read_word(ram, 0x1e4d) + 0x40);
+  return distance < 0x180 ? state : 0;
+}
+
 bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
                                       uint8_t object_id, bool native_pass) {
   kind &= 0x0f;

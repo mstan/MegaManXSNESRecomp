@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-19, nineteenth batch)
+## Current owner playtest checklist (2026-09-19, twentieth batch)
+
+- [x] F3: correct captive Zero's preview tiles and restore animated electricity.
+- [x] F7: open the fortress barrier after Flame Mammoth's defeat.
+
+Fixtures are frozen in `twentieth-saves`. Fresh captures verify Zero's preview,
+the native actor/effect handoff, and X passing the opened barrier into the next
+corridor. Owner acceptance and full-fight coverage remain pending.
+
+## Previous owner playtest checklist (2026-09-19, nineteenth batch)
 
 - [x] F2: hide Zero's stray ceiling pose during the fortress room approach.
 - [x] F3: show Vile and captive Zero before the native encounter starts.
@@ -1257,3 +1266,49 @@ All ten original saves were backed up in
 No framework, generated gameplay hook, save-format or sprite-capacity changes
 are included. These checks validate the reported presentation and initial
 encounter handoff, not complete Vile or boss fights.
+
+## Twentieth playtest: captive graphics and fortress exit readiness
+
+The nineteenth preview used Zero's correct arrangement but stale live CHR:
+`$88:D1B8` calls `$84:8FCA` to upload graphics whenever his pose changes. The
+renderer now privately decodes resource `$51` and applies waiting-frame `$20`'s
+transfer list at `$85:A96E`. Both transfer ranges exactly match the native
+initialized actor's VRAM at `$6400/$6500`; no guest VRAM is written. Frames
+`$20/$21` reproduce the original six-frame blink and retain the live palette.
+
+The cage's electricity is a separate effect `$10/$2E`, created by `$87:EDBB`.
+Its original animation `$9D` cycles through frames `$01..$0F`. The margin preview
+now includes that animation at its authored position, using the cage's current
+CHR/palette binding. It hands over when the native effect submits art and ends
+when the capsule enters destruction. Body and effect handoffs are independent;
+the underlying encounter still reaches its first dialogue with byte-identical
+WRAM to the previous build.
+
+The F7 exit controller at `$87:F7C5` waits for the entire enemy pool to empty.
+Adaptive lifetime retained an ordinary turret at X `$D91` in the preceding room,
+so the controller waited forever even after Mammoth and his child were deleted.
+A scoped generated hook now ignores ordinary enemies outside the original
+horizontal lifetime window for fortress barrier readiness. Bosses always count,
+including during death; nearby ordinary enemies, other controllers and disabled
+adaptive rendering retain the original behavior. The turret remains alive and
+visible in the margin. The original barrier animation, tile updates, delay and
+checkpoint update run normally, with no save migration required.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-u_xfgov5` | Before: cold F3 has stale preview CHR; F7 starts during Mammoth's death |
+| `mmx-render-gcm2q7vv` / `mmx-render-mt3w76uc` | Before: barrier stays closed after waiting, approaching and jumping |
+| `mmx-render-5yxb3w2c` | Final F3 cold approach: correct Zero and animated electrical effect |
+| `mmx-render-nh0hifk0` | Final F3 frame 550: native actors/effect own the scene; full WRAM matches the nineteenth baseline |
+| `mmx-render-gx8_8nyv` | Final F7 frame 1070: X passes the opened barrier, camera advances to `$106E` in the next corridor |
+
+Windows build, all three CTests, strict C warnings and generated-hook checks
+pass. Targeted tests cover private dynamic CHR destinations and invalid source
+ranges, electrical animation and handoff, capsule destruction, original barrier
+range boundaries, boss cleanup and unrelated controller states. Final captures
+replay at five widths with zero raw/repaired native differences and matching
+live/replay output. All ten original saves were backed up in
+`save-backups/twentieth-build-20260919-150415`; hashes are unchanged. This validates
+the reported room and exit sequence, not complete fortress progression.
