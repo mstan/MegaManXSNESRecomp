@@ -98,23 +98,66 @@ static Piece make_piece(const uint8_t *p, int x, int y, unsigned flip,
   return (Piece){(int16_t)x, (int16_t)y, (uint16_t)attr, (uint8_t)size,
       (uint8_t)animation, p[3], (uint8_t)(p[4] & 14), (uint16_t)object};
 }
+static const uint8_t *sprite_arrangement(unsigned animation, unsigned f) {
+  const uint8_t *pointer = rom_at(0x8d8000 + animation * 3, 3);
+  if (!pointer) return NULL;
+  unsigned address = word(pointer, 0) | (pointer[2] << 16);
+  pointer = rom_at(address + f * 3, 3);
+  if (!pointer) return NULL;
+  address = word(pointer, 0) | (pointer[2] << 16);
+  const uint8_t *arrangement = rom_at(address, 1);
+  return arrangement && rom_at(address, 1 + arrangement[0] * 4) ? arrangement : NULL;
+}
 static void expand_object(const uint8_t *ram, unsigned object) {
   if (object < 0x20 || object > 0x1fe0) return;
   unsigned animation = ram[object + 0x16], f = ram[object + 0x17] & 127;
-  const uint8_t *pointer = rom_at(0x8d8000 + animation * 3, 3);
-  if (!pointer) return;
-  unsigned address = word(pointer, 0) | (pointer[2] << 16);
-  pointer = rom_at(address + f * 3, 3);
-  if (!pointer) return;
-  address = word(pointer, 0) | (pointer[2] << 16);
-  const uint8_t *arrangement = rom_at(address, 1);
-  if (!arrangement || !rom_at(address, 1 + arrangement[0] * 4)) return;
+  const uint8_t *arrangement = sprite_arrangement(animation, f);
+  if (!arrangement) return;
   int x = (int16_t)(word(ram, object + 5) - word(ram, 0x1e4d));
   int y = (int16_t)(word(ram, object + 8) + (int8_t)ram[object + 0x19] - word(ram, 0x1e50));
   unsigned base = MmxWidePolicy_CrusherTileBase(ram, (uint16_t)object, ram[object + 0x18]);
   for (unsigned i = 0; i < arrangement[0] && expanded_building_count < MAX_PIECES; ++i)
     expanded_building[expanded_building_count++] = make_piece(arrangement + i * 4, x, y,
         ram[object + 0x11] & 0x40, ram[object + 0x11] & 0x3f, base, animation, object);
+}
+static bool fortress_sound_actor(unsigned object) {
+  /* $88:D359 uses Zero's previous pose while playing the offscreen room
+   * sounds. It still owns a release timer; suppress only its margin art. */
+  const uint8_t *r = frame.ram;
+  return r[0x1f7a] == 9 && object >= 0xe68 && object < 0x1228 &&
+      (object & 63) == 0x28 && r[object + 10] == 0x66 &&
+      r[object + 1] == 2 && r[object + 2] == 6;
+}
+static unsigned fortress_waiting_pieces(Piece out[128], const Piece *pieces, unsigned piece_count) {
+  const uint8_t *r = frame.ram;
+  unsigned camera = word(r, 0x1e4d);
+  if (r[0x1f7a] != 9 || r[0x1f08] != 4 || r[0x1f7d] >= 2 ||
+      camera < 0x900 || camera > 0xa80 || word(r, 0x1e50) != 0x500) return 0;
+  bool live[2] = {false, false};
+  for (unsigned d = 0xe68; d < 0x1228; d += 64) if (r[d]) {
+    bool submitted = false;
+    for (unsigned i = 0; i < piece_count; ++i) submitted |= pieces[i].object == d;
+    /* Initializers set their states one frame before submitting art. Keep
+     * the preview through that gap, but never replace later hidden poses. */
+    if (r[d + 10] == 0x67 && r[d + 1])
+      live[0] = submitted || r[d + 1] != 2 || r[d + 2] != 0x1a || r[d + 3] != 0;
+    if (r[d + 10] == 0x66 && r[d + 1] == 2 && r[d + 2] >= 8 && r[d + 3])
+      live[1] = submitted || r[d + 2] != 8 || r[d + 3] != 2;
+  }
+  /* $83:E858 and $88:D3DB start these stationary poses. Section 4 has
+   * already loaded their graphics/palettes before the door opens. Preview
+   * only the unseen margins until each real actor initializes: changing
+   * native allocation order here breaks the Vile/Zero cutscene handoff. */
+  unsigned count = 0;
+  for (unsigned actor = 0; actor < 2; ++actor) if (!live[actor]) {
+    unsigned animation = actor ? 0x53 : 0x52;
+    const uint8_t *a = sprite_arrangement(animation, actor ? 0x20 : 0);
+    if (!a) continue;
+    for (unsigned i = 0; i < a[0] && count < 128; ++i)
+      out[count++] = make_piece(a + i * 4, (actor ? 0xb60 : 0xb30) - (int)camera,
+          0x58e - (int)word(r, 0x1e50), 0, actor ? 0x2c : 0x29, 0, animation, 0);
+  }
+  return count;
 }
 void MmxRendererObserveObject(const uint8_t ram[0x20000], uint16_t object) {
   if (!g_mmx_custom_renderer || !ram) return;
@@ -588,6 +631,9 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       MmxRenderAssetsDeathPaletteFade(frame.ram, frame.lines[0].palette) : 0;
   const Piece *pieces = frame.expand && g_mmx_render_asset_repairs ? frame.expanded : frame.pieces;
   unsigned piece_count = frame.expand && g_mmx_render_asset_repairs ? frame.expanded_count : frame.piece_count;
+  Piece waiting[128];
+  unsigned waiting_count = stage && g_mmx_render_asset_repairs ?
+      fortress_waiting_pieces(waiting, pieces, piece_count) : 0;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
@@ -627,9 +673,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     uint16_t objects[MMX_RENDER_MAX_WIDTH] = {0};
     int object_colors[MMX_RENDER_MAX_WIDTH];
     for (int x = 0; x < view.width; ++x) object_colors[x] = -1;
+    for (int i = (int)waiting_count - 1; i >= 0; --i) {
+      Piece s = waiting[i];
+      sprite(&p, r, s.x, s.y, s.attr, s.size, y, view, objects, true, NULL, 0, object_colors, true);
+    }
     bool replaced[128] = {false};
     for (int i = (int)piece_count - 1; i >= 0; --i) {
       Piece s = pieces[i]; const MmxSpriteAsset *asset = piece_assets[i];
+      if (g_mmx_render_asset_repairs && fortress_sound_actor(s.object) &&
+          (s.x >= 256 || s.x + s.size <= 0)) continue;
       /* Recorded pieces already obey the retail submission budget. Draw
        * their entire footprint, including x=255 which native D76A clips.
        * Only the explicit expanded list can add pieces beyond that budget. */

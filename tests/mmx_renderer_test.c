@@ -434,6 +434,22 @@ static void resource_decode(void) {
   assert(asset && asset->id == 0x61 && asset->current && asset->attributes == 0x2b && asset->colors[1] == 17);
   assert(asset->tiles[0] == 0x55);
   assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x68)->id == 0x62);
+  ram[0x1472] = 6;
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x67)->colors[1] == 17);
+  ram[0x1472] = 0x1a;
+  /* The fortress rematch uses the same attacks and ice fragments. */
+  rom_word(0x32cee + 20, 0x20); rom_word(0x32cee + 22, 0x22);
+  ram[0x1f7a] = 10;
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x67)->colors[1] == 17);
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x68)->id == 0x62);
+  ram[0x1432] = 6;
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1428, 0x67)->colors[1] == 17);
+  ram[0x1932] = 8;
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1928, 0x67)->colors[1] == 17);
+  ram[0x1932] = 9;
+  assert(MmxRenderAssetsObjectSprite(ram, 0x1928, 0x67)->colors[1] == 1);
+  ram[0x1f7a] = 8;
   assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)); /* Current boss owns its palette. */
   ram[0xe72] = 0x14;
   assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x67)); /* Armadillo damage colors, too. */
@@ -444,6 +460,22 @@ static void resource_decode(void) {
   ram[0xe72] = 0x0d; ram[0xe80] = 8;
   assert(MmxRenderAssetsSprite(8, 0, 1)->id == 7);
   assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 1));
+  /* Rangda's shared eye/wall art must retain deliberate live palette 7,
+   * even though the resource descriptor's default selects palette 4. */
+  rom_bytes[0x32d2a] = 0x8f;
+  memcpy(rom_bytes + 0x376f7 + 0x8f * 5, rom_bytes + 0x376fc, 5);
+  rom_word(0x371b7 + 0x8f * 2, 0x200);
+  rom_bytes[0x325e4 + 0x5d * 2] = 0x9b; rom_bytes[0x325e5 + 0x5d * 2] = 0x8f;
+  MmxRenderAssetsSetRom(NULL, 0); MmxRenderAssetsSetRom(rom_bytes, sizeof(rom_bytes));
+  for (unsigned id = 0x5e; id <= 0x60; ++id) {
+    ram[0xe72] = (uint8_t)id;
+    assert(!MmxRenderAssetsObjectSprite(ram, 0xe68, 0x9b));
+  }
+  ram[0xe72] = 4;
+  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x9b));
+  ram[0xe72] = 0x60; ram[0x1f08] = 1;
+  assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x9b)); /* Nonresident art still repairs. */
+  ram[0x1f08] = 0;
   /* A cold Sub Tank binds resource $8C without an enemy-table animation. */
   rom_bytes[0x32d1e] = 0x8c;
   memcpy(rom_bytes + 0x376f7 + 0x8c * 5, rom_bytes + 0x376fc, 5);
@@ -857,6 +889,69 @@ static void dialogue_backdrop(void) {
   assert(output[80 * v.width + v.extra + 128] == 0x0000ff); /* Return to gameplay. */
 }
 
+static void fortress_actor_presentation(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
+  memset(rom_bytes, 0, sizeof(rom_bytes)); MmxRendererReset();
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4;
+  ram[0x1f7a] = 9; ram[0x1f08] = 4; ram[0x1e4e] = 9; ram[0x1e51] = 5;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16;
+  for (unsigned i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
+  ppu.cgram[193] = 31; ppu.cgram[225] = 31 << 5;
+  for (unsigned y = 0; y < 8; ++y) ppu.vram[4096 + 16 + y] = ppu.vram[16 + y] = 255;
+  for (unsigned actor = 0; actor < 2; ++actor) {
+    unsigned p = 0x68000 + (0x52 + actor) * 3;
+    rom_word(p, 0x8000 + actor * 256); rom_bytes[p + 2] = 0x90;
+    p = 0x80000 + actor * 256 + (actor ? 0x20 * 3 : 0);
+    rom_word(p, 0x8200); rom_bytes[p + 2] = 0x90;
+  }
+  rom_bytes[0x80200] = 1; rom_bytes[0x80203] = 1;
+  MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  unsigned vile = 142 * v.width + v.extra + 560, zero = vile + 48;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[vile] == 0xff0000 && output[zero] == 0x00ff00);
+  assert(!ram[0xe68] && !ram[0xea8]); /* Presentation never creates guest actors. */
+  ram[0xe68] = 1; ram[0xe72] = 0x67;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[vile] == 0xff0000); /* Wait through allocation, until initialization. */
+  ram[0xe69] = 2; ram[0xe6a] = 0x1a;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[vile] == 0xff0000); /* Initialized but not yet submitted. */
+  ram[0xe6b] = 2;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[vile] == 0 && output[zero] == 0x00ff00);
+  ram[0xea8] = 1; ram[0xeb2] = 0x66; ram[0xea9] = 2; ram[0xeaa] = 8;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[zero] == 0x00ff00);
+  ram[0xeab] = 2;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[zero] == 0x00ff00);
+  ram[0xeab] = 4;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[zero] == 0);
+  ram[0xe68] = ram[0xea8] = 0; ram[0x1f7d] = 2;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[vile] == 0 && output[zero] == 0); /* Never resurrect actors after the fight. */
+  ram[0x1f7d] = 0; ram[0x1f08] = 3;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[vile] == 0);
+  ram[0x1f08] = 4; ram[0x1f7a] = 8;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[zero] == 0);
+
+  /* Zero's sound-controller state must not display a leftover margin pose;
+   * the same submitted piece remains visible during his actual performance. */
+  ram[0x1f7a] = 9; ram[0x1f08] = 3; ram[0xe72] = 0x66;
+  ram[0xe69] = 2; ram[0xe6a] = 6; ram[0xe7e] = 0x53;
+  g_mmx_custom_renderer = true;
+  MmxRendererObserveObject(ram, 0xe68);
+  ram[0x18] = 0; ram[0x19] = 0x82; ram[0x1a] = 0x90;
+  ram[0] = 44; ram[1] = 1; ram[2] = 20; ram[0xf] = 0x2c;
+  MmxRendererRecordPiece(ram, 0); MmxRendererLatchSprites();
+  capture(); assert(MmxRendererDraw(output, v, false));
+  unsigned ghost = 20 * v.width + v.extra + 300;
+  assert(output[ghost] == 0);
+  ram[0xe6a] = 8;
+  capture(); assert(MmxRendererDraw(output, v, false)); assert(output[ghost] == 0x00ff00);
+  g_mmx_custom_renderer = false; MmxRendererReset();
+}
+
 static void weapons_menu_margins(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
@@ -877,4 +972,4 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); weapons_menu_margins(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); weapons_menu_margins(); return 0; }

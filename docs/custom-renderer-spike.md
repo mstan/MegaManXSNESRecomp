@@ -1,6 +1,18 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-19, eighteenth batch)
+## Current owner playtest checklist (2026-09-19, nineteenth batch)
+
+- [x] F2: hide Zero's stray ceiling pose during the fortress room approach.
+- [x] F3: show Vile and captive Zero before the native encounter starts.
+- [x] F5: preserve Penguin's ice colors in the fortress rematch.
+- [x] F6: preserve Rangda Bangda's moving wall-end colors.
+
+Fixtures are frozen in `nineteenth-saves`. Fresh captures cover the approach,
+waiting poses and native actor handoff, an ice-ball attack, and moving/reopened
+walls. The encounter reaches its initial dialogue with identical guest RAM to
+the baseline. Full-fight progression and owner acceptance remain pending.
+
+## Previous owner playtest checklist (2026-09-19, eighteenth batch)
 
 - [x] F1: let Zero finish his fortress departure and release X's controls.
 - [x] F2: retain adaptive width through the stage-exit fade, until fully black.
@@ -1190,3 +1202,58 @@ replay at five widths with zero raw/repaired native differences and matching
 live/replay output. All ten original saves were backed up in
 `save-backups/eighteenth-build-20260919-131345`; their hashes remained unchanged.
 These checks validate the reported scenes, not full-game progression.
+
+## Nineteenth playtest: fortress actors and shared boss palettes
+
+The stray Zero sprite is enemy `$66` in state `2/6`, a sound/timer controller
+at `$88:D359` retaining his earlier jump pose. Its later state releases X, so
+deleting it would break progression. The renderer suppresses only its pieces
+wholly outside the native frame; the actor and its timer remain untouched.
+
+The Vile room's section 4 loads the necessary graphics before X enters, but
+native actor allocation waits for the camera. The renderer previews the ROM's
+stationary arrangements (Vile `$52/0`, captive Zero `$53/$20`) at their authored
+waiting positions `$B30/$58E` and `$B60/$58E`, using the live graphics and palettes.
+These pieces draw only in the margins. Each preview ends when its corresponding
+native actor submits art, including the one-frame initialization gap, or leaves
+the waiting state. Section, camera, and encounter-progress checks prevent a
+preview outside this scene or after the fight. Native spawn timing, allocation
+order, camera locks and guest state are unchanged.
+
+Penguin's balls and breath deliberately combine body CHR resource `$61` with
+ice palette `$62` (`$81:BBEE`, `$81:BCAA..BCBA`). The previous repair recognized
+only breath in the original stage. The shared binding now covers projectile
+IDs `$06/$1A` and ice-fragment effect `$08`, including the fortress rematch.
+Unrelated effects and the boss body's live damage colors retain their handling.
+
+Rangda Bangda's eyes, nose and moving walls share animation `$9B` but deliberately
+select different live palettes. In particular, `$88:B45D` assigns palette 7 to
+wall ends; replacing that with the resource's default palette 4 made them red.
+Current enemy bindings `$5E..$60` now retain their live art and colors. Repairs
+still apply when their resource is not resident.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-5v9b8ldm` | Fresh F2/F3 loads: stray ceiling pose absent, Vile and captive Zero visible |
+| `mmx-render-0r0l52ol` / `mmx-render-wrd9keud` | F3 frames 293/294: previews remain through actor initialization |
+| `mmx-render-ubzyo44n` | F3 frame 296: native actors submit their art and take over |
+| `mmx-render-_v280mma` / baseline `mmx-render-qoev3cae` | F3 frame 550: initial dialogue reached; full WRAM comparison has zero differing bytes |
+| `mmx-render-5c3m4nhi` | F5 frame 120: ice-ball colors agree with the native rendering |
+| `mmx-render-li2h3sef` | F6 frame 575: moving wall ends retain silver/blue colors |
+| `mmx-render-8sxtrjm2` / `mmx-render-_n3tmej3` | F6 frames 700/900: closed walls retain their live colors |
+| `mmx-render-on_q3l72` | F6 frame 1200: walls reopen and the fight continues |
+
+Windows build, all three CTests, strict C warnings, generated-hook checks and
+diff checks pass. Targeted tests cover preview ownership and initialization,
+scene/progress boundaries, the sound-controller pose, shared Penguin bindings
+across both stages, and resident versus nonresident Rangda parts. Final captures
+replay at five widths with zero raw/repaired native differences and matching
+live/replay output. An earlier ice-fragment capture also replays with corrected
+colors; the fortress breath binding is covered by the targeted asset test.
+All ten original saves were backed up in
+`save-backups/nineteenth-build-20260919-135307`; their hashes remained unchanged.
+No framework, generated gameplay hook, save-format or sprite-capacity changes
+are included. These checks validate the reported presentation and initial
+encounter handoff, not complete Vile or boss fights.

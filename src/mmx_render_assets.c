@@ -150,13 +150,18 @@ const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
     stage_assets(ram[0x1f7a], ram[0x1f08]);
     return ready[0x36] == 1 ? &assets[0x36] : NULL;
   }
-  /* Penguin breath shares the body's CHR ($61) but deliberately borrows
-   * the ice-statue palette ($62), $81:BCAA..BCBA. Animation identity alone
+  /* Penguin's balls and breath share the body's CHR ($61) but deliberately
+   * borrow the ice-statue palette ($62), $81:BBEE and $81:BCAA..BCBA. Animation identity alone
    * must not turn that valid mixed binding back into the boss palette. */
-  if (ram[0x1f7a] == 8 && object >= 0x1268 && object <= 0x18e8 &&
-      (object & 63) == 0x28 && ram[object + 10] == 0x1a &&
+  bool penguin_attack = object >= 0x1428 && object < 0x1628 &&
+      (object & 63) == 0x28 && (ram[object + 10] == 6 || ram[object + 10] == 0x1a);
+  /* Ice fragments inherit that same mixed binding. The shared
+   * actors also run in the fortress rematch, not just Penguin's own stage. */
+  bool penguin_ice = object >= 0x1928 && object < 0x1d08 &&
+      (object & 31) == 8 && ram[object + 10] == 8;
+  if ((penguin_attack || penguin_ice) &&
       (animation == 0x67 || animation == 0x68)) {
-    stage_assets(8, ram[0x1f08]);
+    stage_assets(ram[0x1f7a], ram[0x1f08]);
     if (ready[0x62] != 1) return NULL;
     if (animation == 0x68) return &assets[0x62];
     if (ready[0x61] != 1) return NULL;
@@ -211,6 +216,13 @@ const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
    * across stages, including its live colors and guest-controlled flicker. */
   if (asset && asset->current && object >= 0xe68 && object < 0x1228 &&
       (object & 63) == 0x28 && ram[object + 10] == 0x5c) return NULL;
+  /* Rangda Bangda's eyes, nose and moving walls share animation $9B.
+   * Their current bindings deliberately select separate live palettes;
+   * $88:B45D explicitly gives the wall ends palette 7 instead of the
+   * eye resource's default palette 4. Preserve their animation and flashes. */
+  if (asset && asset->current && animation == 0x9b &&
+      object >= 0xe68 && object < 0x1228 && (object & 63) == 0x28 &&
+      ram[object + 10] >= 0x5e && ram[object + 10] <= 0x60) return NULL;
   /* Native-timed bosses own current resources. Their palette changes are
    * intentional damage/weapon effects, including Armadillo's hit flash. */
   if (asset && asset->current && object >= 0xe68 && object < 0x1228 &&
