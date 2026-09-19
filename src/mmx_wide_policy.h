@@ -8,6 +8,8 @@ uint8_t MmxWidePolicy_CrusherTileBase(const uint8_t ram[0x20000], uint16_t objec
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]);
 uint16_t MmxWidePolicy_FlyerLeash(unsigned margin);
 bool MmxWidePolicy_RideArmorCull(uint16_t distance, unsigned margin);
+bool MmxWidePolicy_PresentationCull(const uint8_t ram[0x20000], uint16_t object,
+                                    uint16_t distance, unsigned margin, bool custom);
 bool MmxWidePolicy_PrematureRideArmor(const uint8_t ram[0x20000]);
 bool MmxWidePolicy_RecoverRideArmor(uint8_t ram[0x20000], unsigned margin);
 
@@ -25,6 +27,7 @@ bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index);
 /* Enemy-family identity, shared by original stages and fortress rematches. */
 bool MmxWidePolicy_IsBossEncounter(uint8_t object_id);
 bool MmxWidePolicy_IsCollectible(uint8_t object_id);
+bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object_id);
 void MmxWidePolicy_StreakerEntrance(uint8_t ram[0x20000], uint16_t object, unsigned margin);
 bool MmxWidePolicy_RecoverParkedStreaker(uint8_t ram[0x20000], uint16_t object, uint16_t authored_x);
 uint16_t MmxWidePolicy_ChainPlatformLine(const uint8_t ram[0x20000], uint16_t object,

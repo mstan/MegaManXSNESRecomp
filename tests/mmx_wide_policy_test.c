@@ -6,6 +6,37 @@
 static uint8_t ram[0x20000];
 static void put(unsigned a, unsigned v) { ram[a] = (uint8_t)v; ram[a + 1] = (uint8_t)(v >> 8); }
 static unsigned get(unsigned a) { return ram[a] | (ram[a + 1] << 8); }
+static void test_elevator_presentation(void) {
+  memset(ram, 0, sizeof(ram));
+  ram[0x1f7a] = 7; ram[0xf32] = 0x3d;
+  /* Owner's F4: platform center $580, camera $416. Visible in the wide
+   * right margin, while the original 808F predicate rejects it. */
+  uint16_t distance = 0x580 - 0x416 + 0x60;
+  assert(MmxWidePolicy_PresentationCull(ram, 0xf28, distance, 0, true));
+  assert(MmxWidePolicy_PresentationCull(ram, 0xf28, distance, 384, false));
+  assert(!MmxWidePolicy_PresentationCull(ram, 0xf28, distance, 384, true));
+  for (unsigned m = 0; m <= 384; ++m) {
+    assert(!MmxWidePolicy_PresentationCull(ram, 0xf28, (uint16_t)-m, m, true));
+    assert(MmxWidePolicy_PresentationCull(ram, 0xf28, (uint16_t)(-1 - m), m, true));
+    assert(!MmxWidePolicy_PresentationCull(ram, 0xf28, (uint16_t)(0x1bf + m), m, true));
+    assert(MmxWidePolicy_PresentationCull(ram, 0xf28, (uint16_t)(0x1c0 + m), m, true));
+  }
+  ram[0xf32] = 0x3e; /* Adjacent turret family keeps its native controller. */
+  assert(MmxWidePolicy_PresentationCull(ram, 0xf28, distance, 384, true));
+  ram[0x1632] = 0x3d; /* IDs in another object pool are not the elevator. */
+  assert(MmxWidePolicy_PresentationCull(ram, 0x1628, distance, 384, true));
+}
+static void test_visible_lift_recovery(void) {
+  for (unsigned stage = 0; stage < 13; ++stage)
+    for (unsigned kind = 0; kind < 4; ++kind) {
+      assert(MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x16) == (stage == 7 && kind == 3));
+      assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x17)); /* Attached cannon. */
+      assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x3d)); /* Boarding controller. */
+      assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x37)); /* Room-timed flyer. */
+      assert(MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x0b) == (kind == 0));
+      assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x05) || kind == 0); /* Boss vs pickup. */
+    }
+}
 static void test_flyer_and_armor_range(void) {
   for (unsigned margin = 0; margin <= 384; margin += 8) {
     /* A flyer at the spawn lead can approach within its 64px attack range
@@ -231,5 +262,7 @@ int main(void) {
   test_chain_platform_switches();
   test_bee_camera_and_descent();
   test_flyer_and_armor_range();
+  test_elevator_presentation();
+  test_visible_lift_recovery();
   return 0;
 }

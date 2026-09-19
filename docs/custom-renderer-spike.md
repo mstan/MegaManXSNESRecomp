@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-18, twelfth batch)
+## Current owner playtest checklist (2026-09-18, thirteenth batch)
+
+- [x] F4: show Boomer Kuwanger's elevator platform throughout the adaptive view.
+- [x] F5: restore the small green lift inside the tower, to X's left.
+
+The owner restored F4 to the elevator entrance; F4/F5 are frozen together in
+`thirteenth-restored-saves`. Fresh captures verify both fixes, including lift
+movement and elevator boarding/ascent. Owner acceptance remains pending.
+
+## Previous owner playtest checklist (2026-09-18, twelfth batch)
 
 - [x] F1: preserve the serpent head's damage flash when firing immediately after load.
 - [x] F1: repair the torn waterline/background on the left.
@@ -888,3 +897,40 @@ HUD layout. Both headered and unheadered ROMs are accepted for replay.
 The central Beads issue is saved locally. Its Dolt push currently fails because
 the configured remote references a missing `refs/dolt/remotes/origin/dolt/data`
 ref; this spike does not repair the issue database's synchronization setup.
+
+## Thirteenth playtest: Kuwanger elevator and missing green lift
+
+F4 was restored by the owner before final testing. F5's additional reference
+identifies the green rideable lift inside the tower to X's left, with its
+attached cannon. Frozen copies are in `thirteenth-restored-saves`.
+
+- F4 already contains the live elevator (enemy `$3D`, center `$0580,$1180`).
+  At camera `$0416`, `$82:808F` rejects its drawing even though the widened
+  lifetime check keeps it active. Its presentation interval now follows the
+  selected width. Boarding at `$87:AF10`, vertical culling, and movement remain
+  the original guest routines; other controllers keep their existing rules.
+- F5's lift record at `$053E,$037C` has a clear live flag (`$FAA7`) but lies in
+  a column already passed by the horizontal spawn cursors during the climb.
+  The visible pickup rescan now also admits Kuwanger's rideable lift `$16`.
+  DCDB retains ownership of allocation and live flags; the lift creates its
+  own `$17` cannon. The rescan cannot independently create cannons, ordinary
+  enemies, bosses, or mechanism events. Its vertical bound is also corrected
+  to the height `$0120` expected by DCDB, rather than an absolute bottom Y.
+
+Evidence under `build-custom/validation`, capacity off:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-8gw6d4ao` | Before: restored F4 elevator has zero submitted pieces; F5 lift is absent |
+| `mmx-render-8hyjfg8s` | After: F4 submits all 20 elevator pieces; cold F5 restores one lift and its cannon at the authored height |
+| `mmx-render-9q2q21rz` | F5 frame 180: same lift moves from X `$0551` to `$05B6`, with no duplicate allocation |
+| `mmx-render-wo95eftl` | F4 approach: X boards, native contact flag is set, elevator enters its running state |
+| `mmx-render-wgiic2d7` | F4 frame 280 after releasing Right: elevator ascends with X alive and aboard |
+| `mmx-render-8dec2oya` | F5 left/jump/fire approach: lift and cannon remain visible during player interaction |
+| `mmx-render-pg658s34` | Earlier Armadillo cold Sub Tank and overhead health pickups still render |
+
+All three CTests, strict C warnings, and generated override checks pass.
+Each capture replays at five widths with zero raw native pixel differences;
+live maximum-Adaptive output matches replay. These checks verify visibility,
+movement, and initial boarding, not a complete tower playthrough. Original
+saves remain unchanged; ROMs, saves, and capture artifacts are excluded.

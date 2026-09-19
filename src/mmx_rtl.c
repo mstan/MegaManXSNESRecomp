@@ -932,13 +932,7 @@ static int MmxWsSpawnWide(void) {
 uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
   extern uint8_t g_ram[0x20000];
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
-  bool traffic = g_ram[0x1f7a] == 0 && g_ram[(uint16)(dpage + 0x0a)] == 0x21;
-  bool armor = g_mmx_custom_renderer && dpage == 0xe18;
-  bool grinder = g_mmx_custom_renderer && dpage >= 0xe68 && dpage < 0x1228 &&
-      (dpage & 63) == 0x28 && g_ram[dpage + 10] == 0x2c;
-  if (!m || (!traffic && !armor && !grinder))
-    return v >= 0x1c0 ? 1 : 0;
-  return ((uint16)(v + m) >= (uint16)(0x1c0 + 2 * m)) ? 1 : 0;
+  return MmxWidePolicy_PresentationCull(g_ram, dpage, v, m, g_mmx_custom_renderer);
 }
 
 /* bank_00_D76A rejects a metasprite tile when (screenX + 16) reaches
@@ -994,7 +988,7 @@ static struct {
   uint16 native_cursor_before;
   uint16 dpage;
   int active;
-  int collectibles;
+  int visible_rescan;
 } s_ws_spawn_pass;
 
 static uint16 MmxWsSpawnReadCursor(uint16 dpage) {
@@ -1082,7 +1076,8 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint16 rec = MmxWsSpawnReadCursor(dpage);
   uint8 *descriptor = RomPtr(0x850000u | rec);
   const uint8 object_id = descriptor[3];
-  if (s_ws_spawn_pass.collectibles) return kind == 0 && MmxWidePolicy_IsCollectible(object_id);
+  if (s_ws_spawn_pass.visible_rescan)
+    return MmxWidePolicy_RescanSpawnRecord(g_ram[0x1f7a], kind, object_id);
   if (!g_mmx_custom_renderer && kind == 3 && object_id == 0x37)
     return anchor == s_ws_spawn_pass.wide_anchor;
   int allowed = 1;
@@ -1127,7 +1122,8 @@ void MmxWsCollectiblePass(CpuState *cpu) {
   int margin = g_mmx_custom_renderer && MmxWidePolicy_IsStageScene(g_ram) ? MmxWsMargin() : 0;
   if (!margin) return;
   /* DC92 runs even when no camera column changed. This matters on a cold
-   * state load: visible pickups must not wait for X to move a full column.
+   * state load: visible pickups and rideable lifts must not wait for X to
+   * move a full column. A vertical climb can also revisit an earlier column.
    * DCDB remains the allocator, with its collected/live flags untouched. */
   CpuState saved = *cpu;
   uint16 dpage = cpu->D;
@@ -1135,16 +1131,16 @@ void MmxWsCollectiblePass(CpuState *cpu) {
   int camera = g_ram[0x1e4d] | (g_ram[0x1e4e] << 8);
   int y = (g_ram[0x1e50] | (g_ram[0x1e51] << 8)) - 32;
   g_ram[dpage + 2] = (uint8)y; g_ram[dpage + 3] = (uint8)(y >> 8);
-  y += 0x120;
-  g_ram[dpage + 4] = (uint8)y; g_ram[dpage + 5] = (uint8)(y >> 8);
-  s_ws_spawn_pass.active = s_ws_spawn_pass.collectibles = 1;
+  /* DCDB compares (recordY - top) against a height, not an absolute bottom. */
+  g_ram[dpage + 4] = 0x20; g_ram[dpage + 5] = 1;
+  s_ws_spawn_pass.active = s_ws_spawn_pass.visible_rescan = 1;
   for (int column = (camera - margin - 32) & ~31; column <= camera + 256 + margin + 32; column += 32) {
     if (column < 0 || column >= 8192) continue;
     g_ram[dpage] = (uint8)column; g_ram[dpage + 1] = (uint8)(column >> 8);
     *cpu = saved;
     (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
   }
-  s_ws_spawn_pass.active = s_ws_spawn_pass.collectibles = 0;
+  s_ws_spawn_pass.active = s_ws_spawn_pass.visible_rescan = 0;
   memcpy(g_ram + dpage, scratch, sizeof(scratch));
   *cpu = saved;
 }

@@ -16,6 +16,15 @@ bool MmxWidePolicy_IsCollectible(uint8_t object_id) {
   return (object_id >= 1 && object_id <= 5) || object_id == 0x0b;
 }
 
+bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object_id) {
+  /* A vertical climb can bring an authored lift into view after its column
+   * passed both horizontal cursors. Rescan Kuwanger's rideable lift ($16),
+   * alongside pickups, using DCDB's existing live flags. Its attached cannon
+   * ($17) is allocated by the lift itself, never by this recovery pass. */
+  return (kind == 0 && MmxWidePolicy_IsCollectible(object_id)) ||
+      (stage == 7 && kind == 3 && object_id == 0x16);
+}
+
 static uint16_t read_word(const uint8_t *ram, unsigned a) {
   return (uint16_t)(ram[a] | (ram[a + 1] << 8));
 }
@@ -167,6 +176,19 @@ bool MmxWidePolicy_RecoverParkedStreaker(uint8_t ram[0x20000], uint16_t object, 
   ram[flag] = 0;
   write_word(ram, object, 0); write_word(ram, object + 2, 0); write_word(ram, object + 0xe, 0);
   return true;
+}
+
+bool MmxWidePolicy_PresentationCull(const uint8_t ram[0x20000], uint16_t object,
+                                    uint16_t distance, unsigned margin, bool custom) {
+  bool traffic = ram[0x1f7a] == 0 && ram[(uint16_t)(object + 10)] == 0x21;
+  bool armor = custom && object == 0xe18;
+  bool enemy = custom && object >= 0xe68 && object < 0x1228 && (object & 63) == 0x28;
+  /* The grinder and Kuwanger elevator already have widened lifetimes, but
+   * draw through $82:808F's separate horizontal presentation test. The
+   * elevator's boarding test ($87:AF10) and movement remain guest-owned. */
+  bool platform = enemy && (ram[object + 10] == 0x2c || ram[object + 10] == 0x3d);
+  if (!traffic && !armor && !platform) margin = 0;
+  return (uint16_t)(distance + margin) >= (uint16_t)(0x1c0 + 2 * margin);
 }
 
 uint16_t MmxWidePolicy_ChainPlatformLine(const uint8_t ram[0x20000], uint16_t object,
