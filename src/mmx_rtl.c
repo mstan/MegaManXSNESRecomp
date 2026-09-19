@@ -327,7 +327,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 2u /* Native-timed moving streaker entrances. */
+#define MMX_SAV_CHUNK_VERSION 3u /* Execution state plus native-timed streakers. */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -351,6 +351,12 @@ _Static_assert(sizeof(MmxSavChunk) == 464,
 
 static MmxSavChunk g_load_chunk;
 static uint8_t g_load_chunk_ok = 0;
+static bool g_load_complete, g_load_native_streakers;
+static bool g_did_reset, g_first_frame_done;
+static void MmxWideStateSave(struct SaveLoadInfo *sli);
+static void MmxWideStateLoad(struct SaveLoadInfo *sli);
+static void MmxWideStateApply(bool loaded);
+static uint8_t g_load_frame_flags[4];
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -371,17 +377,35 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   c.ws_wide_cursor_valid = s_ws_spawn_cursor.valid ? 1 : 0;
   c.ws_wide_cursor = s_ws_spawn_cursor.wide;
   sli->func(sli, &c, sizeof(c));
+  uint8_t flags[4] = {g_did_reset, g_first_frame_done, s_ws_spawn_cursor_stage, 0};
+  sli->func(sli, flags, sizeof(flags));
+  MmxWideStateSave(sli);
+  RtlSaveExecutionState(sli);
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   (void)version;
   g_load_chunk_ok = 0;
+  g_load_complete = g_load_native_streakers = false;
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
       g_load_chunk.version >= 1 && g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
     g_load_chunk_ok = 1;
-  else
+  /* The adaptive playtest wrote a 464-byte v2 chunk, while the shared-host
+   * branch used v2 with appended execution/CHR data. Only the latter has a
+   * tail. New saves use v3, making both meanings explicit on load. */
+  size_t remaining = RtlStateBytesRemaining(sli);
+  g_load_complete = g_load_chunk_ok && (g_load_chunk.version >= 3 ||
+      (g_load_chunk.version == 2 && remaining != 0 && remaining != SIZE_MAX));
+  g_load_native_streakers = g_load_chunk_ok && (g_load_chunk.version >= 3 ||
+      (g_load_chunk.version == 2 && remaining == 0));
+  if (g_load_complete) {
+    sli->func(sli, g_load_frame_flags, sizeof(g_load_frame_flags));
+    MmxWideStateLoad(sli);
+    if (!RtlLoadExecutionState(sli)) g_load_chunk_ok = 0;
+  }
+  if (!g_load_chunk_ok)
     fprintf(stderr, "[mmx_state] load: bad game chunk (magic=%08x ver=%u)\n",
             g_load_chunk.magic, g_load_chunk.version);
 }
@@ -391,7 +415,7 @@ static int MmxWsMargin(void);
 void MmxOnStateLoaded(uint32_t version) {
   MmxRendererReset();
   s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
-  if (g_mmx_custom_renderer && (!g_load_chunk_ok || g_load_chunk.version < 2)) {
+  if (g_mmx_custom_renderer && !g_load_native_streakers) {
     for (uint16 object = 0xe68; object <= 0x1228; object += 64) {
       uint16 flag = g_ram[object + 12] | (g_ram[object + 13] << 8);
       if (flag < 0xfa00 || flag > 0xfffb) continue;
@@ -402,6 +426,11 @@ void MmxOnStateLoaded(uint32_t version) {
         MmxWidePolicy_RecoverParkedStreaker(g_ram, object, (event[5] | (event[6] << 8)) & 0x1fff);
     }
   }
+  /* Loading before the first frame must not run RESET over the restored guest. */
+  bool complete = g_load_chunk_ok && g_load_complete;
+  g_did_reset = complete ? g_load_frame_flags[0] != 0 : true;
+  g_first_frame_done = complete ? g_load_frame_flags[1] != 0 : true;
+  MmxWideStateApply(complete);
   if (version < 5 || !g_load_chunk_ok) {
     /* Legacy v4 save: no chunk, no rebuild — preserve the historical
      * behavior exactly (live fibers limp along; loads are only reliable
@@ -439,10 +468,11 @@ void MmxOnStateLoaded(uint32_t version) {
   g_mmx_task_slot_x = c->task_slot_x;
   s_ws_spawn_cursor.valid = c->ws_wide_cursor_valid != 0;
   s_ws_spawn_cursor.wide = c->ws_wide_cursor;
-  s_ws_spawn_cursor_stage = g_ram[0x1f7a];
+  s_ws_spawn_cursor_stage = complete ? g_load_frame_flags[2] : g_ram[0x1f7a];
   mmx_restore_cpu(&g_cpu, &c->main_cpu);
   g_current_slot_idx = 0xFF;
-  fprintf(stderr, "[mmx_state] v%u state loaded: fibers rebuilt (%d resume-pending)\n",
+  if (complete) RtlApplyExecutionState();
+  if (mmx_rtl_diag_enabled()) fprintf(stderr, "[mmx_state] v%u state loaded: fibers rebuilt (%d resume-pending)\n",
           version,
           (int)(g_slot_resume_pending[0] + g_slot_resume_pending[1] +
                 g_slot_resume_pending[2] + g_slot_resume_pending[3] +
@@ -698,8 +728,6 @@ void RunOneFrameOfGame(void) {
   // would be skipped, leaving $0100 (GameMode) at 0x55 — out-of-bounds for the
   // 42-entry dispatch table at PC 0x009329. Use a host-side bool instead so the
   // gate is independent of WRAM contents.
-  static bool g_did_reset = false;
-  static bool g_first_frame_done = false;
   if (!g_did_reset) {
     cpu_state_init(&g_cpu, g_ram);
     cpu_trace_px_breadcrumb(&g_cpu, 0x1000, "after_cpu_state_init");
@@ -1589,3 +1617,26 @@ uint32_t MmxWsChrBindsSeen(void) { return s_ws_chrbind_binds_seen; }
 uint32_t MmxWsChrRebindsPerformed(void) { return s_ws_chrbind_rebinds_performed; }
 uint32_t MmxWsChrBindCopiesSeen(void) { return s_ws_chrbind_copies_seen; }
 uint32_t MmxWsChrBindCopyLatchesCreated(void) { return s_ws_chrbind_copy_latches_created; }
+
+/* CHR healing latches affect later guest OAM writes, so they belong to the
+ * timeline along with the spawn cursor. Diagnostic counters do not. */
+static MmxWsChrBindLatch s_loaded_chrbind[MMX_WS_CHRBIND_CAP];
+static int s_loaded_chrbind_next;
+static void MmxWideStateSave(struct SaveLoadInfo *sli) {
+  sli->func(sli, s_ws_chrbind_latches, sizeof(s_ws_chrbind_latches));
+  sli->func(sli, &s_ws_chrbind_next, sizeof(s_ws_chrbind_next));
+}
+static void MmxWideStateLoad(struct SaveLoadInfo *sli) {
+  sli->func(sli, s_loaded_chrbind, sizeof(s_loaded_chrbind));
+  sli->func(sli, &s_loaded_chrbind_next, sizeof(s_loaded_chrbind_next));
+}
+static void MmxWideStateApply(bool loaded) {
+  if (loaded) {
+    memcpy(s_ws_chrbind_latches, s_loaded_chrbind, sizeof(s_ws_chrbind_latches));
+    s_ws_chrbind_next = s_loaded_chrbind_next;
+  } else {
+    memset(s_ws_chrbind_latches, 0, sizeof(s_ws_chrbind_latches));
+    s_ws_chrbind_next = 0;
+  }
+  s_ws_spawn_pass.active = 0;
+}

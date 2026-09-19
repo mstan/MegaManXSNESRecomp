@@ -87,9 +87,9 @@ def main():
     for slot in args.slots:
         folder = run / f'slot{slot}'
         folder.mkdir(); (folder / 'saves').mkdir()
-        shutil.copytree(root / 'mods/preloaded', folder / 'mods')
+        shutil.copytree(root / 'mods/preloaded', folder / 'mods/preloaded')
         shutil.copyfile(args.saves / f'save{slot}.sav', folder / 'saves/save0.sav')
-        (folder / 'mods/state.toml').write_text('''format_version = 1
+        (folder / 'mods/preloaded/state.toml').write_text('''format_version = 1
 [[package]]
 id = "megaman-x.enhancement.widescreen"
 version = "1.0.0"

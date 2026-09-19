@@ -102,3 +102,7 @@ ghidra/*
 *.rep/
 *.lock
 *.lock~
+
+# Player configuration and controller-specific bindings
+/config.local.ini
+/input-bindings/

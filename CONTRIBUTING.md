@@ -43,7 +43,8 @@ under x86_64 translation. Windows contributors should generate sources from
 Git Bash, then run this from a Visual Studio 2022 Developer Command Prompt:
 
 ```powershell
-msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
+cmake -S . -B build-dev -DCMAKE_BUILD_TYPE=Release
+cmake --build build-dev --config Release --target MegaManXSNESRecomp
 ```
 
 Run `bash tools/regen.sh usa` when changing the recompiler or generated-code

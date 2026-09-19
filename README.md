@@ -1,9 +1,9 @@
 # MegaManXSNESRecomp
 
-This branch contains the [custom widescreen renderer spike](docs/custom-renderer-spike.md),
-with 16:9, 21:9, 32:9, Adaptive, and HUD anchoring in the widescreen mod.
-The linked notes include the isolated launcher, validation and remaining
-acceptance work before replacing the legacy renderer.
+Version 1.5.0 replaces the original 16:9 renderer with adaptive widescreen,
+including fixed 16:9, 21:9 and 32:9 options and HUD anchoring. The renderer has
+passed a complete Windows playthrough; its [implementation and playtest notes](docs/custom-renderer-spike.md)
+record the fixes and validation.
 
 Static recompilation of *Mega Man X* (SNES) into native C, using the
 [snesrecomp](https://github.com/mstan/snesrecomp) framework. This repo
@@ -35,10 +35,10 @@ macOS and Linux builds supported from source. See
 [Releases](../../releases) for the latest packaged version and
 [ISSUES.md](ISSUES.md) for the current known-issue ledger.
 
-The USA Rev 1 build now also includes an **experimental true widescreen Mod**,
+The USA Rev 1 build now also includes an **adaptive widescreen Mod**,
 rendering additional gameplay at the sides instead of stretching the original
 image. It is disabled by default and enabled from the launcher's **Mods** page.
-See [Experimental widescreen support](#experimental-widescreen-support) for
+See [Adaptive widescreen support](#adaptive-widescreen-support) for
 availability and controls.
 
 <p align="center">
@@ -61,7 +61,7 @@ manifested.
 
 1. Download the latest release zip from [Releases](../../releases) and
    extract it.
-2. Run `mmx.exe`. On first launch a file picker asks for your
+2. Run `MegaManXSNESRecomp.exe`. On first launch a file picker asks for your
    **legally-obtained** *Mega Man X (USA) (Rev 1)* ROM (`.sfc` /
    `.smc`). The expected SHA-256 is
    `b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32`
@@ -100,7 +100,9 @@ set a key to an empty value there to unbind it, e.g. `DisplayPerf =`):
 | Action               | Default |
 |----------------------|---------|
 | Save state 1-10      | Shift+F1..F10 |
-| Load state 1-10      | F1..F10 (except macOS/Linux F1) |
+| Load state 1-10      | F1..F6, F11, F12, F9, F10 |
+| Save-state browser   | F7 |
+| Rewind filmstrip     | F8 |
 | Toggle pause         | P |
 | Pause (dimmed)       | Shift+P |
 | Reset                | Ctrl+R |
@@ -108,13 +110,22 @@ set a key to an empty value there to unbind it, e.g. `DisplayPerf =`):
 | Turbo (fast-forward) | Tab |
 | FPS / perf readout   | F |
 | Toggle PPU renderer  | R |
-| Volume up / down     | Shift+= / Shift+- |
+| Volume up / down     | Keypad + / Keypad - |
+
+F7 opens the shared save browser; F8 opens the rewind history. Both pause the
+game and audio while you choose. Rebind or clear these keys in the launcher's
+Hotkeys settings or in `[KeyMap]`. Existing default F7/F8 slot loads migrate to
+F11/F12. The launcher also exposes controller bindings.
+
+States include the CPU/interpreter timeline and X1's widescreen spawn/CHR
+bookkeeping. Use new states with the same game variant and runtime build;
+older states remain readable with their original format's limitations.
 
 ## Reporting crashes
 
 The game continuously records its own boot/run diagnostics. If it
 crashes (or exits with an error), it writes these files next to
-`mmx.exe` — attaching them to a GitHub issue usually lets the crash be
+`MegaManXSNESRecomp.exe` — attaching them to a GitHub issue usually lets the crash be
 diagnosed without a repro:
 
 - `crash_report_<timestamp>.json` and `crash_minidump_<timestamp>.dmp`
@@ -167,15 +178,11 @@ cmake --build build-recompui
 SDL3 is the default. SDL2 remains an explicitly supported fallback: configure
 a separate tree with `-DSNESRECOMP_SDL_BACKEND=SDL2`.
 
-Windows releases are built and packaged this way (CMake/mingw with the
-recomp-ui launcher; see `tools/make_release.ps1`). The Visual Studio
-solution (`mmx.sln`) is also maintained as a developer/debugging harness
-(MSVC, with a `Production` config) and builds the same recomp-ui
-launcher:
-
-```powershell
-msbuild mmx.sln /p:Configuration=Release /p:Platform=x64 /m
-```
+Windows releases use CMake/MinGW with the shared recomp-ui launcher
+(`tools/make_release.ps1`). CMake is the maintained build definition on every
+platform. Visual Studio users can open the repository as a CMake project or
+configure with the Visual Studio generator and an MSVC-compatible SDL package.
+The former manually maintained solution and source list have been retired.
 
 ### macOS / Linux (CMake)
 
@@ -199,6 +206,17 @@ The cross-platform Windows release can be built with MinGW using
 `SDL3_MINGW_ROOT=/path/to/SDL3 bash tools/build-windows-mingw.sh VERSION`.
 All release packages are ROM-free; place your legally obtained ROM beside the
 executable or AppImage after extraction.
+CI compiles both launcher/setup hosts without ROM-derived sources using
+`-DSNESRECOMP_SETUP_HOST=ON`, plus the display geometry and widescreen policy
+checks. A setup host cannot run the game until its generated sources are built.
+For the focused real-ROM state check, add `-DMMX_STATE_TESTS=ON`, build
+`mmx_state_tests`, then run:
+
+```bash
+python snesrecomp/runner/tests/run_mmx_state_tests.py \
+  --exe build-dev/mmx_state_tests --rom mmx.sfc
+```
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for dependency development, validation,
 and pull-request guidance.
 
@@ -208,27 +226,28 @@ Core Audio output) and an optional in-game display menu were contributed
 in [PR #10](../../pull/10) and are staged on per-feature branches; they
 land after the shared launcher-UI restructure settles.
 
-### Experimental widescreen support
+### Adaptive widescreen support
 
-The USA Rev 1 build includes an experimental true-widescreen renderer. It
-draws genuine additional PPU columns rather than stretching the original
-picture. The implementation widens presentation and ordinary enemy activation
-while keeping the camera, collision, scripted room and stage triggers, and
-save-state data on their original timing and coordinates.
+Version 1.4.4 replaces the old fixed 16:9 renderer with the adaptive renderer,
+playtested through the ending on Windows. Enable **Widescreen (Extended view)**
+on the launcher's **Mods** page. It is disabled by default; existing enabled
+widescreen installations automatically use the replacement.
 
-The launcher's **Settings** page offers three independent display presentations:
-**4:3 (CRT)** is the default traditional-TV correction, **8:7 (Square pixels)**
-maps each 256x224 game pixel to a square, and **1:1 (Square frame)** deliberately
-fits the whole image into a square. These are presentation choices, not gameplay
-mods.
+Choose **Adaptive** to fit the window, or **16:9**, **21:9**, or **32:9** for a
+fixed aspect. The renderer draws the surrounding stage and actors with CRT pixel
+proportions, up to 1024 logical pixels wide. Health bars can anchor to the screen
+edges or retain their native positions. Menus and other native screens remain
+pillarboxed. Expanded sprite capacity is a separate experimental option and
+remains off by default.
 
-Enable the default-disabled **Widescreen (Extended view)** feature from the
-launcher's **Mods** page, then start the game. It adds one third more horizontal
-game area while preserving the chosen pixel shape, producing approximately
-16:9 from 4:3, 32:21 from 8:7, or 4:3 from a 1:1 frame. This support is still
-experimental, so visual or gameplay edge cases may remain; please report
-reproducible regressions with a savestate and screenshot. Widescreen is
-currently not exposed for Rockman X (Japan).
+The original stage camera, collision and encounter timing are preserved, with
+scoped fixes for objects exposed by the wider view. The former legacy renderer
+selector has been removed. Rockman X (Japan) continues to use its authentic view.
+
+With the widescreen mod disabled, the **Settings** page's **4:3 (CRT)**,
+**8:7 (Square pixels)** and **1:1 (Square frame)** controls govern presentation.
+Released saves and adaptive-playtest saves remain loadable. F7/F8 open the shared
+save browser and rewind; the corresponding old slot loads are now F11/F12.
 
 The S-DSP retains the SNES BRR predictor filters and canonical four-tap
 Gaussian interpolation. Host-rate conversion uses continuous interpolation
@@ -281,14 +300,15 @@ compiler cannot prove remain on the authoritative interpreter fallback.
 | `recomp/funcs.h` | Auto-regenerated by `tools/regen.sh`; never hand-edit. |
 | `snesrecomp/` | Pinned submodule containing the [snesrecomp framework](https://github.com/mstan/snesrecomp). |
 | `recomp-ui/` | Pinned submodule containing the shared, console-agnostic launcher UI. |
-| `third_party/` | Vendored deps (gl_core, stb_image) with their own licenses. |
-| `mmx.sln` + `src/mmx.vcxproj` | Visual Studio build glue. |
+| `third_party/` | Remaining game dependencies and their licenses. |
+| `CMakeLists.txt` | Shared framework build helpers and USA/JP targets. |
 | `config.ini` | The config. Generated next to the exe on first run if missing. |
 
 ## License
 
-Not yet declared. Code in this repo is original; vendored dependencies
-under `third_party/` retain their own licenses.
+PolyForm Noncommercial 1.0.0. See `LICENSE`. Code in this repo is
+original; vendored dependencies under `third_party/` retain their own
+licenses.
 
 The *Mega Man X* ROM and any data extracted from it are **not** in
 this repo and are not licensed for redistribution.

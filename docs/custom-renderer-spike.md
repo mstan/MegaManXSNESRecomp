@@ -1,6 +1,20 @@
-# Mega Man X custom renderer spike
+# Mega Man X adaptive renderer: implementation and playtest history
 
-## Current owner playtest checklist (2026-09-19, twentieth batch)
+## Release acceptance (2026-09-19)
+
+The owner accepted the renderer after completing the remaining game through the
+ending. Version 1.5.0 promotes it to the supported widescreen implementation and
+removes the legacy 16:9 renderer selector. The playtest notes below are historical;
+statements that owner acceptance is pending are superseded by this acceptance.
+
+Integration keeps the current shared desktop host, including its save-state and
+rewind menus. The compositor uses the native PPU raster and a separate surface
+up to 1024 pixels wide, with the same destination geometry in SDL and OpenGL.
+Game save chunk v3 preserves the shared host's execution state while recognizing
+both historical v2 layouts: the adaptive playtest's 464-byte chunk and main's
+chunk with appended execution/CHR data.
+
+## Final owner playtest checklist (2026-09-19, twentieth batch)
 
 - [x] F3: correct captive Zero's preview tiles and restore animated electricity.
 - [x] F7: open the fortress barrier after Flame Mammoth's defeat.

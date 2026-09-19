@@ -7,8 +7,8 @@
 #endif
 
 /*
- * Keep renderer selection, aspect and HUD anchoring in the mod catalog.
- * Gameplay widening stays in the game hooks for both renderer choices.
+ * Adaptive rendering replaces the former PPU widescreen variant.
+ * Keep aspect and HUD anchoring in the mod catalog.
  */
 static void mmx_widescreen_reset(void) {
   g_mmx_custom_renderer = false;
@@ -27,7 +27,6 @@ static void mmx_widescreen_activate(void) {
   RecompLauncherCModOption option;
   for (int i = 0; provider && provider->feature_option_get &&
        provider->feature_option_get(provider->ctx, "megaman-x.enhancement.widescreen", "widescreen", i, &option); ++i) {
-    if (!strcmp(option.id, "renderer")) g_mmx_custom_renderer = strcmp(option.value, "legacy") != 0;
     if (!strcmp(option.id, "hud")) g_mmx_custom_hud = strcmp(option.value, "center") != 0;
     if (!strcmp(option.id, "expanded_sprites")) g_mmx_expanded_sprites = !strcmp(option.value, "on");
     if (!strcmp(option.id, "aspect")) {

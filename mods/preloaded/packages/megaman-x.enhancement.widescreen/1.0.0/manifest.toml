@@ -3,7 +3,7 @@ id = "megaman-x.enhancement.widescreen"
 version = "1.0.0"
 name = "Mega Man X Widescreen"
 author = "mstan"
-description = "Custom widescreen renderer spike with adaptive stage rendering and HUD anchoring."
+description = "Adaptive widescreen stage rendering with fixed aspect choices and HUD anchoring."
 license = "MIT"
 resolver = "declarative"
 save_compatibility = "shared"
@@ -21,22 +21,9 @@ default_enabled = false
 
 [[option]]
 feature = "widescreen"
-id = "renderer"
-label = "Renderer"
-type = "choice"
-default = "custom"
-[[option.choice]]
-value = "custom"
-label = "Custom renderer (spike)"
-[[option.choice]]
-value = "legacy"
-label = "Legacy widescreen"
-
-[[option]]
-feature = "widescreen"
 id = "aspect"
 label = "Aspect ratio"
-description = "Custom renderer: adapt to the window, or select a fixed aspect ratio."
+description = "Adapt to the window, or select a fixed aspect ratio."
 type = "choice"
 default = "adaptive"
 [[option.choice]]
@@ -69,7 +56,7 @@ label = "Native positions"
 feature = "widescreen"
 id = "expanded_sprites"
 label = "Expanded sprite capacity"
-description = "Custom renderer: draw submitted sprites beyond the original frame limit. Experimental; disabled by default."
+description = "Draw submitted sprites beyond the original frame limit. Experimental; disabled by default."
 type = "choice"
 default = "off"
 [[option.choice]]

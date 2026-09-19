@@ -29,9 +29,9 @@ Copy-Item -LiteralPath (Join-Path $rendererRoot 'build-custom\assets') `
     -Destination $rendererData -Recurse -Force
 # Refresh package definitions while keeping this playtest's selections/saves.
 Copy-Item -LiteralPath (Join-Path $rendererRoot 'mods\preloaded\packages') `
-    -Destination (New-Item -ItemType Directory -Path (Join-Path $rendererData 'mods') -Force).FullName `
+    -Destination (New-Item -ItemType Directory -Path (Join-Path $rendererData 'mods\preloaded') -Force).FullName `
     -Recurse -Force
-$rendererState = Join-Path $rendererData 'mods\state.toml'
+$rendererState = Join-Path $rendererData 'mods\preloaded\state.toml'
 if (-not (Test-Path -LiteralPath $rendererState)) {
     @'
 format_version = 1

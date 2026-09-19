@@ -21,9 +21,8 @@ const RtlGameInfo kMmxGameInfo = {
   .run_frame = &RunOneFrameOfGame,
   .draw_ppu_frame = &MmxDrawPpuFrame,
   .save_name_prefix = "save",
-  /* .sav v5: persist the fiber scheduler's task-resume contexts and rebuild
-   * the fibers after load — states become loadable from any game mode and
-   * from a fresh process. */
+  /* The versioned title chunk includes scheduler, widescreen and complete
+   * shared execution state for file saves and rewind snapshots. */
   .state_save_extra = &MmxStateSaveExtra,
   .state_load_extra = &MmxStateLoadExtra,
   .on_state_loaded = &MmxOnStateLoaded,
