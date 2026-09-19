@@ -183,7 +183,7 @@ static void dialogue_and_password(void) {
   assert(MmxRendererDraw(output, v, true));
   assert(output[40 * v.width + v.extra + 40] == 0xff0000);
   assert(output[40 * v.width + 40] == 0);
-  ram[0xd3] = 0x0a;
+  ram[0xd3] = 0x0a; ram[0xd4] = 4; /* Stage resources have been replaced. */
   for (unsigned i = 0; i < 256 * 224; ++i) stock[i] = 0x123456;
   capture(); assert(MmxRendererDraw(output, v, true));
   assert(MmxRendererGetStats().fallback_lines == 224);
@@ -766,6 +766,54 @@ static void sting_background_palettes(void) {
   }
 }
 
+static void mammoth_background_palettes(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 4;
+  rom_word(0x282ca, 0x9000); rom_bytes[0x29000] = 0x42;
+  rom_bytes[0x29001] = 2; rom_bytes[0x29004] = 0x17; rom_bytes[0x29005] = 0x01;
+  rom_word(0x29006, 0x900);
+  rom_bytes[0x29008] = 2; rom_bytes[0x2900b] = 0x1a; rom_bytes[0x2900c] = 0x21;
+  rom_word(0x2900d, 0x9050); rom_bytes[0x2900f] = 0x42;
+  rom_word(0x32268, 0x20); rom_word(0x3226a, 0x34);
+  const unsigned phases[] = {0, 1, 5, 6}, colors[] = {31, 31 << 5, 31 << 10, 0x3ff};
+  for (unsigned i = 0; i < 4; ++i) {
+    rom_word(0x32280 + phases[i] * 2, 0x40 + i * 8);
+    unsigned p = 0x322a0 + i * 8;
+    rom_word(p, 0xa000 + i * 32); rom_bytes[p + 2] = 0x50; rom_word(p + 3, 0xffff);
+    for (unsigned c = 0; c < 16; ++c) rom_word(0x2a000 + i * 32 + c * 2, colors[i]);
+  }
+  put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80;
+  for (unsigned i = 0; i < 256; ++i) { put_word(0x2000 + i * 2, 1); put_word(0xa600 + i * 2, 1); }
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 0x1401);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.bgXsc[0] = ppu.bgXsc[1] = 8;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  for (int i = 0x800; i < 0xc00; ++i) ppu.vram[i] = 0x1401;
+  ppu.cgram[0x51] = 0x7fff;
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  for (unsigned frozen = 0; frozen < 2; ++frozen) {
+    ram[0x1f96] = frozen ? 0x40 : 0;
+    assert(MmxRenderAssetsBackgroundPalette(ram, 0x8ff)->colors[0x51] == colors[frozen * 2]);
+    assert(MmxRenderAssetsBackgroundPalette(ram, 0x900)->colors[0x51] == colors[frozen * 2 + 1]);
+    assert(!MmxRenderAssetsBackgroundPalette(ram, 0x1050)); /* Vertical phase remains live. */
+    assert(!MmxRenderAssetsBackgroundTile(ram, 0x900, 16));
+    for (unsigned layer = 0; layer < 2; ++layer) {
+      ppu.screenEnabled[0] = (uint8_t)(1 << layer);
+      for (unsigned step = 0; step < 3; ++step) {
+        unsigned camera = step == 1 ? 0x920 : 0x900;
+        put_word(0x1e4d, camera); put_word(0x1e8d, camera / 2);
+        ppu.hScroll[0] = camera & 1023; ppu.hScroll[1] = (camera / 2) & 1023;
+        ram[0x1f0a] = (uint8_t)step;
+        capture(); assert(MmxRendererDraw(output, v, false));
+        assert(output[80 * v.width + v.extra - 256] == (frozen ? 0x0000ff : 0xff0000));
+        assert(output[80 * v.width + v.extra + 256] == (frozen ? 0xffff00 : 0x00ff00));
+        assert(output[80 * v.width + v.extra + 128] == 0xffffff);
+      }
+    }
+  }
+}
+
 static void dialogue_backdrop(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
@@ -821,4 +869,4 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); dialogue_backdrop(); weapons_menu_margins(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); weapons_menu_margins(); return 0; }

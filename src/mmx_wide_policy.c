@@ -2,13 +2,16 @@
 
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
   /* $80:997B: level setup, arrival, play, death and stage-clear all retain
-   * the stage view. The next state ($0A) changes to the password/menu flow.
+   * the stage view. State $0A also holds it for 60 frames at substates 0/2;
+   * $80:9BAD replaces the stage assets only when advancing to substate 4.
    * $80:C47C suspends the HUD task ($1F10=6, then 8 after $80:DB2B)
    * for the weapon menu, which owns HDMA channel 7. The task can remain at
    * 6 throughout the menu when gameplay updates stop before it runs.
    * Neither condition alone identifies it: cutscenes hide the HUD, while
    * Spark's moving lights also use that HDMA channel during gameplay. */
-  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] <= 8 && !(ram[0xd3] & 1) &&
+  return ram && ram[0xd1] == 2 && ram[0xd2] == 4 &&
+      ((ram[0xd3] <= 8 && !(ram[0xd3] & 1)) ||
+       (ram[0xd3] == 10 && (ram[0xd4] == 0 || ram[0xd4] == 2))) &&
       !((ram[0x1f10] == 6 || ram[0x1f10] == 8) && (ram[0xc3] & 0x80));
 }
 
@@ -22,8 +25,11 @@ bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object
   /* A vertical climb can bring an authored lift into view after its column
    * passed both horizontal cursors. Rescan Kuwanger's rideable lift ($16),
    * alongside pickups, using DCDB's existing live flags. Its attached cannon
-   * ($17) is allocated by the lift itself, never by this recovery pass. */
+   * ($17) is allocated by the lift itself, never by this recovery pass.
+   * Storm's kind-0 flying platforms likewise need recovery on a cold load;
+   * $87:EEE3 keeps their launch dependent on boarding, not allocation. */
   return (kind == 0 && MmxWidePolicy_IsCollectible(object_id)) ||
+      (stage == 5 && kind == 0 && object_id == 0x10) ||
       (stage == 7 && kind == 3 && object_id == 0x16);
 }
 
@@ -242,6 +248,7 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
     return true;
 
   if (kind == 0 && MmxWidePolicy_IsCollectible(object_id)) return true;
+  if (stage == 5 && kind == 0 && object_id == 0x10) return true;
 
   /* Boss records belong to the native scan, just like camera/door events.
    * Its independent cursor reaches them at the authored arena boundary.

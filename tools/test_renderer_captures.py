@@ -118,6 +118,9 @@ OutputMethod = SDL-Software
 DisplayAspect = 4:3
 [Sound]
 EnableAudio = 0
+[GamepadMap]
+EnableGamepad1 = false
+EnableGamepad2 = false
 '''.replace('WindowScale = 1', 'WindowScale = 1\nWindowSize = 2048x300' if args.aspect == 'max' else 'WindowScale = 1'))
         (folder / 'input.txt').write_text(args.script.read_text() if args.script else 'wait 30\nloadstate 0\n')
         with (folder / 'stdout.log').open('wb') as out, (folder / 'stderr.log').open('wb') as err:
@@ -145,7 +148,8 @@ EnableAudio = 0
         ram = memoryview(data)[12 + 224 * 66656:][:0x20000]
         def word(address): return struct.unpack_from('<H', ram, address)[0]
         metadata = dict(stage=ram[0x1f7a], scene=ram[0xd3], camera_x=word(0x1e4d), camera_y=word(0x1e50),
-                        stage_scene=ram[0xd1] == 2 and ram[0xd2] == 4 and ram[0xd3] in (0, 2, 4, 6, 8)
+                        stage_scene=ram[0xd1] == 2 and ram[0xd2] == 4
+                        and (ram[0xd3] in (0, 2, 4, 6, 8) or (ram[0xd3] == 10 and ram[0xd4] in (0, 2)))
                         and not (ram[0x1f10] in (6, 8) and ram[0xc3] & 0x80), **sprite_matches(data))
         if metadata.get('expanded_sprites', False) != args.expanded_sprites:
             raise RuntimeError('Expanded sprite mod option did not match requested value')

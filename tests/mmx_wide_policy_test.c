@@ -30,6 +30,7 @@ static void test_visible_lift_recovery(void) {
   for (unsigned stage = 0; stage < 13; ++stage)
     for (unsigned kind = 0; kind < 4; ++kind) {
       assert(MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x16) == (stage == 7 && kind == 3));
+      assert(MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x10) == (stage == 5 && kind == 0));
       assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x17)); /* Attached cannon. */
       assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x3d)); /* Boarding controller. */
       assert(!MmxWidePolicy_RescanSpawnRecord(stage, kind, 0x37)); /* Room-timed flyer. */
@@ -226,6 +227,10 @@ static void test_spawn_record_ownership(void) {
   assert(!MmxWidePolicy_IsCollectible(7)); /* Minecart. */
   assert(!MmxWidePolicy_IsCollectible(10)); /* Stage mechanism. */
   assert(!MmxWidePolicy_SpawnRecordAllowed(3, 0, 7, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(5, 0, 0x10, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(5, 0, 0x10, true));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(4, 0, 0x10, false));
+  assert(!MmxWidePolicy_SpawnRecordAllowed(5, 2, 0x10, false));
 
   /* Highway traffic remains eligible in both passes. */
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, false));
@@ -237,7 +242,11 @@ int main(void) {
   for (int scene = 0; scene <= 8; scene += 2) {
     ram[0xd3] = (uint8_t)scene; assert(MmxWidePolicy_IsStageScene(ram));
   }
-  ram[0xd3] = 10; assert(!MmxWidePolicy_IsStageScene(ram));
+  ram[0xd3] = 10;
+  for (unsigned substate = 0; substate < 10; ++substate) {
+    ram[0xd4] = (uint8_t)substate;
+    assert(MmxWidePolicy_IsStageScene(ram) == (substate == 0 || substate == 2));
+  }
   ram[0xd3] = 4; ram[0xc3] = 0xc0; ram[0x1f10] = 2;
   assert(MmxWidePolicy_IsStageScene(ram)); /* Spark's light HDMA remains gameplay. */
   for (unsigned hud = 6; hud <= 8; hud += 2) {

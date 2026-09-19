@@ -1,6 +1,17 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-19, sixteenth batch)
+## Current owner playtest checklist (2026-09-19, seventeenth batch)
+
+- [x] F1: show Storm Eagle's flying platforms before X reaches native spawn range.
+- [x] F2: retain adaptive width through the final teleport-out stage hold.
+- [x] F4: give Flame Mammoth's distant entrance room its correct palette.
+
+Fixtures are frozen in `seventeenth-saves`. Fresh captures cover initial platform
+visibility, boarding-triggered motion, the final stage hold and weapon screen,
+and movement across the entrance palette boundary in both directions. Owner
+acceptance remains pending.
+
+## Previous owner playtest checklist (2026-09-19, sixteenth batch)
 
 - [x] F1: keep Storm Eagle's sky intact during Dr. Light's capsule dialogue.
 
@@ -1067,3 +1078,47 @@ Storm captures replay at five widths with zero raw or repaired native pixel
 differences and matching live/replay output. All ten source saves were backed
 up and their hashes remained unchanged. This validates conversation rendering
 and exit, not the subsequent helmet upgrade sequence or a full stage run.
+
+## Seventeenth playtest: flying platforms, stage exit and factory palettes
+
+Storm's three flying platforms are kind-0 ID `$10`, which the wide spawn pass
+previously left to the native cursor. They now participate in both scans and
+the visible-record recovery pass. DCDB's record flags prevent duplicate
+allocations. Their original `$87:EE82` update, boarding test, animation, and
+movement remain intact: distant platforms wait in state 2; boarding the first
+advances it to state 4 and starts its original movement.
+
+The stage-clear state `$0A` does not immediately replace the stage. Substates
+0/2 retain it for 60 frames; `$80:9BAD` then advances to substate 4 and builds
+the next screen. Adaptive rendering now includes that final stage hold while
+the weapon-get/password presentation remains pillarboxed.
+
+Flame Mammoth's first entrance transition uses a horizontal palette event at
+`$0900`. The compositor resolves each margin column's palette from that event
+and accounts for BG2's half-speed scrolling. It also mirrors `$80:B508`'s
+five-list offset when `$1F96 & $40` selects the frozen factory. Native pixels
+continue to use current CGRAM. Projection ends at the first vertical palette
+event (`$1050`), so this change does not attempt to reinterpret the later
+elevation-dependent shafts as horizontal regions.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-ban56jxk` | F1 fresh load: all three platforms visible; F4 distant room correctly dark |
+| `mmx-render-qdnb6q6h` | F1 approach/jump: all platforms still present |
+| `mmx-render-m1oirfie` | Boarding advances only the first platform to state 4, Y `$218`; others remain at authored positions in state 2 |
+| `mmx-render-wikfrvd_` | F2 frame 810: scene `$0A`, substate 2 still renders the full stage |
+| `mmx-render-_7k0n48k` | F2 frame 1150: weapon-get screen has clean black margins |
+| `mmx-render-dedof89k` | F4 walking right across the palette boundary |
+| `mmx-render-0a2jvpkf` | F4 returns left with stable room palettes |
+
+Windows build, all three CTests, strict C warnings, and generated override
+checks pass. Tests cover platform allocation ownership, stage-exit substates,
+both factory palette variants, both background layers, native-color retention,
+return travel and the vertical-event cutoff. Captures replay at five widths
+with zero raw/repaired native differences and matching live/replay output.
+The capture harness now disables physical gamepads in its isolated config so
+connected controllers cannot interfere with scripted inputs. All ten source
+saves were backed up and their hashes remained unchanged. These checks cover
+the reported areas and initial platform activation, not a complete stage run.
