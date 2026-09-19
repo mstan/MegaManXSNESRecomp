@@ -771,14 +771,21 @@ static void mammoth_background_palettes(void) {
   MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
   ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 4;
   rom_word(0x282ca, 0x9000); rom_bytes[0x29000] = 0x42;
-  rom_bytes[0x29001] = 2; rom_bytes[0x29004] = 0x17; rom_bytes[0x29005] = 0x01;
-  rom_word(0x29006, 0x900);
-  rom_bytes[0x29008] = 2; rom_bytes[0x2900b] = 0x1a; rom_bytes[0x2900c] = 0x21;
-  rom_word(0x2900d, 0x9050); rom_bytes[0x2900f] = 0x42;
-  rom_word(0x32268, 0x20); rom_word(0x3226a, 0x34);
-  const unsigned phases[] = {0, 1, 5, 6}, colors[] = {31, 31 << 5, 31 << 10, 0x3ff};
+  const unsigned boundaries[] = {0x900, 0x1050, 0x15c8, 0x1d20};
+  const unsigned params[] = {0x01, 0x21, 0x23, 0x34};
   for (unsigned i = 0; i < 4; ++i) {
-    rom_word(0x32280 + phases[i] * 2, 0x40 + i * 8);
+    unsigned p = 0x29001 + i * 7;
+    rom_bytes[p] = 2; rom_bytes[p + 3] = (i == 1 || i == 2) ? 0x1a : 0x17;
+    rom_bytes[p + 4] = (uint8_t)params[i];
+    rom_word(p + 5, boundaries[i] | (i == 3 ? 0x8000 : 0));
+  }
+  rom_bytes[0x2901d] = 0x42;
+  rom_word(0x32268, 0x20); rom_word(0x3226a, 0x34);
+  const unsigned colors[] = {31, 31 << 5, 17, 18, 19, 31 << 10, 0x3ff, 20, 21, 22};
+  const unsigned rgb[] = {0xff0000, 0x00ff00, 0x8c0000, 0x940000, 0x9c0000,
+                          0x0000ff, 0xffff00, 0xa50000, 0xad0000, 0xb50000};
+  for (unsigned i = 0; i < 10; ++i) {
+    rom_word(0x32280 + i * 2, 0x40 + i * 8);
     unsigned p = 0x322a0 + i * 8;
     rom_word(p, 0xa000 + i * 32); rom_bytes[p + 2] = 0x50; rom_word(p + 3, 0xffff);
     for (unsigned c = 0; c < 16; ++c) rom_word(0x2a000 + i * 32 + c * 2, colors[i]);
@@ -794,20 +801,21 @@ static void mammoth_background_palettes(void) {
   MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
   for (unsigned frozen = 0; frozen < 2; ++frozen) {
     ram[0x1f96] = frozen ? 0x40 : 0;
-    assert(MmxRenderAssetsBackgroundPalette(ram, 0x8ff)->colors[0x51] == colors[frozen * 2]);
-    assert(MmxRenderAssetsBackgroundPalette(ram, 0x900)->colors[0x51] == colors[frozen * 2 + 1]);
-    assert(!MmxRenderAssetsBackgroundPalette(ram, 0x1050)); /* Vertical phase remains live. */
+    for (unsigned i = 0; i < 4; ++i) {
+      assert(MmxRenderAssetsBackgroundPalette(ram, boundaries[i] - 1)->colors[0x51] == colors[frozen * 5 + i]);
+      assert(MmxRenderAssetsBackgroundPalette(ram, boundaries[i])->colors[0x51] == colors[frozen * 5 + i + 1]);
+    }
     assert(!MmxRenderAssetsBackgroundTile(ram, 0x900, 16));
     for (unsigned layer = 0; layer < 2; ++layer) {
       ppu.screenEnabled[0] = (uint8_t)(1 << layer);
-      for (unsigned step = 0; step < 3; ++step) {
-        unsigned camera = step == 1 ? 0x920 : 0x900;
+      for (unsigned region = 0; region < 4; ++region) for (unsigned step = 0; step < 3; ++step) {
+        unsigned camera = boundaries[region] + (step == 1 ? 0x20 : 0);
         put_word(0x1e4d, camera); put_word(0x1e8d, camera / 2);
         ppu.hScroll[0] = camera & 1023; ppu.hScroll[1] = (camera / 2) & 1023;
         ram[0x1f0a] = (uint8_t)step;
         capture(); assert(MmxRendererDraw(output, v, false));
-        assert(output[80 * v.width + v.extra - 256] == (frozen ? 0x0000ff : 0xff0000));
-        assert(output[80 * v.width + v.extra + 256] == (frozen ? 0xffff00 : 0x00ff00));
+        assert(output[80 * v.width + v.extra - 256] == rgb[frozen * 5 + region]);
+        assert(output[80 * v.width + v.extra + 256] == rgb[frozen * 5 + region + 1]);
         assert(output[80 * v.width + v.extra + 128] == 0xffffff);
       }
     }

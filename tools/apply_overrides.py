@@ -93,7 +93,9 @@ WS-SHOT-CULL - widen X's projectile lifetime window (X axis only).
   weapons: cull when (shotX - $1E4D + 0x20) >= 0x140, i.e. keep window
   = camera -32..+287. The snippet recomputes the carry verdict through
   MmxWsShotCullVerdictX, widening both sides by the live margin while
-  remaining equivalent in 4:3. Its Y-axis test is untouched.
+  remaining equivalent in 4:3. Its Y-axis test is untouched. This routine
+  also sets Zero's visibility during his fortress departure; that scripted
+  exit retains its native boundary so the cutscene can finish before a wall.
 
 WS-CHRBIND - observe (never re-derive) the OAM tile-base bind for the
   margin-enemy garbled-CHR fix (see ISSUES.md "Widescreen margin-enemy
@@ -311,8 +313,8 @@ def cull_snippet(indent, var):
 
 def shot_cull_snippet(indent, var):
     return (f"{indent}/*WS-SHOT-CULL*/ {{ extern uint16 "
-            f"MmxWsShotCullVerdictX(uint16); cpu->_flag_C = "
-            f"MmxWsShotCullVerdictX((uint16)({var})); }}\n")
+            f"MmxWsShotCullVerdictX(uint16, uint16); cpu->_flag_C = "
+            f"MmxWsShotCullVerdictX(cpu->D, (uint16)({var})); }}\n")
 
 
 def presentation_cull_snippet(indent, var):
@@ -1131,12 +1133,14 @@ def main():
                                 'MmxWsEnemyActivationDistance(uint16);' in contents)
             stale_collectibles = (fn is apply_bank00_spawn_pass and 'RecompReturn bank_00_DC36_' in contents
                                   and 'MmxWsCollectiblePass(cpu)' not in contents)
-            if stale_collectibles:
+            stale_shot_cull = (fn is apply_bank82_shot_cull and
+                               'MmxWsShotCullVerdictX(uint16);' in contents)
+            if stale_collectibles or stale_shot_cull:
                 lines = [line for line in contents.splitlines(keepends=True) if marker not in line]
                 if not args.check:
                     with open(path, 'w', encoding='utf-8', newline='') as f:
                         f.writelines(lines)
-            if marker in contents and not stale_activation and not stale_collectibles:
+            if marker in contents and not stale_activation and not stale_collectibles and not stale_shot_cull:
                 effective_counts[marker] = (
                     effective_counts.get(marker, 0) + contents.count(marker))
                 already += 1
@@ -1167,6 +1171,7 @@ def main():
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
     if not args.restore:
         for marker, expected in (("/*WS-FLYER-LEASH*/", 1), ("/*WS-ARMOR-CULL*/", 1),
+                                 ("/*WS-SHOT-CULL*/", 4),
                                  ("/*WS-STREAKER-ENTRY*/", 1), ("/*WS-CHAIN-PLATFORM*/", 2),
                                  ("/*WS-SPAWN-PASS*/", 4)):
             if effective_counts.get(marker, 0) != expected:

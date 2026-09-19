@@ -10,7 +10,6 @@ static MmxSpriteAsset assets[256];
 static uint8_t ready[256], sprite_resource[256];
 static unsigned cached_stage = ~0u, cached_section = ~0u;
 static unsigned bg_stage = ~0u;
-static unsigned bg_horizontal_end;
 static uint8_t bg_phase[2][8192], bg_chr[16][65536];
 static bool bg_chr_valid[16][2048], bg_chr_ready[16], bg_palette_ready[16];
 static MmxBackgroundPalette bg_palette[16];
@@ -236,7 +235,6 @@ static bool prepare_background(const uint8_t *ram) {
   if ((stage != 0 && stage != 1 && stage != 2 && stage != 3 && stage != 4 && stage != 8) || !range(0x32280, 2)) return false;
   if (bg_stage == stage) return true;
   bg_stage = stage;
-  bg_horizontal_end = 8192;
   memset(bg_phase, 0, sizeof(bg_phase));
   memset(bg_chr_ready, 0, sizeof(bg_chr_ready));
   memset(bg_palette_ready, 0, sizeof(bg_palette_ready));
@@ -246,11 +244,18 @@ static bool prepare_background(const uint8_t *ram) {
   bool first[2] = {true, true};
   for (unsigned guard = 0; guard < 512 && range(pos, 8); ++guard) {
     unsigned x = word(pos + 5), event = rom[pos + 3];
-    /* Mammoth's first shaft introduces elevation-dependent palette events.
-     * Only project the horizontal entrance rooms; later shafts retain their
-     * live palette rather than treating a vertical crossing as an X boundary. */
-    if (stage == 4 && (rom[pos] & 15) == 2 && event == 0x1a &&
-        (x & 0x7fff) < bg_horizontal_end) bg_horizontal_end = x & 0x7fff;
+    /* Mammoth's shafts join rooms ordered left-to-right, even though their
+     * palette controllers trigger on Y. Each nibble names one side: continue
+     * into the phase opposite the room preceding the shaft. The guest still
+     * owns when its live palette changes; this resolves only distant art. */
+    if (stage == 4 && (rom[pos] & 15) == 2 && event == 0x1a) {
+      unsigned line = x & 0x7fff, above = rom[pos + 4] >> 4, below = rom[pos + 4] & 15;
+      if (line > 0 && line < 8192) {
+        unsigned preceding = bg_phase[1][line - 1];
+        if (preceding == above || preceding == below)
+          memset(bg_phase[1] + line, preceding == above ? below : above, 8192 - line);
+      }
+    }
     if ((rom[pos] & 15) == 2 && (event == 0x16 || event == 0x17)) {
       unsigned line = x & 0x7fff;
       /* The high nibble names the phase on the left of the first boundary.
@@ -331,7 +336,6 @@ static const MmxBackgroundPalette *background_palette(unsigned phase) {
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
                                                              int world_x) {
   if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 1 && ram[0x1f7a] != 2 && ram[0x1f7a] != 4 && ram[0x1f7a] != 8) || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
-  if ((unsigned)world_x >= bg_horizontal_end) return NULL;
   unsigned phase = bg_phase[1][world_x];
   /* $80:B508 adds five palette lists after Chill Penguin freezes Mammoth's
    * factory. The saved requested phase does not include that offset. */

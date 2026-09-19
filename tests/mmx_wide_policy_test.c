@@ -6,6 +6,25 @@
 static uint8_t ram[0x20000];
 static void put(unsigned a, unsigned v) { ram[a] = (uint8_t)v; ram[a + 1] = (uint8_t)(v >> 8); }
 static unsigned get(unsigned a) { return ram[a] | (ram[a + 1] << 8); }
+static void test_zero_departure(void) {
+  memset(ram, 0, sizeof(ram)); ram[0x1f7a] = 9;
+  ram[0xe68] = 1; ram[0xe69] = 2; ram[0xe6a] = 0x0e; ram[0xe6b] = 8; ram[0xe72] = 0x33;
+  for (unsigned margin = 0; margin <= 384; margin += 8) {
+    assert(!MmxWidePolicy_ShotCull(ram, 0xe68, 0x13f, margin, true));
+    assert(MmxWidePolicy_ShotCull(ram, 0xe68, 0x140, margin, true));
+  }
+  assert(!MmxWidePolicy_ShotCull(ram, 0xe68, 0x140, 384, false));
+  ram[0xe6b] = 6; /* Still speaking: keep normal visibility. */
+  assert(!MmxWidePolicy_ShotCull(ram, 0xe68, 0x140, 384, true));
+  ram[0xe6b] = 8; ram[0xe72] = 0x34;
+  assert(!MmxWidePolicy_ShotCull(ram, 0xe68, 0x140, 384, true));
+  ram[0xe72] = 0x33; ram[0x1f7a] = 0; /* Highway sequence is separate. */
+  assert(!MmxWidePolicy_ShotCull(ram, 0xe68, 0x140, 384, true));
+  for (unsigned margin = 0; margin <= 384; margin += 8) {
+    assert(!MmxWidePolicy_ShotCull(ram, 0x1228, 0x13f + margin, margin, true));
+    assert(MmxWidePolicy_ShotCull(ram, 0x1228, 0x140 + margin, margin, true));
+  }
+}
 static void test_elevator_presentation(void) {
   memset(ram, 0, sizeof(ram));
   ram[0x1f7a] = 7; ram[0xf32] = 0x3d;
@@ -247,6 +266,11 @@ int main(void) {
     ram[0xd4] = (uint8_t)substate;
     assert(MmxWidePolicy_IsStageScene(ram) == (substate == 0 || substate == 2));
   }
+  ram[0xd4] = 4; ram[0x1e48] = 1; ram[0x1e49] = 2;
+  assert(MmxWidePolicy_IsStageScene(ram)); /* Fade still owns stage maps. */
+  ram[0x1e48] = 0; assert(!MmxWidePolicy_IsStageScene(ram));
+  ram[0x1e48] = 1; ram[0x1e49] = 4;
+  assert(!MmxWidePolicy_IsStageScene(ram)); /* Weapon-get background task. */
   ram[0xd3] = 4; ram[0xc3] = 0xc0; ram[0x1f10] = 2;
   assert(MmxWidePolicy_IsStageScene(ram)); /* Spark's light HDMA remains gameplay. */
   for (unsigned hud = 6; hud <= 8; hud += 2) {
@@ -275,5 +299,6 @@ int main(void) {
   test_flyer_and_armor_range();
   test_elevator_presentation();
   test_visible_lift_recovery();
+  test_zero_departure();
   return 0;
 }

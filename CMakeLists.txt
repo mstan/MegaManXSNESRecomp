@@ -130,7 +130,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         # edit must invalidate the affected bank in this same build.
         set_property(SOURCE ${GEN_DIR}/bank00_part0a_v2.c APPEND PROPERTY
             OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_renderer_capture.py)
-        set_property(SOURCE ${GEN_DIR}/bank82_part07_v2.c APPEND PROPERTY
+        set_property(SOURCE ${GEN_DIR}/bank82_part00_v2.c ${GEN_DIR}/bank82_part07_v2.c APPEND PROPERTY
             OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/tools/apply_overrides.py)
         set_property(SOURCE ${GEN_DIR}/bank83_part01_v2.c ${GEN_DIR}/bank83_part0b_v2.c
             ${GEN_DIR}/bank87_part04_v2.c ${GEN_DIR}/bank01_v2.c

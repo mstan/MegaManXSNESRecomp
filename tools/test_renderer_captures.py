@@ -149,7 +149,8 @@ EnableGamepad2 = false
         def word(address): return struct.unpack_from('<H', ram, address)[0]
         metadata = dict(stage=ram[0x1f7a], scene=ram[0xd3], camera_x=word(0x1e4d), camera_y=word(0x1e50),
                         stage_scene=ram[0xd1] == 2 and ram[0xd2] == 4
-                        and (ram[0xd3] in (0, 2, 4, 6, 8) or (ram[0xd3] == 10 and ram[0xd4] in (0, 2)))
+                        and (ram[0xd3] in (0, 2, 4, 6, 8) or (ram[0xd3] == 10 and
+                             (ram[0xd4] in (0, 2) or (ram[0xd4] == 4 and ram[0x1e48] and ram[0x1e49] == 2))))
                         and not (ram[0x1f10] in (6, 8) and ram[0xc3] & 0x80), **sprite_matches(data))
         if metadata.get('expanded_sprites', False) != args.expanded_sprites:
             raise RuntimeError('Expanded sprite mod option did not match requested value')

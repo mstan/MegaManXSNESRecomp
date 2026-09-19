@@ -8,6 +8,8 @@ uint8_t MmxWidePolicy_CrusherTileBase(const uint8_t ram[0x20000], uint16_t objec
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]);
 uint16_t MmxWidePolicy_FlyerLeash(unsigned margin);
 bool MmxWidePolicy_RideArmorCull(uint16_t distance, unsigned margin);
+bool MmxWidePolicy_ShotCull(const uint8_t ram[0x20000], uint16_t object,
+                            uint16_t distance, unsigned margin, bool custom);
 bool MmxWidePolicy_PresentationCull(const uint8_t ram[0x20000], uint16_t object,
                                     uint16_t distance, unsigned margin, bool custom);
 bool MmxWidePolicy_PrematureRideArmor(const uint8_t ram[0x20000]);

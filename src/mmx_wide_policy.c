@@ -3,7 +3,8 @@
 bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
   /* $80:997B: level setup, arrival, play, death and stage-clear all retain
    * the stage view. State $0A also holds it for 60 frames at substates 0/2;
-   * $80:9BAD replaces the stage assets only when advancing to substate 4.
+   * Substate 4 first fades the stage out before replacing its assets. BG1's
+   * stage scroll task ($1E49=2) distinguishes that fade from the menu setup.
    * $80:C47C suspends the HUD task ($1F10=6, then 8 after $80:DB2B)
    * for the weapon menu, which owns HDMA channel 7. The task can remain at
    * 6 throughout the menu when gameplay updates stop before it runs.
@@ -11,7 +12,8 @@ bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]) {
    * Spark's moving lights also use that HDMA channel during gameplay. */
   return ram && ram[0xd1] == 2 && ram[0xd2] == 4 &&
       ((ram[0xd3] <= 8 && !(ram[0xd3] & 1)) ||
-       (ram[0xd3] == 10 && (ram[0xd4] == 0 || ram[0xd4] == 2))) &&
+       (ram[0xd3] == 10 && (ram[0xd4] == 0 || ram[0xd4] == 2 ||
+        (ram[0xd4] == 4 && ram[0x1e48] && ram[0x1e49] == 2)))) &&
       !((ram[0x1f10] == 6 || ram[0x1f10] == 8) && (ram[0xc3] & 0x80));
 }
 
@@ -47,6 +49,18 @@ uint16_t MmxWidePolicy_FlyerLeash(unsigned margin) {
 bool MmxWidePolicy_RideArmorCull(uint16_t distance, unsigned margin) {
   /* $83:8948 has its own cam-128..cam+383 horizontal lifetime window. */
   return (uint16_t)(distance + margin) >= 0x200 + 2 * margin;
+}
+bool MmxWidePolicy_ShotCull(const uint8_t ram[0x20000], uint16_t object,
+                            uint16_t distance, unsigned margin, bool custom) {
+  /* $88:A4E6 ends Zero's fortress introduction when $82:80B4 clears his
+   * visibility flag. A wide lifetime keeps him running into the next wall
+   * forever. Restore the native boundary only for this scripted departure;
+   * the next guest update performs its normal cutscene cleanup. */
+  if (custom && ram && ram[0x1f7a] == 9 && object >= 0xe68 && object < 0x1228 &&
+      (object & 63) == 0x28 && ram[object + 10] == 0x33 &&
+      ram[object + 1] == 2 && ram[object + 2] == 0x0e && ram[object + 3] == 8)
+    margin = 0;
+  return (uint16_t)(distance + margin) >= 0x140 + 2 * margin;
 }
 bool MmxWidePolicy_PrematureRideArmor(const uint8_t ram[0x20000]) {
   /* Compatibility with early spike saves: the empty Chill Penguin armor

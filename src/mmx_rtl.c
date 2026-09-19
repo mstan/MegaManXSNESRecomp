@@ -893,9 +893,8 @@ uint16 MmxWsCullVerdictX(uint16 v) {
  * carry = (shotX - camX + 0x20) >= 0x140 (keep window cam-32..+287).
  * Use the same symmetric live-margin expansion as the enemy cull while
  * retaining the projectile routine's tighter 0x20/0x140 base window. */
-uint16 MmxWsShotCullVerdictX(uint16 v) {
-  int m = MmxWsMargin();
-  return ((uint16)(v + m) >= (uint16)(0x140 + 2 * m)) ? 1 : 0;
+uint16 MmxWsShotCullVerdictX(uint16 dpage, uint16 v) {
+  return MmxWidePolicy_ShotCull(g_ram, dpage, v, MmxWsMargin(), g_mmx_custom_renderer);
 }
 
 uint16 MmxWsFlyerLeashLimit(void) {

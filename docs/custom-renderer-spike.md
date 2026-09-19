@@ -1,6 +1,20 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-19, seventeenth batch)
+## Current owner playtest checklist (2026-09-19, eighteenth batch)
+
+- [x] F1: let Zero finish his fortress departure and release X's controls.
+- [x] F2: retain adaptive width through the stage-exit fade, until fully black.
+- [x] F7: correct the distant factory room palette before X drops into the shaft.
+- [x] F8: preserve both factory rooms' palettes through the hallway approach.
+- [x] F9: investigate Mammoth's entrance; retain native timing under the owner's
+  explicit fallback because initialization also takes over X and the camera.
+
+Fixtures are frozen in `eighteenth-saves`. Fresh captures cover Zero's departure
+and subsequent player movement, the stage fade and weapon screen, and both
+factory areas on load and after movement. Mammoth's awkward entrance remains
+unchanged. Owner acceptance remains pending.
+
+## Previous owner playtest checklist (2026-09-19, seventeenth batch)
 
 - [x] F1: show Storm Eagle's flying platforms before X reaches native spawn range.
 - [x] F2: retain adaptive width through the final teleport-out stage hold.
@@ -1122,3 +1136,57 @@ The capture harness now disables physical gamepads in its isolated config so
 connected controllers cannot interfere with scripted inputs. All ten source
 saves were backed up and their hashes remained unchanged. These checks cover
 the reported areas and initial platform activation, not a complete stage run.
+
+## Eighteenth playtest: scripted exits and later factory rooms
+
+Zero's fortress departure uses the shared `$82:80B4` visibility check. Its wider
+window kept him alive until he reached the next wall, where the cutscene stalled.
+`$88:A4E6` normally detects his cleared visibility flag and calls `$84:A003` to
+release X before deleting the actor. The custom renderer now retains the native
+camera-minus-32 through camera-plus-287 boundary specifically for stage 9,
+enemy `$33`, departure state `2/$0E/8`. His normal cleanup completes without
+moving him through the wall or changing other actors' widened lifetime.
+The generated hook now passes the actor's direct-page address; its source bank
+also depends on the injector script so a single build updates the hook ABI.
+
+The previous stage-exit fix covered substates 0/2 but missed the fade: `$80:9BAD`
+advances to substate 4 before calling the blocking fade at `$80:8995`. Adaptive
+rendering now includes that substate while the original BG1 stage-scroll task
+is active (`$1E48 != 0`, `$1E49 = 2`). Clearing the task or replacing it with the
+menu task ends stage rendering. A frame-by-frame trace confirms adaptive width
+through the final dim frame and full black, before weapon-screen setup begins.
+
+Mammoth's later palette controllers trigger on Y at shafts, but connect rooms
+ordered left to right. The margin palette map now follows each shaft's paired
+phase values into the phase opposite the preceding room: `$0900` changes 0 to 1,
+`$1050` changes 1 to 2, `$15C8` changes 2 to 3, and `$1D20` changes 3 to 4. This
+replaces the seventeenth batch's vertical-event cutoff. Both normal and frozen
+factory palettes, half-speed BG2 coordinates, and live native colors retain
+their existing handling. Guest palette timing is unchanged.
+
+F9 remains unchanged by agreement. Mammoth's initializer `$87:91BA` creates a
+child, freezes X, and starts a 60-frame delay. `$87:923C` subsequently extends the
+camera limit and relocates the boss. Starting that initializer earlier would
+change encounter progression; an independent visual preview needs additional
+lifecycle handling. No boss activation or AI changes are included in this batch.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-ot3co7bf` | Before: Zero remains at X `$17B` and X's camera stays fixed |
+| `mmx-render-0by40s8r` | Final F1 frame 420: Zero removed, X running, camera advanced to `$33` |
+| `mmx-render-f161fmrv/slot1/exit-timeline` | F2 frame trace: substate 4 at 814; brightness reaches 0 at 842; stage task clears under forced blank at 845; menu task starts at 866 |
+| `mmx-render-sur9_vqc` / `mmx-render-qra4rdr4` | Final F2 captures at 835/842 preserve the full adaptive fade |
+| `mmx-render-dwduwmof` | F2 frame 1150: weapon screen retains clean pillarboxing |
+| `mmx-render-i4o9bip1` | Final F7/F8 fresh loads show correct distant room colors |
+| `mmx-render-um1401r4` | F7 shaft descent and F8 hallway approach preserve room colors |
+
+Windows build, all three CTests, strict C warnings, generated-hook checks, and
+diff checks pass. Tests cover Zero's exact native exit boundary, unrelated actor
+states and ordinary projectile lifetime, stage fade versus menu ownership, and
+all four factory palette transitions in both variants and layers. Final captures
+replay at five widths with zero raw/repaired native differences and matching
+live/replay output. All ten original saves were backed up in
+`save-backups/eighteenth-build-20260919-131345`; their hashes remained unchanged.
+These checks validate the reported scenes, not full-game progression.
