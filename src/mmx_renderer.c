@@ -545,12 +545,13 @@ static unsigned spark_lights(LightBeam beams[2], int extra) {
   return count;
 }
 static bool condition(unsigned mode, bool inside) { return mode == 3 || (mode == 1 && !inside) || (mode == 2 && inside); }
-static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3]) {
+static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3], bool dialogue_margin) {
   unsigned rgb = palette[main & 255], layer = (main >> 8) & 15;
   if (object_color >= 0 && (layer == 4 || layer == 6)) rgb = (unsigned)object_color;
   if (layer < 3 && bg_colors[layer] >= 0) rgb = (unsigned)bg_colors[layer];
   bool clipped = condition(p->cgwsel >> 6, inside);
   bool math = !condition((p->cgwsel >> 4) & 3, inside) && ((p->cgadsub & 63) & (1u << layer));
+  if (dialogue_margin && layer == 5) math = false;
   unsigned other = p->fixedColor;
   bool half = math && (p->cgadsub & 64) && !clipped;
   if (math && (p->cgwsel & 2)) {
@@ -615,6 +616,14 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     if (p.inidisp & 128) continue;
     uint8_t brightness[32];
     for (int c = 0; c < 32; ++c) brightness[c] = (uint8_t)(((c << 3) | (c >> 2)) * (p.inidisp & 15) / 15);
+    /* Dialogue masks BG1/BG2 for the panel and subtracts white from the
+     * exposed backdrop ($81:915E). That global subtraction also blacks out
+     * Storm's transparent sky between clouds in the newly exposed margins.
+     * Recognize the captured panel setup across stages; preserve its native
+     * window/text and every other color effect, including transition fades. */
+    bool dialogue_backdrop = g_mmx_render_asset_repairs && p.cgadsub == 0xa0 &&
+        p.cgwsel == 0x80 && p.fixedColor == 0x7fff && p.windowsel == 0x22 &&
+        p.screenWindowed[0] == 3 && (p.screenEnabled[0] & 7) == 7;
     uint16_t objects[MMX_RENDER_MAX_WIDTH] = {0};
     int object_colors[MMX_RENDER_MAX_WIDTH];
     for (int x = 0; x < view.width; ++x) object_colors[x] = -1;
@@ -688,7 +697,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         for (unsigned i = 0; i < beam_count; ++i)
           color_window |= x >= beams[i].left[y] && x <= beams[i].right[y];
       }
-      out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], color_window, object_colors[sx], bg_colors);
+      out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], color_window, object_colors[sx], bg_colors,
+                                       dialogue_backdrop && (x < 0 || x >= 256));
     }
   }
   return true;

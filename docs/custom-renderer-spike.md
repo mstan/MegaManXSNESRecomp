@@ -1,6 +1,14 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-19, fifteenth batch)
+## Current owner playtest checklist (2026-09-19, sixteenth batch)
+
+- [x] F1: keep Storm Eagle's sky intact during Dr. Light's capsule dialogue.
+
+The fixture is frozen in `sixteenth-saves`. Fresh captures verify the first
+dialogue page, the next page, and the return to gameplay. Owner acceptance
+remains pending.
+
+## Previous owner playtest checklist (2026-09-19, fifteenth batch)
 
 - [x] F1: preserve the left background and foreground rock colors while moving right.
 - [x] F1: hide garbled side margins when opening the weapons menu with Start.
@@ -1024,3 +1032,38 @@ fixtures; the same frame before and after this patch reports 2,157 repaired
 pixels. Menu and capsule captures report zero repaired native pixels.
 All ten original saves were backed up and their hashes remained unchanged.
 These checks cover the reported area, not a full Sting Chameleon playthrough.
+
+## Sixteenth playtest: capsule dialogue backdrop
+
+Current F1 is just before Storm Eagle's capsule activates. Holding Right for
+30 frames starts the conversation. CGRAM entry 0 remains the correct blue
+`$7ECB`, but the shared dialogue setup at `$81:915E` subtracts white from the
+backdrop (`CGADSUB=$A0`, fixed color `$7FFF`). It masks BG1/BG2 under the text
+panel with window setup `$22`. That global subtraction also turns transparent
+sky between the clouds black in the adaptive margins.
+
+The compositor recognizes this captured dialogue setup and suppresses only
+backdrop subtraction outside native X=0..255. The rule does not depend on the
+stage, actor, or previous frames. Native text/window rendering, opaque clouds,
+normal color effects, and partial transition fades keep their existing behavior.
+No palette assets or guest state are changed.
+
+Evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-kjo40eup` | Before the conversation: blue sky and capsule visible |
+| `mmx-render-gtdc8p9f` | Before fix, frame 240 after approaching: transparent sky turns black |
+| `mmx-render-lim63vp9` | Final build, frame 500: completed first page, blue sky, portrait and hologram |
+| `mmx-render-17g4xspi` | Frame 700 after advancing dialogue: next page retains blue sky |
+| `mmx-render-8mtowwcm` | Frame 1600 after advancing pages: dialogue closes and normal backdrop returns |
+| `mmx-render-dk4p3hif` | Previous Sting Chameleon forest palette fix still holds |
+
+Windows build, all three CTests, strict C warnings, and generated override
+checks pass. Targeted tests cover the dialogue signature across stage IDs,
+both margins, unchanged native black panel and opaque clouds, ordinary
+backdrop subtraction, partial fades, and restoration after dialogue. All
+Storm captures replay at five widths with zero raw or repaired native pixel
+differences and matching live/replay output. All ten source saves were backed
+up and their hashes remained unchanged. This validates conversation rendering
+and exit, not the subsequent helmet upgrade sequence or a full stage run.

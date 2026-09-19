@@ -766,6 +766,41 @@ static void sting_background_palettes(void) {
   }
 }
 
+static void dialogue_backdrop(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0);
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 7;
+  ppu.screenWindowed[0] = 3; ppu.windowsel = 0x22;
+  ppu.window1left = 40; ppu.window1right = 216;
+  ppu.cgram[0] = 31 << 10; ppu.cgram[1] = 0x7fff;
+  ppu.bgXsc[0] = 8; ppu.bgXsc[1] = 4; ppu.bgXsc[2] = 12;
+  ppu.vram[0x400 + 5 * 32 + 28] = 1; /* Cloud, at native x=224 and margin x=-32. */
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  for (unsigned stage = 0; stage < 9; ++stage) {
+    ram[0x1f7a] = (uint8_t)stage; ppu.cgadsub = 0; ppu.cgwsel = 0; ppu.fixedColor = 0;
+    capture(); assert(MmxRendererDraw(output, v, false));
+    assert(output[80 * v.width + v.extra - 80] == 0x0000ff);
+    ppu.cgadsub = 0xa0; ppu.cgwsel = 0x80; ppu.fixedColor = 0x7fff;
+    capture(); assert(MmxRendererDraw(output, v, false));
+    assert(output[80 * v.width + v.extra - 80] == 0x0000ff);
+    assert(output[80 * v.width + v.extra + 300] == 0x0000ff);
+    assert(output[80 * v.width + v.extra + 128] == 0); /* Native black text panel. */
+    assert(output[40 * v.width + v.extra - 32] == 0xffffff); /* Opaque cloud untouched. */
+    assert(output[40 * v.width + v.extra + 224] == 0xffffff);
+  }
+  ppu.windowsel = 0; /* Ordinary backdrop subtraction must remain effective. */
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra - 80] == 0);
+  ppu.windowsel = 0x22; ppu.fixedColor = 15 << 10; /* Preserve partial transition fades. */
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra - 80] == 0x000084);
+  ppu.cgadsub = ppu.cgwsel = 0; ppu.fixedColor = 0;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra + 128] == 0x0000ff); /* Return to gameplay. */
+}
+
 static void weapons_menu_margins(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
@@ -786,4 +821,4 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); weapons_menu_margins(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); dialogue_backdrop(); weapons_menu_margins(); return 0; }
