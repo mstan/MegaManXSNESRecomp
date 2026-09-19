@@ -24,6 +24,7 @@
 #define MMX_DESKTOP_ENTRY main
 #endif
 extern const RtlGameInfo kMmxGameInfo;
+extern int mmx_tier2_diagnostics_enabled(void);
 
 static void MmxPrepareFrame(int dw, int dh, int *w, int *h) {
   (void)dw; (void)dh;
@@ -369,6 +370,10 @@ int MMX_DESKTOP_ENTRY(int argc, char **argv) {
     for (int i = 1; i + 2 <= argc; ++i) argv[i] = argv[i + 2];
     argc -= 2;
   }
+  static RtlGameInfo mmx_game_info;
+  mmx_game_info = kMmxGameInfo;
+  mmx_game_info.tier2_capture = mmx_tier2_diagnostics_enabled();
+
   static const SnesDesktopHostGame game = {
 #if MMX_VARIANT_JP
     .display_name = "Rockman X", .region = "Japan",
@@ -382,7 +387,7 @@ int MMX_DESKTOP_ENTRY(int argc, char **argv) {
     .expected_sha256_hex = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32",
 #endif
     .build_version = SNESRECOMP_BUILD_VERSION,
-    .game_info = &kMmxGameInfo,
+    .game_info = &mmx_game_info,
     .default_config_ini = kMmxDefaultConfig,
     .env_prefix = "MMX", .debug_port = 4377,
     .native_widescreen = 1, .state_menu_hotkeys = 1,

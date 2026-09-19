@@ -33,7 +33,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
     add_executable(${TARGET} ${SNESRECOMP_RUNNER_SOURCES}
         src/main.c src/mmx_display.c src/mmx_wide_preview.c src/mmx_wide_policy.c
         src/mmx_00.c src/gen_stubs.c src/mmx_cpu_infra.c src/mmx_rtl.c
-        src/mmx_spc_player.c src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c)
+        src/mmx_spc_player.c src/mods/mmx_diagnostics_plugin.c
+        src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c)
     target_include_directories(${TARGET} PRIVATE
         ${CFG_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_BINARY_DIR} ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
