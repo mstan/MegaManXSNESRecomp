@@ -280,6 +280,29 @@ static void resource_decode(void) {
   for (unsigned i = 0; i < 16; ++i) assert(asset->colors[i] == i);
   asset = MmxRenderAssetsSprite(0, 1, 7); assert(asset && asset->current);
 
+  /* Ordinary enemies, including the serpent, use permanent OBJ palette 0
+   * for a hit flash. Current CHR must retain that palette in center/margins. */
+  memset(ram, 0, sizeof(ram)); memset(&ppu, 0, sizeof(ppu)); MmxRendererReset();
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f08] = 1;
+  ram[0xe72] = 0x23; ram[0xe7e] = 7;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 16; ppu.cgram[129] = 0x7fff;
+  for (int i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
+  for (int y = 0; y < 8; ++y) ppu.vram[y] = 255;
+  rom_bytes[0x100] = 1; put_word(0x18, 0x8100); ram[0x1a] = 0x80; ram[0xf] = 0x20;
+  MmxRendererSetRom(rom_bytes, sizeof(rom_bytes)); g_mmx_custom_renderer = true;
+  for (int x = 40; x <= 400; x += 360) {
+    put_word(0, x); put_word(2, 40); MmxRendererObserveObject(ram, 0xe68); MmxRendererRecordPiece(ram, 0);
+  }
+  MmxRendererLatchSprites(); capture();
+  MmxRenderView flash_view = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  assert(MmxRendererDraw(output, flash_view, false));
+  assert(output[40 * flash_view.width + flash_view.extra + 40] == 0xffffff);
+  assert(output[40 * flash_view.width + flash_view.extra + 400] == 0xffffff);
+  ram[0x1f08] = 0; /* A missing resource still requires private repair. */
+  capture(); assert(MmxRendererDraw(output, flash_view, false));
+  assert(output[40 * flash_view.width + flash_view.extra + 400] != 0xffffff);
+  g_mmx_custom_renderer = false;
+
   /* Heart Tanks bind resource $36 without an enemy animation-table entry.
    * Keep that identity both before and after its section's VRAM allocation. */
   rom_bytes[0x32d2e] = 0x36;
@@ -613,4 +636,53 @@ static void background_continuations(void) {
   assert(before == 0xff0000 && output[80 * v.width + v.extra + 320] == before);
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); return 0; }
+static void launch_background_palettes(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 1;
+  rom_word(0x282c4, 0x9000); rom_bytes[0x29000] = 0x42;
+  const unsigned boundaries[] = {0x100, 0x200, 0x1a20, 0x1c20};
+  for (unsigned i = 0; i < 4; ++i) {
+    unsigned p = 0x29001 + i * 7;
+    rom_bytes[p] = 2; rom_bytes[p + 3] = 0x17; rom_bytes[p + 4] = (uint8_t)(i * 16 + i + 1);
+    rom_word(p + 5, boundaries[i] | (i == 3 ? 0x8000 : 0));
+  }
+  rom_bytes[0x2901d] = 0x42;
+  rom_word(0x32262, 0x20); rom_word(0x32264, 0x2a);
+  for (unsigned i = 0; i < 5; ++i) rom_word(0x32280 + i * 2, 0x40 + i * 16);
+  const unsigned groups[] = {0x10, 0x50, 0x10, 0x70, 0x50};
+  const unsigned colors[] = {31, 31 << 5, 31 << 10, 31 << 10, 31};
+  for (unsigned i = 0; i < 5; ++i) {
+    unsigned p = 0x322a0 + i * 16;
+    rom_word(p, 0xa000 + i * 32); rom_bytes[p + 2] = (uint8_t)groups[i]; rom_word(p + 3, 0xffff);
+    for (unsigned c = 0; c < 16; ++c) rom_word(0x2a000 + i * 32 + c * 2, colors[i]);
+  }
+  rom_word(0x322e3, 0xa0a0); rom_bytes[0x322e5] = 0x70; rom_word(0x322e6, 0xffff);
+  for (unsigned c = 0; c < 16; ++c) rom_word(0x2a0a0 + c * 2, 31 << 5);
+  const MmxBackgroundPalette *sea = MmxRenderAssetsBackgroundPalette(ram, 0x1800);
+  assert(sea && sea->colors[0x11] == (31 << 10) && sea->colors[0x51] == (31 << 5));
+  assert(sea->valid[0x71] && sea->colors[0x71] == (31 << 10));
+  assert(!sea->valid[0x21]); /* Unrelated palettes retain live animation. */
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x1c20)->colors[0x71] == (31 << 5));
+  ram[0x1f0a] = 4;
+  assert(MmxRenderAssetsBackgroundPalette(ram, 0x1800)->colors[0x71] == (31 << 10));
+
+  put_word(0xb98, 0x8000); ram[0xb9a] = 0x80; ram[0x1e89] = 0x0e;
+  for (unsigned x = 12; x <= 15; ++x) ram[0xec00 + x] = 1;
+  for (int i = 0; i < 256; ++i) put_word(0xa800 + i * 2, 1);
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 0x1c01);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 2; ppu.bgXsc[1] = 8;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  put_word(0x1e8d, 0xc40); ppu.hScroll[1] = 0x240;
+  ppu.cgram[0x71] = 31 << 5; /* Boss-room colors are currently resident. */
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra - 96] == 0x0000ff); /* Fill empty left staging cells. */
+  assert(output[80 * v.width + v.extra + 528] == 0x0000ff); /* BG2 stays ocean past the boss palette boundary. */
+  assert(output[80 * v.width + v.extra + 128] == 0); /* Stock center is not reconstructed. */
+  ram[0x1e89] = 0x0c;
+  capture(); assert(MmxRendererDraw(output, v, false));
+  assert(output[80 * v.width + v.extra - 96] == 0); /* Boat staging remains separate. */
+}
+
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); return 0; }

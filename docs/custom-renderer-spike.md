@@ -1,6 +1,15 @@
 # Mega Man X custom renderer spike
 
-## Current owner playtest checklist (2026-09-14, eleventh batch)
+## Current owner playtest checklist (2026-09-18, twelfth batch)
+
+- [x] F1: preserve the serpent head's damage flash when firing immediately after load.
+- [x] F1: repair the torn waterline/background on the left.
+- [x] F2: keep both rooms' colors correct through the boss hallway approach.
+
+Verified in isolated fresh-process captures and targeted tests; owner acceptance
+of this batch remains pending. Evidence is recorded in the twelfth playtest below.
+
+## Previous owner playtest checklist (2026-09-14, eleventh batch)
 
 - [x] F1: show the E-Tank behind the grinder on a fresh launch and save load.
 - [x] F2: show the health pickups above X throughout the adaptive range.
@@ -744,6 +753,52 @@ and both terrain continuations. Every release capture replays at 4:3, 16:9,
 21:9, 32:9 and maximum Adaptive with zero raw native differences and matching
 live/replay output. Spark's saved ice-coat sequence also passes. Expanded
 capacity remains off; ROMs, saves and capture artifacts remain untracked.
+
+## Twelfth playtest: serpent flash, waterline and Launch room palettes
+
+The updated F1/F2 saves are frozen in `twelfth-saves`. Immediate fire is
+`wait 30`, `loadstate 0`, `press y 10`. Frame 39 contains the native hit flash;
+the surrounding frames have normal colors. The previous compositor replaced
+1,818 native pixels in that frame with normal resource colors. It now retains
+the shared OBJ palette-0 flash when the resource is current and its tile/page
+binding matches. Missing art still gets repaired. This rule also covers ordinary
+enemies outside the classified boss family.
+
+Launch's late BG2 ocean begins at source `$C00`. Its preceding staging cells
+are empty, exposing a gap where the foreground and background waterline overlap
+in a wide margin. Continuing the authored sea-edge column fills that gap while
+the separate boat mode retains its existing source bounds.
+
+The hallway/boss palette switch reuses colors needed by the visible exterior.
+Launch margins now select palettes from the authored region. Partial phase
+lists inherit unchanged groups, including phase 2's retained `$50` group. The
+original ocean `$70` group comes from its explicit reassertion in phase 3.
+BG2's ocean/ruins keep their own colors when the foreground enters the cliff
+or boss room; foreground boss-room colors are available before X arrives.
+All these background changes are confined to the reconstructed margins.
+
+Release evidence under `build-custom/validation`:
+
+| Run | Verification |
+| --- | --- |
+| `mmx-render-h7ib8uay` | Fresh F1 continuous waterline; fresh F2 exterior and boss room both colored correctly |
+| `mmx-render-kh0otxjq`, `mmx-render-_ns3dn2p`, `mmx-render-5brm4c5m` | F1 frames 38/39/40: normal, white hit flash, normal; repaired native differences are zero |
+| `mmx-render-92gemnxt`, `mmx-render-ro85l0m3` | F2 held right through frames 120/250: exterior and boss-room palettes remain stable |
+| `mmx-render-oids7fr1`, `mmx-render-6_eviyif`, `mmx-render-xuvqd95b` | Earlier complete boat, buried nose, underwater scenery and submarine rise regressions |
+| `mmx-render-g5q2iahb`, `mmx-render-01fua1hs` | Spark's ice coat, Armadillo's hit flash and cold Sub Tank regression |
+
+All three CTests, strict C warnings and generated-hook checks pass. New tests
+exercise a current ordinary enemy's hit palette in the native center and margin,
+missing-resource repair, partial palette inheritance, the exterior/boss split,
+and ocean-edge continuation without admitting boat staging art. Each release
+capture replays at all five aspect settings with zero raw native differences
+and matching live output. Expanded sprite capacity stays off.
+
+The external dependency checkouts had advanced since September 14. This build
+now uses clean private detached worktrees under `build-custom/deps` at the
+recorded `snesrecomp` 8d12911 and `recomp-ui` a7a4f30 pins. No dependency source
+or pin changes are included. The existing launch shortcut and playtest saves
+continue to use `build-custom/MegaManXSNESRecomp.exe`.
 
 ## Validation recorded on 2026-09-13/14
 

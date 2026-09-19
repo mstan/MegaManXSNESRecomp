@@ -220,9 +220,9 @@ bool MmxRenderAssetsRideArmorPalettePending(const uint8_t ram[0x20000], const ui
       memcmp(colors + 1, assets[0x4a].colors + 1, 15 * sizeof(*colors)) == 0 &&
       memcmp(colors + 1, assets[0x49].colors + 1, 15 * sizeof(*colors)) != 0;
 }
-/* Kind-2 $17 records select background resources. Highway/Launch use
- * horizontal CHR projection, Highway/Chill use horizontal palettes, and
- * Armadillo's shaft continuation requests its destination palette explicitly. */
+/* Kind-2 $17 records select background resources. Highway/Launch project
+ * CHR horizontally; they and Chill also project palettes. Armadillo's shaft
+ * continuation requests its destination palette explicitly. */
 static bool prepare_background(const uint8_t *ram) {
   unsigned stage = ram[0x1f7a];
   if ((stage != 0 && stage != 1 && stage != 3 && stage != 8) || !range(0x32280, 2)) return false;
@@ -283,6 +283,22 @@ static const MmxBackgroundPalette *background_palette(unsigned phase) {
   if (!bg_palette_ready[phase]) {
     bg_palette_ready[phase] = true;
     memset(&bg_palette[phase], 0, sizeof(bg_palette[phase]));
+    /* Launch's phase 2 updates only $10; its distant ruins still use the
+     * $50 group from phase 1 after the boss-room palette replaces CGRAM. */
+    if (bg_stage == 1 && phase) bg_palette[phase] = *background_palette(phase - 1);
+    /* Phase 3 reasserts the original ocean $70 group, which earlier phase
+     * lists leave resident. Seed that group before the boss can reuse it. */
+    if (bg_stage == 1 && !phase) {
+      size_t seed = background_list(0x32260, 3);
+      for (unsigned guard = 0; guard < 32 && range(seed, 3) && word(seed) != 0xffff; ++guard, seed += 3) {
+        size_t source = 0x28000 + (word(seed) & 0x7fff);
+        if (rom[seed + 2] != 0x70 || !range(source, 32)) continue;
+        for (unsigned i = 0; i < 16; ++i) {
+          bg_palette[phase].colors[0x70 + i] = (uint16_t)word(source + i * 2);
+          bg_palette[phase].valid[0x70 + i] = true;
+        }
+      }
+    }
     size_t p = background_list(0x32260, phase);
     for (unsigned guard = 0; guard < 32 && range(p, 3) && word(p) != 0xffff; ++guard, p += 3) {
       size_t source = 0x28000 + (word(p) & 0x7fff);
@@ -300,7 +316,7 @@ static const MmxBackgroundPalette *background_palette(unsigned phase) {
 }
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
                                                              int world_x) {
-  if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 8) || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
+  if (!ram || (ram[0x1f7a] != 0 && ram[0x1f7a] != 1 && ram[0x1f7a] != 8) || world_x < 0 || world_x >= 8192 || !prepare_background(ram)) return NULL;
   return background_palette(bg_phase[1][world_x]);
 }
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalettePhase(const uint8_t ram[0x20000], unsigned phase) {

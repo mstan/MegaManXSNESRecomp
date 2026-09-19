@@ -369,6 +369,10 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       if (frame.ram[0x1f7a] == 1 && frame.ram[0x1e89] == 0x0e &&
           wx >= 0x500 && wx < 0x700 && wy >= 0x370 && wy < 0x390)
         wx = 0x700 | (wx & 255);
+      /* The serpent's sea backdrop begins at source $C00. Its preceding
+       * actor staging cells are empty; extend the sea edge into the margin. */
+      if (frame.ram[0x1f7a] == 1 && frame.ram[0x1e89] == 0x0e &&
+          stream_x >= 0xc00 && stream_x < 0xe00 && wx < 0xc00) wx = 0xc00;
       /* Highway's final arena switches to the sky plane at BG2 x=$A00.
        * Earlier columns are intentionally empty at this vertical scroll;
        * extend the arena's sky edge when a wide view reaches behind it. */
@@ -415,7 +419,11 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       tile = mapped; px = wx; py = wy;
       /* The city moves at half speed. Express its map column as the player
        * X at which it crosses the native view's center (camera+128). */
-      asset_x = layer == 1 && frame.ram[0x1f7a] == 0 ? wx * 2 - 128 : wx;
+      asset_x = layer == 1 && (frame.ram[0x1f7a] == 0 || frame.ram[0x1f7a] == 1) ? wx * 2 - 128 : wx;
+      /* Late Launch BG2 remains ocean/ruins behind the hallway. The later
+       * foreground palette events belong to the cliff and boss room. */
+      if (layer == 1 && frame.ram[0x1f7a] == 1 && frame.ram[0x1e89] == 0x0e &&
+          word(frame.ram, 0x1e8d) >= 0xc00 && asset_x >= 0x1a20) asset_x = 0x1a1f;
       /* Chill's BG2 sky palette also changes with elevation. Its cave-exit
        * X transition owns foreground art only; keep the live sky colors. */
       if (layer == 1 && frame.ram[0x1f7a] == 8) asset_x = -1;
@@ -583,9 +591,14 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
     const MmxSpriteAsset *a = MmxRenderAssetsObjectSprite(frame.ram, s->object, s->animation);
+    /* OBJ palette 0 is the shared hit flash. If the current CHR binding
+     * still matches, that deliberate palette change must remain live. */
+    bool hit_flash = a && a->current &&
+        (s->attr & 255) == ((s->tile + a->tile_base) & 255) &&
+        ((s->attr >> 8) & 15) == (a->attributes & 1);
     /* Keep current allocations and their live flashes/animation. Repair
      * missing or stale bindings using the ROM resource's own palette. */
-    if (a && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
+    if (a && !hit_flash && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
         ((s->attr >> 8) & 0x2f) != (unsigned)(a->attributes | s->palette_bits) ||
         (s->object == 0xe18 && MmxRenderAssetsRideArmorPalettePending(frame.ram,
             frame.lines[0].palette + 128 + ((s->attr >> 9) & 7) * 16)))) piece_assets[i] = a;
