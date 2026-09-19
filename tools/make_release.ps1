@@ -114,7 +114,7 @@ $windowsDlls = [System.Collections.Generic.HashSet[string]]::new(
   [System.StringComparer]::OrdinalIgnoreCase)
 @(
   'ADVAPI32.dll', 'bcrypt.dll', 'COMCTL32.dll', 'comdlg32.dll',
-  'CRYPT32.dll', 'dbghelp.dll', 'DWMAPI.dll', 'GDI32.dll', 'IMM32.dll',
+  'CRYPT32.dll', 'd2d1.dll', 'dbghelp.dll', 'DWrite.dll', 'DWMAPI.dll', 'GDI32.dll', 'IMM32.dll',
   'IPHLPAPI.DLL', 'KERNEL32.dll', 'msvcrt.dll', 'ole32.dll',
   'OLEAUT32.dll', 'OPENGL32.dll', 'POWRPROF.dll', 'RPCRT4.dll',
   'SETUPAPI.dll', 'SHELL32.dll', 'SHLWAPI.dll', 'USER32.dll',

@@ -57,9 +57,9 @@ BOXART="recomp/launcher/boxart.tga"          # AppImage icon source (optional)
 # Release-owned mod catalog: packaging fails if the built tree is missing it
 # rather than shipping an AppImage with an empty Mods page.
 REQUIRED_MOD_MANIFESTS=(
-  "packages/megaman-x.enhancement.widescreen/1.0.0/manifest.toml"
-  "packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml"
-  "packages/megaman-x.developer.tier2-diagnostics/1.0.0/manifest.toml"
+  "preloaded/packages/megaman-x.enhancement.widescreen/1.0.0/manifest.toml"
+  "preloaded/packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml"
+  "preloaded/packages/megaman-x.developer.tier2-diagnostics/1.0.0/manifest.toml"
 )
 PROD_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=OFF )
 DEBUG_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=ON )
@@ -67,7 +67,7 @@ DEBUG_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=ON )
 
 # Pinned AppImage tooling (same pins as the Tomba Linux release).
 LINUXDEPLOY_URL=https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-LINUXDEPLOY_SHA=421ca71d5c69ea97c6309276232990d43df1dcece0edfaa26bbf926ff96ed12e
+LINUXDEPLOY_SHA=36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62
 APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
 APPIMAGETOOL_SHA=a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0
 

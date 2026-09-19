@@ -20,4 +20,4 @@ jobs:
       - name: Compile shared desktop host and game adapters
         run: cmake --build build --target MegaManXSNESRecomp RockmanXSNESRecomp --parallel 4
       - name: Check display geometry and widescreen policy
-        run: cmake --build build --target mmx_display_test mmx_wide_policy_test && ctest --test-dir build --output-on-failure
+        run: cmake --build build --target mmx_display_test mmx_wide_policy_test mmx_renderer_test && ctest --test-dir build --output-on-failure

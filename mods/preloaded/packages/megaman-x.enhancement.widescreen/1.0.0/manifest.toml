@@ -3,7 +3,7 @@ id = "megaman-x.enhancement.widescreen"
 version = "1.0.0"
 name = "Mega Man X Widescreen"
 author = "mstan"
-description = "Extends Mega Man X's horizontal field of view by one third using its game-specific HUD, background-margin, stage-overlay, spawn, cull, and draw-window work."
+description = "Adaptive widescreen stage rendering with fixed aspect choices and HUD anchoring."
 license = "MIT"
 resolver = "declarative"
 save_compatibility = "shared"
@@ -15,9 +15,56 @@ rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
 [[feature]]
 id = "widescreen"
 name = "Widescreen (Extended view)"
-description = "Add one-third more horizontal game area. Output follows Display aspect: 16:9 (CRT), 32:21 (square pixels), or 4:3 (square frame)."
+description = "Extend the stage view with live enemies, preserved encounter timing, and anchored health bars."
 group = "Display"
 default_enabled = false
+
+[[option]]
+feature = "widescreen"
+id = "aspect"
+label = "Aspect ratio"
+description = "Adapt to the window, or select a fixed aspect ratio."
+type = "choice"
+default = "adaptive"
+[[option.choice]]
+value = "adaptive"
+label = "Adaptive"
+[[option.choice]]
+value = "16:9"
+label = "16:9"
+[[option.choice]]
+value = "21:9"
+label = "21:9"
+[[option.choice]]
+value = "32:9"
+label = "32:9"
+
+[[option]]
+feature = "widescreen"
+id = "hud"
+label = "HUD anchoring"
+type = "choice"
+default = "edges"
+[[option.choice]]
+value = "edges"
+label = "Screen edges"
+[[option.choice]]
+value = "center"
+label = "Native positions"
+
+[[option]]
+feature = "widescreen"
+id = "expanded_sprites"
+label = "Expanded sprite capacity"
+description = "Draw submitted sprites beyond the original frame limit. Experimental; disabled by default."
+type = "choice"
+default = "off"
+[[option.choice]]
+value = "off"
+label = "Off"
+[[option.choice]]
+value = "on"
+label = "On (experimental)"
 
 [[plugin]]
 feature = "widescreen"

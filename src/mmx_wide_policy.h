@@ -4,12 +4,38 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+uint8_t MmxWidePolicy_CrusherTileBase(const uint8_t ram[0x20000], uint16_t object, uint8_t base);
+bool MmxWidePolicy_IsStageScene(const uint8_t ram[0x20000]);
+uint16_t MmxWidePolicy_FlyerLeash(unsigned margin);
+bool MmxWidePolicy_RideArmorCull(uint16_t distance, unsigned margin);
+bool MmxWidePolicy_ShotCull(const uint8_t ram[0x20000], uint16_t object,
+                            uint16_t distance, unsigned margin, bool custom);
+bool MmxWidePolicy_PresentationCull(const uint8_t ram[0x20000], uint16_t object,
+                                    uint16_t distance, unsigned margin, bool custom);
+bool MmxWidePolicy_PrematureRideArmor(const uint8_t ram[0x20000]);
+bool MmxWidePolicy_RecoverRideArmor(uint8_t ram[0x20000], unsigned margin);
+
+/* Recover a waiting bee's premature camera lock from older spike saves and
+ * keep its entrance behind the native encounter boundary. Custom mode only. */
+uint16_t MmxWidePolicy_BeeEntrance(uint8_t ram[0x20000], uint16_t object,
+                                  uint16_t distance);
+
 /* MMX authors each boss-room boundary as two back-to-back 16-pixel door
  * columns. The native camera shows only the column belonging to the current
  * room. Door metatile IDs vary by stage, but their three-row 8x8 construction
  * is stable: mirrored top, four-way mirrored center, reversed bottom. Return
  * true when row_index belongs to a stack with that structural signature. */
 bool MmxWidePolicy_IsBossDoorBody(const uint16_t words[3][4], int row_index);
+/* Enemy-family identity, shared by original stages and fortress rematches. */
+bool MmxWidePolicy_IsBossEncounter(uint8_t object_id);
+uint16_t MmxWidePolicy_BarrierEnemyState(const uint8_t ram[0x20000], uint16_t controller,
+                                       uint16_t object, uint16_t state, bool custom);
+bool MmxWidePolicy_IsCollectible(uint8_t object_id);
+bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object_id);
+void MmxWidePolicy_StreakerEntrance(uint8_t ram[0x20000], uint16_t object, unsigned margin);
+bool MmxWidePolicy_RecoverParkedStreaker(uint8_t ram[0x20000], uint16_t object, uint16_t authored_x);
+uint16_t MmxWidePolicy_ChainPlatformLine(const uint8_t ram[0x20000], uint16_t object,
+                                      uint16_t line, unsigned margin);
 
 typedef struct MmxWideSpawnCursor {
   uint16_t wide;
@@ -30,5 +56,9 @@ void MmxWidePolicy_EndWideSpawnPass(MmxWideSpawnCursor *cursor,
  * broad kind classification. */
 bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
                                       uint8_t object_id, bool native_pass);
+/* Protect allocation-sensitive Vile scripts before a larger lookahead can
+ * reach their room. A zero lookahead retains the shipped legacy interval. */
+bool MmxWidePolicy_ForceNativeSpawnTiming(uint8_t stage, uint16_t camera,
+                                         unsigned lookahead);
 
 #endif

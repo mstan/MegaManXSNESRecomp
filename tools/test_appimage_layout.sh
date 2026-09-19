@@ -48,23 +48,23 @@ run_apprun "$state1/MegaManX.AppImage"
 
 # 1. First launch seeded state beside the simulated .AppImage.
 test -f "$state1/config.ini" || { echo "FAIL: config.ini not seeded beside the AppImage" >&2; exit 1; }
-test -f "$state1/mods/packages/megaman-x.enhancement.widescreen/1.0.0/manifest.toml" || {
+test -f "$state1/mods/preloaded/packages/megaman-x.enhancement.widescreen/1.0.0/manifest.toml" || {
     echo "FAIL: release mod catalog not seeded beside the AppImage" >&2; exit 1; }
-test -f "$state1/mods/packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml" || {
+test -f "$state1/mods/preloaded/packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml" || {
     echo "FAIL: MSU-1 mod package not seeded beside the AppImage" >&2; exit 1; }
-test -f "$state1/mods/packages/megaman-x.developer.tier2-diagnostics/1.0.0/manifest.toml" || {
+test -f "$state1/mods/preloaded/packages/megaman-x.developer.tier2-diagnostics/1.0.0/manifest.toml" || {
     echo "FAIL: tier-2 diagnostics mod package not seeded beside the AppImage" >&2; exit 1; }
 
 # 2. User state survives a relaunch: an edited config line and a
 #    user-installed third-party mod package.
 printf '\n# user-owned marker\nLinearFiltering = 1\n' >> "$state1/config.ini"
 cfg_before=$(cat "$state1/config.ini")
-mkdir -p "$state1/mods/packages/user.thirdparty.example/1.0.0"
-printf 'user-owned\n' > "$state1/mods/packages/user.thirdparty.example/1.0.0/manifest.toml"
+mkdir -p "$state1/mods/preloaded/packages/user.thirdparty.example/1.0.0"
+printf 'user-owned\n' > "$state1/mods/preloaded/packages/user.thirdparty.example/1.0.0/manifest.toml"
 run_apprun "$state1/MegaManX.AppImage"
 test "$(cat "$state1/config.ini")" = "$cfg_before" || {
     echo "FAIL: user config.ini edit clobbered by relaunch" >&2; exit 1; }
-test "$(cat "$state1/mods/packages/user.thirdparty.example/1.0.0/manifest.toml")" = "user-owned" || {
+test "$(cat "$state1/mods/preloaded/packages/user.thirdparty.example/1.0.0/manifest.toml")" = "user-owned" || {
     echo "FAIL: user-installed mod clobbered by relaunch" >&2; exit 1; }
 
 # 3. Moving the .AppImage re-anchors state beside the new location.

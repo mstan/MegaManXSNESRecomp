@@ -93,7 +93,9 @@ WS-SHOT-CULL - widen X's projectile lifetime window (X axis only).
   weapons: cull when (shotX - $1E4D + 0x20) >= 0x140, i.e. keep window
   = camera -32..+287. The snippet recomputes the carry verdict through
   MmxWsShotCullVerdictX, widening both sides by the live margin while
-  remaining equivalent in 4:3. Its Y-axis test is untouched.
+  remaining equivalent in 4:3. Its Y-axis test is untouched. This routine
+  also sets Zero's visibility during his fortress departure; that scripted
+  exit retains its native boundary so the cutscene can finish before a wall.
 
 WS-CHRBIND - observe (never re-derive) the OAM tile-base bind for the
   margin-enemy garbled-CHR fix (see ISSUES.md "Widescreen margin-enemy
@@ -265,6 +267,8 @@ import re
 import sys
 
 MARKERS = ("/*WS-CULL*/", "/*WS-PRESENTATION-CULL*/", "/*WS-SHOT-CULL*/", "/*WS-SPAWN*/", "/*WS-SPAWN-PASS*/", "/*WS-ACTIVATE*/",
+           "/*WS-FLYER-LEASH*/", "/*WS-ARMOR-CULL*/", "/*WS-STREAKER-WAIT*/",
+           "/*WS-STREAKER-ENTRY*/", "/*WS-CHAIN-PLATFORM*/", "/*WS-BARRIER-ENEMIES*/",
            "/*WS-OAM*/", "/*WS-OAM-L*/", "/*WS-LOOKAHEAD*/", "/*WS-STAGE*/",
            "/*WS-SHADOW*/", "/*WS-CHRBIND*/", "/*WS-CHRBIND-COPY*/",
            "/*WS-CHRBIND-PARENT*/", "/*MSU1-MUSIC*/", "/*MSU1-STAGE*/")
@@ -309,8 +313,8 @@ def cull_snippet(indent, var):
 
 def shot_cull_snippet(indent, var):
     return (f"{indent}/*WS-SHOT-CULL*/ {{ extern uint16 "
-            f"MmxWsShotCullVerdictX(uint16); cpu->_flag_C = "
-            f"MmxWsShotCullVerdictX((uint16)({var})); }}\n")
+            f"MmxWsShotCullVerdictX(uint16, uint16); cpu->_flag_C = "
+            f"MmxWsShotCullVerdictX(cpu->D, (uint16)({var})); }}\n")
 
 
 def presentation_cull_snippet(indent, var):
@@ -488,10 +492,34 @@ def apply_bank00_spawn_pass(lines, verbose):
                 out.append(line)
                 n += 1
                 continue
+        if cur_fn == "bank_00_DC36" and cur_block == 0x00DC92 and line.strip() == "cpu->coprocessor_master_cycles = cpu->master_cycles;":
+            out.append(line)
+            out.append("    /*WS-SPAWN-PASS*/ { extern void MmxWsCollectiblePass(CpuState *); MmxWsCollectiblePass(cpu); }\n")
+            n += 1
+            continue
         out.append(line)
     if verbose and n:
         print(f"  WS-SPAWN-PASS injected {n} site(s)")
     return out, n
+
+
+def apply_barrier_enemies(lines, verbose):
+    """Keep the fortress empty-room check independent of adjacent wide enemies."""
+    out, block, count = [], None, 0
+    for line in lines:
+        out.append(line)
+        match = RE_TRACE.search(line)
+        if match:
+            block = canon_pc24(int(match.group(1), 16))
+        if block == 0x07F7C5:
+            match = re.match(r"^(\s*)uint16 (_v\d+) = cpu_read16\(cpu,.*cpu->X", line)
+            if match:
+                indent, var = match.groups()
+                out.append(f"{indent}/*WS-BARRIER-ENEMIES*/ {{ extern uint16 MmxWsBarrierEnemyState(uint16, uint16, uint16); {var} = MmxWsBarrierEnemyState(cpu->D, cpu->X, {var}); }}\n")
+                count += 1
+    if verbose and count:
+        print(f"  WS-BARRIER-ENEMIES injected {count} site(s)")
+    return out, count
 
 
 def oam_limit_snippet(indent, var):
@@ -632,8 +660,8 @@ def apply_bank02(lines, verbose):
 
 def activation_snippet(indent, var):
     return (f"{indent}/*WS-ACTIVATE*/ {{ extern uint16 "
-            f"MmxWsEnemyActivationDistance(uint16); {var} = "
-            f"MmxWsEnemyActivationDistance({var}); }}\n")
+            f"MmxWsEnemyActivationDistance(uint16, uint16); {var} = "
+            f"MmxWsEnemyActivationDistance({var}, cpu->D); }}\n")
 
 
 def apply_bank82_shot_cull(lines, verbose):
@@ -713,7 +741,7 @@ def apply_bank82_presentation_cull(lines, verbose):
 
 
 def apply_bank82_activation(lines, verbose):
-    """Widen the Chill Penguin intro helicopter's player-distance gate.
+    """Widen the Highway helicopter's descent gate after native arena entry.
 
     bank_82_B964 holds the helicopter just above the viewport until its
     controller is 0x80 pixels ahead of X.  That is exactly the native
@@ -721,6 +749,7 @@ def apply_bank82_activation(lines, verbose):
     large sprite's lead distance while preserving 0x80 when widescreen
     spawning is disabled.
     """
+    lines = [line for line in lines if '/*WS-ACTIVATE*/' not in line]
     out = []
     cur_block = None
     n = 0
@@ -739,6 +768,78 @@ def apply_bank82_activation(lines, verbose):
                     print(f"  WS-ACTIVATE after line {len(out) - 1} "
                           f"(block 0x02B964, {m.group(2)})")
     return out, n
+
+
+def apply_flyer_leash(lines, verbose):
+    """The pink flyer's spawn leash must include the custom view's margin."""
+    out, block, count = [], None, 0
+    for line in lines:
+        out.append(line)
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace.group(1), 16))
+        match = re.match(r"^(\s*)uint16 (_v\d+) = 0xa0;\s*$", line)
+        if block == 0x03DF71 and match:
+            out.append(f"{match[1]}/*WS-FLYER-LEASH*/ {{ extern uint16 MmxWsFlyerLeashLimit(void); {match[2]} = MmxWsFlyerLeashLimit(); }}\n")
+            count += 1
+    return out, count
+
+
+def apply_streaker_entry(lines, verbose):
+    """Keep native timing, but start the moving actor beyond the wide edge."""
+    # Migrate the previous spike's parked-actor hook in existing generations.
+    lines = [line for line in lines if '/*WS-STREAKER-WAIT*/' not in line]
+    out, count, block = [], 0, None
+    for line in lines:
+        out.append(line)
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace[1], 16))
+        # After the deadline guard so a yield cannot apply the offset twice.
+        if block == 0x07A590 and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
+            indent = line[:len(line) - len(line.lstrip())]
+            out.append(f"{indent}/*WS-STREAKER-ENTRY*/ {{ extern void MmxWsStreakerEntrance(uint16); MmxWsStreakerEntrance(cpu->D); }}\n")
+            count += 1
+    return out, count
+
+
+def apply_chain_platform(lines, verbose):
+    """Widen only the chain-platform create/remove switches at $81:F97A."""
+    out, block, count = [], None, 0
+    for line in lines:
+        out.append(line)
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace[1], 16))
+        match = re.match(r"^(\s*)uint16 (_v\d+) = cpu_read16\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0000 \+ cpu->X\)\);", line)
+        if block == 0x01F97A and match:
+            out.append(f"{match[1]}/*WS-CHAIN-PLATFORM*/ {{ extern uint16 MmxWsChainPlatformLine(CpuState *, uint16); {match[2]} = MmxWsChainPlatformLine(cpu, {match[2]}); }}\n")
+            count += 1
+    return out, count
+
+
+def apply_ride_armor_cull(lines, verbose):
+    """Widen only the first (horizontal) compare in $83:8948."""
+    out, block, compared, pending, count = [], None, None, False, 0
+    for line in lines:
+        trace = RE_TRACE.search(line)
+        if trace:
+            block = canon_pc24(int(trace.group(1), 16))
+            compared, pending = None, False
+        if block == 0x038948:
+            if re.match(r"^\s*uint16 _v\d+ = 0x200;\s*$", line):
+                pending = True
+            match = RE_READ_A.match(line)
+            if pending and match:
+                compared = match[1]
+                pending = False
+            branch = RE_BRANCH_C.match(line)
+            if compared and branch:
+                out.append(f"{branch[1]}/*WS-ARMOR-CULL*/ {{ extern uint16 MmxWsRideArmorCullVerdictX(uint16); cpu->_flag_C = MmxWsRideArmorCullVerdictX({compared}); }}\n")
+                count += 1
+                compared = None
+        out.append(line)
+    return out, count
 
 
 RE_CHRBIND_ANCHOR = re.compile(
@@ -1014,6 +1115,11 @@ def main():
         (apply_bank82_presentation_cull, "/*WS-PRESENTATION-CULL*/"),
         (apply_bank82_shot_cull, "/*WS-SHOT-CULL*/"),
         (apply_bank82_activation, "/*WS-ACTIVATE*/"),
+        (apply_flyer_leash, "/*WS-FLYER-LEASH*/"),
+        (apply_streaker_entry, "/*WS-STREAKER-ENTRY*/"),
+        (apply_chain_platform, "/*WS-CHAIN-PLATFORM*/"),
+        (apply_barrier_enemies, "/*WS-BARRIER-ENEMIES*/"),
+        (apply_ride_armor_cull, "/*WS-ARMOR-CULL*/"),
         (apply_bank03, "/*WS-STAGE*/"),
         (apply_chrbind_generic, "/*WS-CHRBIND*/"),
         (apply_chrbind_copy_generic, "/*WS-CHRBIND-COPY*/"),
@@ -1043,7 +1149,18 @@ def main():
         for fn, marker in appliers:
             with open(path, "r", encoding="utf-8") as f:
                 contents = f.read()
-            if marker in contents:
+            stale_activation = (fn is apply_bank82_activation and
+                                'MmxWsEnemyActivationDistance(uint16);' in contents)
+            stale_collectibles = (fn is apply_bank00_spawn_pass and 'RecompReturn bank_00_DC36_' in contents
+                                  and 'MmxWsCollectiblePass(cpu)' not in contents)
+            stale_shot_cull = (fn is apply_bank82_shot_cull and
+                               'MmxWsShotCullVerdictX(uint16);' in contents)
+            if stale_collectibles or stale_shot_cull:
+                lines = [line for line in contents.splitlines(keepends=True) if marker not in line]
+                if not args.check:
+                    with open(path, 'w', encoding='utf-8', newline='') as f:
+                        f.writelines(lines)
+            if marker in contents and not stale_activation and not stale_collectibles and not stale_shot_cull:
                 effective_counts[marker] = (
                     effective_counts.get(marker, 0) + contents.count(marker))
                 already += 1
@@ -1072,6 +1189,15 @@ def main():
             file=sys.stderr)
         return 1
     chrbind_found = effective_counts.get("/*WS-CHRBIND*/", 0)
+    if not args.restore:
+        for marker, expected in (("/*WS-FLYER-LEASH*/", 1), ("/*WS-ARMOR-CULL*/", 1),
+                                 ("/*WS-SHOT-CULL*/", 4),
+                                 ("/*WS-BARRIER-ENEMIES*/", 1),
+                                 ("/*WS-STREAKER-ENTRY*/", 1), ("/*WS-CHAIN-PLATFORM*/", 2),
+                                 ("/*WS-SPAWN-PASS*/", 4)):
+            if effective_counts.get(marker, 0) != expected:
+                print(f"ERROR: expected exactly {expected} {marker} hook(s), found {effective_counts.get(marker, 0)}", file=sys.stderr)
+                return 1
     if not args.restore and chrbind_found != EXPECTED_CHRBIND_SITES:
         print(
             f"ERROR: expected exactly {EXPECTED_CHRBIND_SITES} WS-CHRBIND "

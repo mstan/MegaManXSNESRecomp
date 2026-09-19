@@ -1,5 +1,6 @@
 #include "mmx_rtl.h"
 #include "mmx_wide_policy.h"
+#include "mmx_renderer.h"
 #include "variables.h"
 #include "common_cpu_infra.h"
 #include "snes/snes.h"
@@ -326,7 +327,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 2u
+#define MMX_SAV_CHUNK_VERSION 3u /* Execution state plus native-timed streakers. */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -350,6 +351,7 @@ _Static_assert(sizeof(MmxSavChunk) == 464,
 
 static MmxSavChunk g_load_chunk;
 static uint8_t g_load_chunk_ok = 0;
+static bool g_load_complete, g_load_native_streakers;
 static bool g_did_reset, g_first_frame_done;
 static void MmxWideStateSave(struct SaveLoadInfo *sli);
 static void MmxWideStateLoad(struct SaveLoadInfo *sli);
@@ -384,12 +386,21 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   (void)version;
   g_load_chunk_ok = 0;
+  g_load_complete = g_load_native_streakers = false;
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
-      (g_load_chunk.version == 1 || g_load_chunk.version == MMX_SAV_CHUNK_VERSION))
+      g_load_chunk.version >= 1 && g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
     g_load_chunk_ok = 1;
-  if (g_load_chunk_ok && g_load_chunk.version >= 2) {
+  /* The adaptive playtest wrote a 464-byte v2 chunk, while the shared-host
+   * branch used v2 with appended execution/CHR data. Only the latter has a
+   * tail. New saves use v3, making both meanings explicit on load. */
+  size_t remaining = RtlStateBytesRemaining(sli);
+  g_load_complete = g_load_chunk_ok && (g_load_chunk.version >= 3 ||
+      (g_load_chunk.version == 2 && remaining != 0 && remaining != SIZE_MAX));
+  g_load_native_streakers = g_load_chunk_ok && (g_load_chunk.version >= 3 ||
+      (g_load_chunk.version == 2 && remaining == 0));
+  if (g_load_complete) {
     sli->func(sli, g_load_frame_flags, sizeof(g_load_frame_flags));
     MmxWideStateLoad(sli);
     if (!RtlLoadExecutionState(sli)) g_load_chunk_ok = 0;
@@ -399,9 +410,24 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
             g_load_chunk.magic, g_load_chunk.version);
 }
 
+static bool s_ws_recover_armor;
+static int MmxWsMargin(void);
 void MmxOnStateLoaded(uint32_t version) {
+  MmxRendererReset();
+  s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
+  if (g_mmx_custom_renderer && !g_load_native_streakers) {
+    for (uint16 object = 0xe68; object <= 0x1228; object += 64) {
+      uint16 flag = g_ram[object + 12] | (g_ram[object + 13] << 8);
+      if (flag < 0xfa00 || flag > 0xfffb) continue;
+      uint16 record = g_ram[flag + 3] | (g_ram[flag + 4] << 8);
+      if (record < 0x8000 || record > 0xfff9) continue;
+      const uint8 *event = RomPtr(0x850000u | record);
+      if ((event[0] & 15) == 3 && event[3] == 0x37)
+        MmxWidePolicy_RecoverParkedStreaker(g_ram, object, (event[5] | (event[6] << 8)) & 0x1fff);
+    }
+  }
   /* Loading before the first frame must not run RESET over the restored guest. */
-  bool complete = g_load_chunk_ok && g_load_chunk.version >= 2;
+  bool complete = g_load_chunk_ok && g_load_complete;
   g_did_reset = complete ? g_load_frame_flags[0] != 0 : true;
   g_first_frame_done = complete ? g_load_frame_flags[1] != 0 : true;
   MmxWideStateApply(complete);
@@ -672,6 +698,7 @@ void MmxDrawPpuFrame(void) {
   int trigger = g_snes->vIrqEnabled ? g_snes->vTimer + 1 : -1;
 
   for (int i = 0; i <= 224; i++) {
+    if (g_mmx_custom_renderer) MmxRendererCaptureLine(g_ppu, i);
     ppu_runLine(g_ppu, i);
     SimpleHdma_DoLine(&hdma_chans[0]);
     SimpleHdma_DoLine(&hdma_chans[1]);
@@ -811,6 +838,10 @@ void RunOneFrameOfGame(void) {
     }
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2002, "before_Internal");
+  if (s_ws_recover_armor) {
+    if (!g_mmx_custom_renderer || !MmxWidePolicy_PrematureRideArmor(g_ram) ||
+        MmxWidePolicy_RecoverRideArmor(g_ram, MmxWsMargin())) s_ws_recover_armor = false;
+  }
   /* Rearm the P.X tripwire here so the first x=1→0 transition INSIDE
    * Internal() (the main game loop) is captured fresh. The earlier
    * boot-time REP #$38 in I_RESET is expected and intentional; we only
@@ -871,8 +902,9 @@ static int MmxWsMargin(void) {
   extern bool g_ws_active;
   extern int g_ws_extra;
   extern uint8_t g_ram[0x20000];
-  if (!g_ws_active || g_ram[0xD1] != 0x02 || g_ram[0xD2] != 0x04)
+  if ((!g_ws_active && !g_mmx_custom_renderer) || g_ram[0xD1] != 0x02 || g_ram[0xD2] != 0x04)
     return 0;
+  if (g_mmx_custom_renderer) return MmxWidePolicy_IsStageScene(g_ram) ? (g_mmx_custom_view.extra + 7) & ~7 : 0;
   return (g_ws_extra + 7) & ~7;
 }
 
@@ -889,9 +921,15 @@ uint16 MmxWsCullVerdictX(uint16 v) {
  * carry = (shotX - camX + 0x20) >= 0x140 (keep window cam-32..+287).
  * Use the same symmetric live-margin expansion as the enemy cull while
  * retaining the projectile routine's tighter 0x20/0x140 base window. */
-uint16 MmxWsShotCullVerdictX(uint16 v) {
-  int m = MmxWsMargin();
-  return ((uint16)(v + m) >= (uint16)(0x140 + 2 * m)) ? 1 : 0;
+uint16 MmxWsShotCullVerdictX(uint16 dpage, uint16 v) {
+  return MmxWidePolicy_ShotCull(g_ram, dpage, v, MmxWsMargin(), g_mmx_custom_renderer);
+}
+
+uint16 MmxWsFlyerLeashLimit(void) {
+  return MmxWidePolicy_FlyerLeash(g_mmx_custom_renderer ? MmxWsMargin() : 0);
+}
+uint16 MmxWsRideArmorCullVerdictX(uint16 v) {
+  return MmxWidePolicy_RideArmorCull(v, g_mmx_custom_renderer ? MmxWsMargin() : 0);
 }
 
 /* bank_00_DC36 spawn-scan anchors (one 32px column scanned per camera
@@ -916,15 +954,12 @@ static int MmxWsSpawnWide(void) {
  * carry = (objX - camX + 0x60) >= 0x1c0. Ordinary enemy lifetime already
  * uses the widened bank_02_806E path, but these kind-1 cars never visit it:
  * at the early spawn anchor 808F marks them offscreen and their F554 updater
- * immediately clears the object. Widen only Highway traffic ID $21 here;
- * every other presentation object retains the exact vanilla verdict. */
+ * immediately clears the object. The dedicated Ride Armor slot also draws
+ * through this routine, so its presentation must match its wider lifetime. */
 uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
   extern uint8_t g_ram[0x20000];
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
-  if (!m || g_ram[0x1f7a] != 0x00 ||
-      g_ram[(uint16)(dpage + 0x0a)] != 0x21)
-    return v >= 0x1c0 ? 1 : 0;
-  return ((uint16)(v + m) >= (uint16)(0x1c0 + 2 * m)) ? 1 : 0;
+  return MmxWidePolicy_PresentationCull(g_ram, dpage, v, m, g_mmx_custom_renderer);
 }
 
 /* bank_00_D76A rejects a metasprite tile when (screenX + 16) reaches
@@ -933,6 +968,7 @@ uint16 MmxWsPresentationCullVerdictX(uint16 dpage, uint16 v) {
  * D6A7 already packs bit 8 of D76A's 16-bit screen X into the SNES OAM high
  * table, and the widened PPU preserves those positive 256+ coordinates. */
 uint16 MmxWsOamRightLimit(uint16 vanilla_limit) {
+  if (g_mmx_custom_renderer) return vanilla_limit;
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   return (uint16)(vanilla_limit + m);
 }
@@ -945,6 +981,7 @@ uint16 MmxWsOamRightLimit(uint16 vanilla_limit) {
  * widened limit) OR the left-margin window x+16 in [-margin, 0). The
  * PPU's 9-bit OAM X path already renders the negative coordinates. */
 uint16 MmxWsOamXReject(uint16 x_plus_16, uint16 widened_limit) {
+  if (g_mmx_custom_renderer) return x_plus_16 >= widened_limit;
   if (x_plus_16 < widened_limit)
     return 0;
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
@@ -966,8 +1003,9 @@ int MmxWsRealSpawnActive(void) {
  * The normal DCDB call uses the host-owned wide cursor/anchor and admits
  * ordinary type-3 enemies plus narrowly identified Highway traffic. A second
  * host-paired DCDB call restores the guest's native cursor and unmodified 4:3
- * anchor for kinds 0-2. Spark Mandrill's kind-3/id-$03 mid-boss controller is
- * also native-owned. The guest cursor remains save-state-authoritative, so a
+ * anchor for kinds 0-2. Spark's kind-3/id-$03 and Highway's kind-3/id-$22
+ * encounter controllers are also native-owned. The guest cursor remains
+ * save-state-authoritative, so a
  * rejected wide record is still present when native timing reaches it.
  * Type-3 ownership otherwise stays strictly disjoint: an early enemy can be
  * killed before its native anchor without respawning. */
@@ -977,6 +1015,7 @@ static struct {
   uint16 native_cursor_before;
   uint16 dpage;
   int active;
+  int visible_rescan;
 } s_ws_spawn_pass;
 
 static uint16 MmxWsSpawnReadCursor(uint16 dpage) {
@@ -1016,6 +1055,10 @@ static uint16 MmxWsSpawnPreparePasses(uint16 native_anchor,
   return wide_anchor;
 }
 
+uint16 MmxWsBarrierEnemyState(uint16 controller, uint16 object, uint16 state) {
+  return MmxWidePolicy_BarrierEnemyState(g_ram, controller, object, state, g_mmx_custom_renderer);
+}
+
 /* Sigma stage 1's Vile room is an allocation-order-sensitive scripted
  * encounter.  Keep its spawn scan at original timing while retaining the
  * widened renderer, OAM window, and object culling.  Moving any of the room's
@@ -1028,7 +1071,8 @@ static int MmxWsForceNativeSpawnTiming(void) {
   if (g_ram[0x1f7a] != 0x09) return 0;
   uint16 column = (uint16)(g_ram[0x1e4d] |
                            ((uint16)g_ram[0x1e4e] << 8));
-  return column >= 0x0900 && column <= 0x0a80;
+  unsigned lookahead = g_mmx_custom_renderer ? (unsigned)MmxWsMargin() + 32 : 0;
+  return MmxWidePolicy_ForceNativeSpawnTiming(g_ram[0x1f7a], column, lookahead);
 }
 
 /* +32px slack past the visible margin: an anchor of exactly the margin
@@ -1063,6 +1107,10 @@ int MmxWsSpawnRecordAllowed(uint16 dpage, uint8 type) {
   uint16 rec = MmxWsSpawnReadCursor(dpage);
   uint8 *descriptor = RomPtr(0x850000u | rec);
   const uint8 object_id = descriptor[3];
+  if (s_ws_spawn_pass.visible_rescan)
+    return MmxWidePolicy_RescanSpawnRecord(g_ram[0x1f7a], kind, object_id);
+  if (!g_mmx_custom_renderer && kind == 3 && object_id == 0x37)
+    return anchor == s_ws_spawn_pass.wide_anchor;
   int allowed = 1;
   if (anchor == s_ws_spawn_pass.wide_anchor) {
     allowed = MmxWidePolicy_SpawnRecordAllowed(
@@ -1093,11 +1141,39 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
   MmxWsSpawnWriteCursor(dpage, s_ws_spawn_pass.native_cursor_before);
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.native_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.native_anchor >> 8);
-  (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Du);
+  (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
   *cpu = saved;
   g_ram[dpage] = (uint8_t)s_ws_spawn_pass.wide_anchor;
   g_ram[(uint16)(dpage + 1)] = (uint8_t)(s_ws_spawn_pass.wide_anchor >> 8);
   s_ws_spawn_pass.active = 0;
+}
+
+void MmxWsCollectiblePass(CpuState *cpu) {
+  extern uint8_t g_ram[0x20000];
+  int margin = g_mmx_custom_renderer && MmxWidePolicy_IsStageScene(g_ram) ? MmxWsMargin() : 0;
+  if (!margin) return;
+  /* DC92 runs even when no camera column changed. This matters on a cold
+   * state load: visible pickups and rideable lifts must not wait for X to
+   * move a full column. A vertical climb can also revisit an earlier column.
+   * DCDB remains the allocator, with its collected/live flags untouched. */
+  CpuState saved = *cpu;
+  uint16 dpage = cpu->D;
+  uint8 scratch[32]; memcpy(scratch, g_ram + dpage, sizeof(scratch));
+  int camera = g_ram[0x1e4d] | (g_ram[0x1e4e] << 8);
+  int y = (g_ram[0x1e50] | (g_ram[0x1e51] << 8)) - 32;
+  g_ram[dpage + 2] = (uint8)y; g_ram[dpage + 3] = (uint8)(y >> 8);
+  /* DCDB compares (recordY - top) against a height, not an absolute bottom. */
+  g_ram[dpage + 4] = 0x20; g_ram[dpage + 5] = 1;
+  s_ws_spawn_pass.active = s_ws_spawn_pass.visible_rescan = 1;
+  for (int column = (camera - margin - 32) & ~31; column <= camera + 256 + margin + 32; column += 32) {
+    if (column < 0 || column >= 8192) continue;
+    g_ram[dpage] = (uint8)column; g_ram[dpage + 1] = (uint8)(column >> 8);
+    *cpu = saved;
+    (void)cpu_dispatch_call_pc(cpu, 0x00DCDBu, 0x00DC8Fu);
+  }
+  s_ws_spawn_pass.active = s_ws_spawn_pass.visible_rescan = 0;
+  memcpy(g_ram + dpage, scratch, sizeof(scratch));
+  *cpu = saved;
 }
 
 /* bank_82_B964 controls the intro-stage helicopter's entrance. Vanilla
@@ -1106,10 +1182,46 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
  * 32px of sprite-footprint lead so the large helicopter's outer tiles enter
  * naturally instead of its controller waking only when the center reaches
  * the widened edge. */
-uint16 MmxWsEnemyActivationDistance(uint16 v) {
+uint16 MmxWsEnemyActivationDistance(uint16 v, uint16 object) {
   int m = MmxWsSpawnWide() ? MmxWsMargin() : 0;
   if (m) m += 32;
+  /* The arena push stays native; only the visible descent gets widescreen
+   * lead. Also release prematurely latched locks in older spike saves. */
+  if (g_mmx_custom_renderer) {
+    extern uint8_t g_ram[0x20000];
+    return MmxWidePolicy_BeeEntrance(g_ram, object, (uint16)(v + m));
+  }
   return (uint16)(v + m);
+}
+
+void MmxWsStreakerEntrance(uint16 object) {
+  extern uint8_t g_ram[0x20000];
+  if (g_mmx_custom_renderer && MmxWsSpawnWide())
+    MmxWidePolicy_StreakerEntrance(g_ram, object, MmxWsMargin());
+}
+
+uint16 MmxWsChainPlatformLine(CpuState *cpu, uint16 line) {
+  if (!g_mmx_custom_renderer || !MmxWsSpawnWide() || cpu->X != 5) return line;
+  unsigned margin = MmxWsMargin();
+  uint16 adjusted = MmxWidePolicy_ChainPlatformLine(g_ram, cpu->D, line, margin);
+  if (adjusted == line) return line;
+  uint16 player = g_ram[0xbad] | (g_ram[0xbae] << 8);
+  bool right = (int16)(player - adjusted) >= 0;
+  bool inside = g_ram[cpu->D + 0xb] == 3 ? right : !right;
+  for (unsigned object = 0x1628; inside && object < 0x1928; object += 0x30)
+    if (g_ram[object] && g_ram[object + 10] == 0x0e) inside = false;
+  if (inside) {
+    /* F944 initializes the switch state without firing an edge. Catch up
+     * initial loads already inside the widened interval with the original
+     * idempotent allocator. Its later native call cannot double platforms. */
+    CpuState saved = *cpu;
+    uint8 scratch[0x20]; memcpy(scratch, g_ram, sizeof(scratch));
+    uint32 bank = (uint32)cpu->PB << 16;
+    (void)cpu_dispatch_call_pc(cpu, bank | 0xFAC5u, bank | 0xF97Au);
+    memcpy(g_ram, scratch, sizeof(scratch));
+    *cpu = saved;
+  }
+  return adjusted;
 }
 
 /* bank_03_FDD3 camera-line trigger compare. Tilemap screen staging
@@ -1128,6 +1240,7 @@ uint16 MmxWsEnemyActivationDistance(uint16 v) {
  * vertical margins; codes 0x16/0x17 are other trigger classes
  * (camera locks etc.) and must fire at authentic positions. */
 static int MmxWsStageWide(void) {
+  if (g_mmx_custom_renderer) return 0;
   static int s_on = -1;
   if (s_on < 0) {
     const char *e = getenv("SNESRECOMP_WS_STAGE");
@@ -1300,7 +1413,7 @@ static uint32_t s_ws_chrbind_copy_latches_created;
 static int MmxWsChrBindActive(void) {
   extern bool g_ws_active;
   extern uint8_t g_ram[0x20000];
-  return g_ws_active && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
+  return (g_ws_active || g_mmx_custom_renderer) && g_ram[0x00D1] == 0x02 && g_ram[0x00D2] == 0x04;
 }
 
 /* Residual Highway crusher repair. The crusher body owns the CHR binding;
@@ -1327,18 +1440,8 @@ uint8 MmxWsChrBindResolveParent(uint16 scratchD, uint16 objectX,
                                 uint8 childBase) {
   if (!MmxWsChrBindActive()) return childBase;
   extern uint8_t g_ram[0x20000];
-  if (g_ram[0x1f7a] != 0x00) return childBase;
   uint16 child = (uint16)(scratchD + objectX);
-  if ((child & 0x003f) != 0x0028 ||
-      g_ram[(uint16)(child + 0x0a)] != 0x09)
-    return childBase;
-  uint16 parent = (uint16)(g_ram[(uint16)(child + 0x0c)] |
-                            ((uint16)g_ram[(uint16)(child + 0x0d)] << 8));
-  if ((parent & 0x003f) != 0x0028 ||
-      g_ram[(uint16)(parent + 0x0a)] != 0x0f)
-    return childBase;
-  uint8 parentBase = g_ram[(uint16)(parent + 0x18)];
-  return parentBase;
+  return MmxWidePolicy_CrusherTileBase(g_ram, child, childBase);
 }
 
 /* Called via the WS-CHRBIND injection right after each inlined bind site's

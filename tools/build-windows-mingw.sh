@@ -30,7 +30,7 @@ cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
     -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
     -DCMAKE_EXE_LINKER_FLAGS=-mwindows \
-    -DSNESRECOMP_SDL_BACKEND="$SDL_BACKEND" \
+    -DSNESRECOMP_SDL_BACKEND="$SDL_BACKEND" -DSNESRECOMP_BUILD_VERSION="$VERSION" \
     -DCMAKE_PREFIX_PATH="$SDL_ROOT/x86_64-w64-mingw32"
 cmake --build "$BUILD" --target MegaManXSNESRecomp -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
