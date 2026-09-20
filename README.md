@@ -1,5 +1,9 @@
 # MegaManXSNESRecomp
 
+Version 1.6.0 adds optional **Password Saves (SRAM)**: remember the last password
+shown by the game and prefill it when selecting Password on a later launch.
+Enable the mod and optionally choose a save file from the launcher's Mods page.
+
 Version 1.5.0 replaces the original 16:9 renderer with adaptive widescreen,
 including fixed 16:9, 21:9 and 32:9 options and HUD anchoring. The renderer has
 passed a complete Windows playthrough; its [implementation and playtest notes](docs/custom-renderer-spike.md)
@@ -73,9 +77,9 @@ manifested.
 The path you pick is cached to `rom.cfg` next to the exe so subsequent
 launches skip the picker.
 
-## Password saves (experimental)
+## Password saves
 
-Source builds also include an experimental **Password Saves (SRAM)** mod.
+Version 1.6.0 includes an optional **Password Saves (SRAM)** mod.
 It saves the last generated password to a PC file and prefills the title
 screen's Password option. See [Password saves](docs/password-saves.md) for
 the optional file picker and default save location.

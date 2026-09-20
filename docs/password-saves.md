@@ -1,4 +1,4 @@
-# Password saves (experimental, USA Rev 1)
+# Password saves (USA Rev 1)
 
 Enable **Password Saves (SRAM)** on the launcher's **Mods** page. The mod
 remembers the last password the game displays after a stage or game over.
@@ -33,8 +33,8 @@ the game displays a password.
 - Interpreter callbacks cover both points. `tools/apply_password_hooks.py`
   inserts matching callbacks into any compiled blocks at these addresses.
 
-This replaces neither the old, failed synthetic-SRAM experiment nor its mod
-ID; it is a separate opt-in package, `megaman-x.enhancement.password-save`.
+This uses a separate opt-in package, `megaman-x.enhancement.password-save`.
+Settings from the older synthetic-SRAM experiment do not enable it.
 
 ## Focused validation (2026-09-19)
 
