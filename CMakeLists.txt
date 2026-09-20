@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 1.6.1 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 1.6.2 LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 

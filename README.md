@@ -1,5 +1,9 @@
 # MegaManXSNESRecomp
 
+Version 1.6.2 makes adaptive and fixed widescreen respect **Display Aspect**.
+Choose **8:7 (Square pixels)** with **Fit to screen** to fill a wide window
+while keeping sprites at square-pixel proportions.
+
 Version 1.6.0 adds optional **Password Saves (SRAM)**: remember the last password
 shown by the game and prefill it when selecting Password on a later launch.
 Enable the mod and optionally choose a save file from the launcher's Mods page.
