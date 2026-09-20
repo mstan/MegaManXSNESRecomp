@@ -27,6 +27,16 @@ exe=$(basename "$(find "$appdir/usr/bin" -maxdepth 1 -type f -name '*SNESRecomp'
 tmp=$(mktemp -d)
 trap 'chmod -R u+w "$appdir" "$tmp" 2>/dev/null || true; rm -rf "$tmp"' EXIT HUP INT TERM
 
+# SDL's dummy driver skips the launcher but does not suppress external ROM
+# choosers. Shadow those programs with cancellation stubs so this layout-only
+# check never opens dialogs on the developer's desktop (including WSLg).
+picker_stubs=$tmp/no-dialogs
+mkdir -p "$picker_stubs"
+for picker in zenity kdialog qarma osascript yad matedialog xmessage; do
+    printf '#!/bin/sh\nexit 1\n' > "$picker_stubs/$picker"
+    chmod +x "$picker_stubs/$picker"
+done
+
 # Launch helper: simulate the AppImage runtime (APPDIR mount + APPIMAGE path),
 # headless SDL, skip the GUI launcher. The game exits nonzero without a ROM;
 # that is fine — config seeding and the mods refresh happen before ROM load.
@@ -35,6 +45,7 @@ run_apprun() { # simulated_appimage_path
     mkdir -p "$(dirname "$sim")"
     ( cd "$(dirname "$sim")" && \
       APPIMAGE=$sim \
+      PATH="$picker_stubs:$PATH" DISPLAY= WAYLAND_DISPLAY= DBUS_SESSION_BUS_ADDRESS= \
       SDL_VIDEODRIVER=dummy SDL_VIDEO_DRIVER=dummy \
       SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy \
       SNESRECOMP_NO_LAUNCHER=1 \
