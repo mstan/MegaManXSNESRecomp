@@ -253,6 +253,52 @@ bundle_runtime_lib() { # soname
 bundle_runtime_lib libstdc++.so.6
 bundle_runtime_lib libgcc_s.so.1
 
+# Prune libraries the app cannot actually reach.
+#
+# linuxdeploy copies the whole transitive closure it sees on the BUILD host,
+# including libraries pulled in only by host-side dependencies we do NOT bundle
+# (libfreetype / libharfbuzz drag in glib, pcre2, png16, brotli, bz2,
+# graphite2). Those copies are unreachable through the binary's own RUNPATH
+# ($ORIGIN/../lib); the only way to make the loader prefer them is a global
+# LD_LIBRARY_PATH, which is exactly what the AppRun below must NOT set -- it
+# is inherited by every child process, so the host zenity/kdialog the launcher
+# spawns for the ROM picker would load OUR glib against the host GTK and die.
+# That is the "Browse For ROM does nothing" bug (beads-0fu.4), fixed in F-Zero
+# 1.6.1 and ported here.
+#
+# The rule is general: bundle a library only if everything above it in the
+# chain is bundled too. Resolve the closure with LD_LIBRARY_PATH unset -- which
+# is precisely what the shipped AppRun gives the loader -- and delete anything
+# in usr/lib the loader did not choose.
+if [ -d "$APPDIR/usr/lib" ]; then
+  KEEP="$WORK/appdir-keep.txt"
+  env -u LD_LIBRARY_PATH ldd "$APPDIR/usr/bin/$EXE" \
+    | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) print $i }' \
+    | while read -r p; do readlink -f "$p" 2>/dev/null || true; done \
+    | sort -u > "$KEEP"
+  pruned=0
+  for f in "$APPDIR"/usr/lib/*; do
+    [ -e "$f" ] || continue
+    real="$(readlink -f "$f")"
+    if ! grep -qxF "$real" "$KEEP"; then
+      echo "      prune unreachable bundled lib: $(basename "$f")"
+      rm -f "$f"
+      pruned=$((pruned + 1))
+    fi
+  done
+  echo "      pruned $pruned unreachable lib(s) from usr/lib"
+  # Whatever survived must be reachable without LD_LIBRARY_PATH, or the
+  # AppImage would only work by poisoning its children's environment.
+  missing="$(env -u LD_LIBRARY_PATH ldd "$APPDIR/usr/bin/$EXE" \
+    | grep -c 'not found' || true)"
+  [ "$missing" = "0" ] || {
+    echo "ERROR: unresolved libraries without LD_LIBRARY_PATH" >&2
+    env -u LD_LIBRARY_PATH ldd "$APPDIR/usr/bin/$EXE" \
+      | grep 'not found' >&2
+    exit 1
+  }
+fi
+
 # The ImGui pre-boot launcher loads fonts + images from assets/ next to the exe
 # (SDL_GetBasePath resolves to usr/bin inside the AppImage). CMake's launcher
 # POST_BUILD staged them beside the build ELF; carry them into the AppDir so the
@@ -291,7 +337,17 @@ rm -f "$APPDIR/AppRun"   # linuxdeploy leaves it a symlink to the real exe
 cat > "$APPDIR/AppRun" <<EOF
 #!/bin/sh
 HERE="\$(dirname "\$(readlink -f "\$0")")"
-export LD_LIBRARY_PATH="\$HERE/usr/lib:\${LD_LIBRARY_PATH}"
+
+# Do NOT export LD_LIBRARY_PATH for the bundle. The binary carries RUNPATH
+# \$ORIGIN/../lib and finds usr/lib on its own, and a global LD_LIBRARY_PATH is
+# inherited by every child process -- including the host zenity/kdialog the
+# launcher spawns for the ROM picker, which would then load this bundle's
+# libraries against the host GTK/Qt stack and fail to start. Its failure was
+# read back as "the player cancelled", so the button looked ignored.
+#
+# Record the host's own value instead, so the launcher can hand a correct
+# LD_LIBRARY_PATH to anything it spawns even if a wrapper set one for us.
+export RECOMP_HOST_LD_LIBRARY_PATH="\${LD_LIBRARY_PATH:-}"
 # Steam Deck: read the built-in pad as a real gamepad instead of letting Steam's
 # desktop layout retype it as keyboard (which otherwise sends Esc on B, etc.).
 export SDL_JOYSTICK_HIDAPI_STEAM=1
