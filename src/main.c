@@ -34,7 +34,8 @@ static void MmxRomLoaded(const uint8_t *rom, size_t size) {
 
 static void MmxPrepareFrame(int dw, int dh, int *w, int *h) {
   g_mmx_custom_renderer = !MMX_VARIANT_JP && g_config.widescreen;
-  g_mmx_custom_view = MmxRendererViewport(g_mmx_custom_aspect, dw, dh);
+  g_mmx_custom_view = MmxRendererViewport(g_mmx_custom_aspect, dw, dh,
+      SnesDisplayAspect_Clamp(g_config.display_aspect));
   *w = g_mmx_custom_renderer ? g_mmx_custom_view.width : 256;
   *h = 224;
 }

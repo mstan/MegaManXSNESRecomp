@@ -245,8 +245,13 @@ on the launcher's **Mods** page. It is disabled by default; existing enabled
 widescreen installations automatically use the replacement.
 
 Choose **Adaptive** to fit the window, or **16:9**, **21:9**, or **32:9** for a
-fixed aspect. The renderer draws the surrounding stage and actors with CRT pixel
-proportions, up to 1024 logical pixels wide. Health bars can anchor to the screen
+fixed view aspect. **Settings → Display Aspect** controls pixel and sprite
+proportions in every mode: **4:3 (CRT)**, **8:7 (Square pixels)**, or
+**1:1 (Square frame)**. For example, a 16:9 view with 8:7 selected shows more
+scenery with square pixels. Adaptive follows the window's shape while preserving
+the selected pixel proportions. The view is bounded by the native 256 pixels and
+the renderer's 1024-pixel capacity; outside those bounds it is boxed to preserve
+pixel shape. Health bars can anchor to the screen
 edges or retain their native positions. Menus and other native screens remain
 pillarboxed. Expanded sprite capacity is a separate experimental option and
 remains off by default.
@@ -255,8 +260,9 @@ The original stage camera, collision and encounter timing are preserved, with
 scoped fixes for objects exposed by the wider view. The former legacy renderer
 selector has been removed. Rockman X (Japan) continues to use its authentic view.
 
-With the widescreen mod disabled, the **Settings** page's **4:3 (CRT)**,
-**8:7 (Square pixels)** and **1:1 (Square frame)** controls govern presentation.
+With the widescreen mod disabled, **Display Aspect** also determines the overall
+shape of the native frame. With it enabled, **Mods → View aspect ratio** chooses
+the view shape and **Display Aspect** continues to determine pixel shape.
 Released saves and adaptive-playtest saves remain loadable. F7/F8 open the shared
 save browser and rewind; the corresponding old slot loads are now F11/F12.
 
