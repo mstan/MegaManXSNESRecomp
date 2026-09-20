@@ -187,6 +187,10 @@ int MMX_DESKTOP_ENTRY(int argc, char **argv) {
     .env_prefix = "MMX", .debug_port = 4377,
     .native_widescreen = 0, .state_menu_hotkeys = 1,
     .display_aspect_supported = 1, .shader_supported = 1,
+    /* Rewind's ring has always been in the runtime and reachable on F8; this
+     * puts its switch, depth and interval on the Settings page and persists
+     * them, so a player can size it or turn it off without an env var. */
+    .rewind_settings = 1,
     /* Widescreen and MSU-1 remain USA Mods features. */
     .create_spc_player = SmwSpcPlayer_Create,
     .prepare_frame = MmxPrepareFrame, .begin_sim_frame = MmxBeginFrame,
