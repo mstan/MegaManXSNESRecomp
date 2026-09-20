@@ -55,15 +55,21 @@ bool g_mmx_render_asset_repairs = true;
 MmxRenderAspect g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
 MmxRenderView g_mmx_custom_view = {342, 43, 16.0 / 9.0};
 
-MmxRenderView MmxRendererViewport(MmxRenderAspect mode, int w, int h) {
+MmxRenderView MmxRendererViewport(MmxRenderAspect mode, int w, int h,
+                                  SnesDisplayAspect display_aspect) {
   double aspect = mode == MMX_ASPECT_16_9 ? 16.0 / 9.0 :
                   mode == MMX_ASPECT_21_9 ? 21.0 / 9.0 :
                   mode == MMX_ASPECT_32_9 ? 32.0 / 9.0 :
                   w > 0 && h > 0 ? (double)w / h : 16.0 / 9.0;
-  /* Preserve CRT pixel proportions; adaptive is bounded by host capacity,
-   * independently of the shared PPU's 96-pixel margin capacity. */
-  aspect = fmax(4.0 / 3.0, fmin(MMX_RENDER_MAX_WIDTH / 192.0, aspect));
-  int width = 2 * (int)floor(aspect * 96.0 + 0.5);
+  int par_num, par_den;
+  SnesDisplayAspect_GetPixelAspect(display_aspect, &par_num, &par_den);
+  double pixels_per_aspect = (double)MMX_RENDER_HEIGHT * par_den / par_num;
+  /* Fit and fixed ratios control how much stage is visible, while the regular
+   * display setting controls pixel shape. At the native/capacity bounds, box
+   * the view instead of stretching it beyond the selected proportions. */
+  aspect = fmax(256 / pixels_per_aspect,
+                fmin(MMX_RENDER_MAX_WIDTH / pixels_per_aspect, aspect));
+  int width = 2 * (int)floor(aspect * pixels_per_aspect / 2 + 0.5);
   return (MmxRenderView){width, (width - 256) / 2, aspect};
 }
 MmxDisplayViewport MmxRendererDestination(MmxRenderView view, int width, int height) {

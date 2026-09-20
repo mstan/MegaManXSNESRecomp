@@ -1,6 +1,7 @@
 #include "mmx_renderer.h"
 #include "mmx_render_assets.h"
 #include <assert.h>
+#include <math.h>
 
 static uint8_t ram[0x20000], rom_bytes[0x100000];
 static Ppu ppu;
@@ -11,14 +12,56 @@ static void capture(void) {
   assert(MmxRendererEndFrame(stock));
 }
 static void geometry(void) {
-  assert(MmxRendererViewport(MMX_ASPECT_16_9, 0, 0).width == 342);
-  assert(MmxRendererViewport(MMX_ASPECT_21_9, 0, 0).width == 448);
-  assert(MmxRendererViewport(MMX_ASPECT_32_9, 0, 0).width == 682);
-  assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 3840, 1080).width == 682);
-  assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 1, 100).width == 256);
-  assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1).width == MMX_RENDER_MAX_WIDTH);
-  MmxDisplayViewport dst = MmxRendererDestination(MmxRendererViewport(MMX_ASPECT_21_9, 0, 0), 1920, 1080);
+  assert(MmxRendererViewport(MMX_ASPECT_16_9, 0, 0, kSnesDisplayAspect_Crt4x3).width == 342);
+  assert(MmxRendererViewport(MMX_ASPECT_21_9, 0, 0, kSnesDisplayAspect_Crt4x3).width == 448);
+  assert(MmxRendererViewport(MMX_ASPECT_32_9, 0, 0, kSnesDisplayAspect_Crt4x3).width == 682);
+  assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 3840, 1080, kSnesDisplayAspect_Crt4x3).width == 682);
+  assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 1, 100, kSnesDisplayAspect_Crt4x3).width == 256);
+  assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1, kSnesDisplayAspect_Crt4x3).width == MMX_RENDER_MAX_WIDTH);
+  MmxDisplayViewport dst = MmxRendererDestination(MmxRendererViewport(MMX_ASPECT_21_9, 0, 0, kSnesDisplayAspect_Crt4x3), 1920, 1080);
   assert(dst.width == 1920 && dst.height == 823 && dst.y == 128);
+
+  const MmxRenderAspect modes[] = {MMX_ASPECT_16_9, MMX_ASPECT_21_9, MMX_ASPECT_32_9};
+  const int ratios[] = {16, 21, 32};
+  const int widths[][3] = {{342, 448, 682}, {398, 522, 796}, {456, 598, 910}};
+  const double pixel_aspects[] = {7.0 / 6.0, 1.0, 7.0 / 8.0};
+  for (int setting = 0; setting < kSnesDisplayAspect_Count; ++setting) {
+    SnesDisplayAspect display = (SnesDisplayAspect)setting;
+    for (unsigned m = 0; m < sizeof(modes) / sizeof(modes[0]); ++m) {
+      /* Fixed targets stay fixed on a differently shaped monitor. Adaptive
+       * reaches the same logical width when the window matches that target. */
+      MmxRenderView fixed = MmxRendererViewport(modes[m], 1920, 1080, display);
+      MmxRenderView fit = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, ratios[m] * 120, 1080, display);
+      assert(fixed.width == widths[setting][m] && fit.width == fixed.width);
+      assert(fixed.extra * 2 + 256 == fixed.width);
+      assert(fabs(fixed.aspect - ratios[m] / 9.0) < 1e-9);
+      dst = MmxRendererDestination(fixed, 1920, 1080);
+      assert(dst.width == 1920 && dst.x == 0);
+      /* Rounding a view to even logical pixels and an integer destination
+       * may change PAR slightly, but never to a different display setting. */
+      double presented_par = (double)dst.width * 224 / (dst.height * fixed.width);
+      assert(fabs(presented_par - pixel_aspects[setting]) < 0.006);
+      dst = MmxRendererDestination(fit, ratios[m] * 120, 1080);
+      assert(dst.width == ratios[m] * 120 && dst.height == 1080);
+      assert(dst.x == 0 && dst.y == 0);
+    }
+    /* Fit must respect native width on tall displays and renderer capacity
+     * on ultrawide displays without compensating by stretching the sprites. */
+    MmxRenderView narrow = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 720, 1280, display);
+    assert(narrow.width == 256 && narrow.extra == 0);
+    assert(fabs(narrow.aspect - 256.0 / 224 * pixel_aspects[setting]) < 1e-9);
+    dst = MmxRendererDestination(narrow, 720, 1280);
+    assert(dst.width == 720 && dst.height < 1280 && dst.y > 0);
+    MmxRenderView wide = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 6800, 900, display);
+    assert(wide.width == MMX_RENDER_MAX_WIDTH);
+    assert(fabs(wide.aspect - MMX_RENDER_MAX_WIDTH / 224.0 * pixel_aspects[setting]) < 1e-9);
+    dst = MmxRendererDestination(wide, 6800, 900);
+    assert(dst.height == 900 && dst.width < 6800 && dst.x > 0);
+    double presented_par = (double)dst.width * 224 / (dst.height * wide.width);
+    assert(fabs(presented_par - pixel_aspects[setting]) < 0.001);
+    assert(MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 0, 0, display).width == widths[setting][0]);
+  }
+  assert(MmxRendererViewport(MMX_ASPECT_16_9, 0, 0, (SnesDisplayAspect)-1).width == 342);
 }
 static void raster_and_hud(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
@@ -31,7 +74,7 @@ static void raster_and_hud(void) {
   capture();
   /* Draw uses snapshots even if every live input changes after capture. */
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, true));
   assert(output[16 * v.width + 16] == 0xff0000);
   assert(output[16 * v.width + 16 + v.extra] == 0x0000ff);
@@ -59,7 +102,7 @@ static void sprite_coordinates(void) {
   ram[0] = 54; ram[1] = 1; ram[2] = 44; ram[3] = 1;
   MmxRendererRecordPiece(ram, 0); /* Host y=300 must not wrap into row 44. */
   MmxRendererLatchSprites(); capture();
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   assert(output[40 * v.width + v.extra + 300] == 0xff0000);
   assert(output[40 * v.width + v.extra - 200] == 0xff0000);
@@ -87,7 +130,7 @@ static void expanded_capacity(void) {
   put_word(0xe70, 40);
   MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
   g_mmx_custom_renderer = true;
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_16_9, 0, 0);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_16_9, 0, 0, kSnesDisplayAspect_Crt4x3);
   for (int enabled = 0; enabled < 2; ++enabled) {
     MmxRendererReset(); g_mmx_expanded_sprites = enabled != 0;
     uint8_t before[0x20000]; memcpy(before, ram, sizeof(ram));
@@ -179,7 +222,7 @@ static void dialogue_and_password(void) {
   ppu.bgXsc[2] = 4; ppu.cgram[1] = 31;
   for (int i = 0; i < 8; ++i) ppu.vram[i] = 255;
   capture();
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, true));
   assert(output[40 * v.width + v.extra + 40] == 0xff0000);
   assert(output[40 * v.width + 40] == 0);
@@ -209,7 +252,7 @@ static void highway_arena_sky(void) {
   ppu.bgXsc[1] = 8; ppu.hScroll[1] = 0x278; ppu.vScroll[1] = 0x16a; ppu.cgram[1] = 31;
   for (int i = 0; i < 1024; ++i) ppu.vram[0x800 + i] = 1;
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
-  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   for (int x = 0; x < v.width; ++x) assert(output[80 * v.width + x] == 0xff0000);
 }
@@ -231,7 +274,7 @@ static void distant_doors(void) {
   }
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 1;
   ppu.bgXsc[0] = 0x50; ppu.cgram[17] = 31;
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   capture(); assert(MmxRendererDraw(output, v, false));
   for (int x = 304; x < 336; ++x) assert(output[80 * v.width + v.extra + x] == (x < 320 ? 0xff0000u : 0));
   put_word(0x1e4d, 500); ppu.hScroll[0] = 500;
@@ -252,7 +295,7 @@ static void storm_background_prefill(void) {
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
   /* The native VRAM tilemap remains blank, while the retained next screen
    * contains the complete mountain/road map during Storm's arrival. */
-  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   assert(output[80 * v.width + v.extra + 128] == 0);
   assert(output[80 * v.width + v.extra + 320] == 0xff0000);
@@ -294,7 +337,7 @@ static void resource_decode(void) {
     put_word(0, x); put_word(2, 40); MmxRendererObserveObject(ram, 0xe68); MmxRendererRecordPiece(ram, 0);
   }
   MmxRendererLatchSprites(); capture();
-  MmxRenderView flash_view = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  MmxRenderView flash_view = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, flash_view, false));
   assert(output[40 * flash_view.width + flash_view.extra + 40] == 0xffffff);
   assert(output[40 * flash_view.width + flash_view.extra + 400] == 0xffffff);
@@ -389,7 +432,7 @@ static void resource_decode(void) {
   MmxRendererSetRom(rom_bytes, sizeof(rom_bytes)); g_mmx_custom_renderer = true;
   MmxRendererObserveObject(ram, 0x1928); MmxRendererRecordPiece(ram, 0);
   MmxRendererLatchSprites(); capture();
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   assert(output[40 * v.width + v.extra + 40] == 0x080000);
   g_mmx_custom_renderer = false;
@@ -495,7 +538,7 @@ static void resource_decode(void) {
   g_mmx_custom_renderer = true;
   MmxRendererObserveObject(ram, 0x1628); MmxRendererRecordPiece(ram, 0);
   MmxRendererLatchSprites(); capture();
-  v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   assert(output[40 * v.width + v.extra + 401] == 0x0000ff);
   g_mmx_custom_renderer = false;
@@ -514,7 +557,7 @@ static void spark_effects(void) {
   memcpy(rom_bytes + 0x35136, profile, sizeof(profile));
   ram[0xe68] = 1; ram[0xe69] = 2; ram[0xe72] = 0x37; ram[0xe95] = 0x40;
   put_word(0xe8a, 400); put_word(0xe8c, 100); /* Outside native range, light state still zero. */
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[76 * v.width + v.extra + 436] == 0xffffff);
   assert(output[76 * v.width + v.extra + 435] == 0);
@@ -565,7 +608,7 @@ static void airport_panorama_edge(void) {
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 2; ppu.hScroll[1] = 118;
   ppu.bgXsc[1] = 8; ppu.cgram[1] = 31; ppu.cgram[17] = 31 << 10;
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = ppu.vram[32 + y] = 255;
-  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   assert(output[80 * v.width + v.extra + 128] == 0); /* Native still uses its own tilemap. */
   assert(output[80 * v.width + v.extra + 530] == 0x0000ff); /* Reflect the painted edge. */
@@ -588,7 +631,7 @@ static void wide_water_plane(void) {
   for (int i = 0; i < 1024; ++i) ppu.vram[0x1000 + i] = 1;
   for (int i = 4 * 32; i < 1024; ++i) ppu.vram[0x800 + i] = 0x2402;
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = ppu.vram[0x4010 + y] = 255;
-  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   for (int x = 0; x < v.width; ++x) {
     assert(output[16 * v.width + x] == 0xff0000); /* Above the waterline. */
@@ -615,7 +658,7 @@ static void buried_submarine(void) {
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 1;
   ppu.hScroll[0] = 0x253; ppu.vScroll[0] = 0x20f; ppu.bgXsc[0] = 8; ppu.cgram[1] = 31;
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
-  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  capture(); MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   assert(MmxRendererDraw(output, v, false));
   assert(output[96 * v.width + v.extra + 389] == 0); /* Hidden at the owner's earlier camera. */
   assert(output[96 * v.width + v.extra + 365] == 0); /* Nose before the next 32-pixel boundary. */
@@ -674,7 +717,7 @@ static void background_continuations(void) {
   ppu.cgram[1] = 31; ppu.cgram[17] = 31 << 10;
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
   put_word(0x1e8d, 0xa40); put_word(0x1e90, 0xffe0); ppu.hScroll[1] = 0x240; ppu.vScroll[1] = 0x3e0;
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[80 * v.width + v.extra + 320] == 0xff0000); /* Full boat past native edge, cold VRAM blank. */
   assert(output[8 * v.width + v.extra + 320] == 0); /* Above its negative entrance scroll. */
@@ -739,7 +782,7 @@ static void launch_background_palettes(void) {
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
   put_word(0x1e8d, 0xc40); ppu.hScroll[1] = 0x240;
   ppu.cgram[0x71] = 31 << 5; /* Boss-room colors are currently resident. */
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 2048, 300, kSnesDisplayAspect_Crt4x3);
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[80 * v.width + v.extra - 96] == 0x0000ff); /* Fill empty left staging cells. */
   assert(output[80 * v.width + v.extra + 528] == 0x0000ff); /* BG2 stays ocean past the boss palette boundary. */
@@ -782,7 +825,7 @@ static void sting_background_palettes(void) {
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
   for (int i = 0x800; i < 0xc00; ++i) ppu.vram[i] = 0x1001;
   ppu.cgram[0x41] = 0x7fff; /* Current palette must not recolor distant terrain. */
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1, kSnesDisplayAspect_Crt4x3);
   for (unsigned layer = 0; layer < 2; ++layer) {
     ppu.screenEnabled[0] = (uint8_t)(1 << layer);
     for (unsigned step = 0; step < 3; ++step) {
@@ -830,7 +873,7 @@ static void mammoth_background_palettes(void) {
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
   for (int i = 0x800; i < 0xc00; ++i) ppu.vram[i] = 0x1401;
   ppu.cgram[0x51] = 0x7fff;
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1, kSnesDisplayAspect_Crt4x3);
   for (unsigned frozen = 0; frozen < 2; ++frozen) {
     ram[0x1f96] = frozen ? 0x40 : 0;
     for (unsigned i = 0; i < 4; ++i) {
@@ -865,7 +908,7 @@ static void dialogue_backdrop(void) {
   ppu.bgXsc[0] = 8; ppu.bgXsc[1] = 4; ppu.bgXsc[2] = 12;
   ppu.vram[0x400 + 5 * 32 + 28] = 1; /* Cloud, at native x=224 and margin x=-32. */
   for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1, kSnesDisplayAspect_Crt4x3);
   for (unsigned stage = 0; stage < 9; ++stage) {
     ram[0x1f7a] = (uint8_t)stage; ppu.cgadsub = 0; ppu.cgwsel = 0; ppu.fixedColor = 0;
     capture(); assert(MmxRendererDraw(output, v, false));
@@ -925,7 +968,7 @@ static void fortress_actor_presentation(void) {
   }
   rom_bytes[0x80200] = 1; rom_bytes[0x80203] = 1;
   MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1, kSnesDisplayAspect_Crt4x3);
   unsigned vile = 142 * v.width + v.extra + 560, zero = vile + 48;
   capture(); assert(MmxRendererDraw(output, v, false));
   assert(output[vile] == 0xff0000 && output[zero] == 0x00ff00);
@@ -1001,7 +1044,7 @@ static void weapons_menu_margins(void) {
   ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0xc3] = 0x80;
   ppu.inidisp = 15; ppu.bgmode = 1; ppu.cgram[0] = 31;
   for (unsigned i = 0; i < 256 * 224; ++i) stock[i] = i + 1;
-  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1);
+  MmxRenderView v = MmxRendererViewport(MMX_ASPECT_ADAPTIVE, 10000, 1, kSnesDisplayAspect_Crt4x3);
   for (unsigned hud = 6; hud <= 8; hud += 2) {
     ram[0x1f10] = (uint8_t)hud;
     capture(); assert(MmxRendererDraw(output, v, true));

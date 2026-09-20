@@ -18,7 +18,10 @@ extern bool g_mmx_expanded_sprites;
 extern bool g_mmx_render_asset_repairs;
 extern MmxRenderAspect g_mmx_custom_aspect;
 extern MmxRenderView g_mmx_custom_view;
-MmxRenderView MmxRendererViewport(MmxRenderAspect aspect, int width, int height);
+/* The mod selects the output aspect; Display Aspect selects pixel proportions.
+ * Clamp the view extent at those proportions before rounding to an even width. */
+MmxRenderView MmxRendererViewport(MmxRenderAspect aspect, int width, int height,
+                                  SnesDisplayAspect display_aspect);
 MmxDisplayViewport MmxRendererDestination(MmxRenderView view, int width, int height);
 void MmxRendererReset(void);
 void MmxRendererSetRom(const uint8_t *rom, size_t size);

@@ -18,14 +18,14 @@
 #     (mod_runtime resolves "mods" against the anchored cwd, so the catalog
 #     bundled inside the mount is invisible to it) while never touching
 #     user-installed packages or user config,
-#   * auto-finds a ROM (by extension) sitting next to the .AppImage and passes
-#     it as argv[1] — so the user just drops their ROM beside the AppImage,
+#   * seeds rom.cfg from a ROM sitting next to the .AppImage when no valid
+#     path is saved, while keeping the launcher available,
 #   * exports the SDL hints that make controllers work out-of-the-box on a
 #     Steam Deck (reads the pad natively instead of Steam's keyboard remap).
 #
-# After packaging, tools/test_appimage_layout.sh runs against the AppDir and
-# the build FAILS if state ever lands inside the read-only payload or a user
-# edit to config.ini does not survive a relaunch.
+# After packaging, the layout and picker tests run against the AppDir. The
+# build fails if state lands inside the read-only payload, user config is
+# overwritten, or native picker results stop selecting the correct fallback.
 #
 # Usage:
 #   bash tools/build-linux.sh                 # prod AppImage (default)
@@ -38,7 +38,7 @@
 #   bash tools/build-linux.sh --out DIR       # where to drop the .AppImage
 #   bash tools/build-linux.sh --jobs N        # parallel build jobs (default: nproc)
 #
-# Prereqs: cmake, a C/C++ toolchain, SDL3 (or SNESRECOMP_SDL_BACKEND=SDL2 with
+# Prereqs: python3, cmake, a C/C++ toolchain, SDL3 (or SNESRECOMP_SDL_BACKEND=SDL2 with
 # libsdl2-dev), libgl1-mesa-dev. linuxdeploy/appimagetool are fetched into the
 # build tree and verified against pinned SHA-256s (reproducible packaging).
 # Regen needs a verified ROM at the repo root (see tools/regen.sh).
@@ -395,8 +395,9 @@ ARCH=x86_64 $APPIMAGETOOL "$APPDIR" "$APP"
 chmod +x "$APP"
 echo "      BUILT: $APP ($(du -h "$APP" | cut -f1))"
 
-echo "[4/4] layout test (state next to the .AppImage, payload stays read-only)"
+echo "[4/4] package tests (portable state and native picker fallback)"
 bash "$REPO/tools/test_appimage_layout.sh" "$APPDIR"
+python3 "$REPO/tools/test_appimage_picker.py" "$APPDIR"
 
 sha256sum "$APP"
 

@@ -39,8 +39,39 @@ int main(int argc, char **argv) {
   g_game = &game;
   ConfigUseStateMenuDefaults();
   FILE *f = fopen("config.ini", "w");
-  fputs("[KeyMap]\nLoad = F1,F2,F3,F4,F5,F6,F7,F8,F9,F10\n", f); fclose(f);
+  fputs("[Graphics]\nDisplayAspect=8:7\n[KeyMap]\nLoad = F1,F2,F3,F4,F5,F6,F7,F8,F9,F10\n", f); fclose(f);
   ParseConfigFile("config.ini");
+  /* Exercise the game adapter with the actual parsed settings, including a
+   * setting change between frames. Pure renderer tests cannot catch a host
+   * that forgets to pass Display Aspect into adaptive geometry. */
+  g_config.widescreen = true;
+  g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
+  const int display_widths[] = {342, 398, 456};
+  check(g_config.display_aspect == kSnesDisplayAspect_SquarePixels8x7, "Display Aspect parsed");
+  for (int i = 0; i < 3; ++i) {
+    int setting = (i + 1) % 3;
+    /* The launcher updates the live setting after the initial config load. */
+    if (i) g_config.display_aspect = SnesDisplayAspect_Clamp(setting);
+    int w, h;
+    MmxPrepareFrame(1920, 1080, &w, &h);
+    check(w == display_widths[setting] && h == 224, "adaptive honors Display Aspect");
+    SnesDisplayViewport viewport;
+    MmxViewport(w, h, 1920, 1080, &viewport);
+    check(viewport.width == 1920 && viewport.height == 1080, "adaptive fills matching window");
+    g_mmx_custom_aspect = MMX_ASPECT_16_9;
+    MmxPrepareFrame(3840, 1080, &w, &h);
+    MmxViewport(w, h, 3840, 1080, &viewport);
+    check(w == display_widths[setting] && viewport.width == 1920 && viewport.x == 960,
+          "fixed view honors pixel shape and boxes wider window");
+    g_config.widescreen = false;
+    MmxPrepareFrame(1920, 1080, &w, &h);
+    MmxViewport(w, h, 1920, 1080, &viewport);
+    const int native_widths[] = {1440, 1234, 1080};
+    check(w == 256 && viewport.width == native_widths[setting], "native view retains Display Aspect");
+    g_config.widescreen = true;
+    g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
+  }
+  g_config.display_aspect = kSnesDisplayAspect_Crt4x3;
   check(FindCmdForSdlKey(SDLK_F7, 0) == kKeys_SaveStateMenu &&
         FindCmdForSdlKey(SDLK_F8, 0) == kKeys_Rewind &&
         FindCmdForSdlKey(SDLK_F11, 0) == kKeys_Load + 6 &&
