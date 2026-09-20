@@ -25,6 +25,8 @@ assets/
 saves/
 *.sav
 *.srm
+*.srm.bak
+*.srm.tmp
 
 # Boot traces (generated at runtime)
 boot_trace*.txt

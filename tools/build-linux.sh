@@ -59,6 +59,7 @@ BOXART="recomp/launcher/boxart.tga"          # AppImage icon source (optional)
 REQUIRED_MOD_MANIFESTS=(
   "preloaded/packages/megaman-x.enhancement.widescreen/1.0.0/manifest.toml"
   "preloaded/packages/megaman-x.enhancement.msu1/1.0.0/manifest.toml"
+  "preloaded/packages/megaman-x.enhancement.password-save/1.0.0/manifest.toml"
   "preloaded/packages/megaman-x.developer.tier2-diagnostics/1.0.0/manifest.toml"
 )
 PROD_CMAKE_FLAGS=( -DSNESRECOMP_ENABLE_TRACE=OFF )

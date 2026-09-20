@@ -34,7 +34,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/main.c src/mmx_display.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_wide_policy.c
         src/mmx_00.c src/gen_stubs.c src/mmx_cpu_infra.c src/mmx_rtl.c
         src/mmx_spc_player.c src/mods/mmx_diagnostics_plugin.c
-        src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c)
+        src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
+        src/mods/mmx_password_plugin.c src/mmx_password_save.cpp)
     target_include_directories(${TARGET} PRIVATE
         ${CFG_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_BINARY_DIR} ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
@@ -67,14 +68,17 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
             file(GLOB mmx_generated ${GEN_DIR}/*.c)
             set_property(SOURCE ${mmx_generated} APPEND PROPERTY OBJECT_DEPENDS
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_overrides.py
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_renderer_capture.py)
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_renderer_capture.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_password_hooks.py)
             add_custom_target(${TARGET}_widescreen_overrides
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_overrides.py
                         --gen-dir ${GEN_DIR}
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_renderer_capture.py
                         --gen-dir ${GEN_DIR}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_password_hooks.py
+                        --gen-dir ${GEN_DIR}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMENT "Applying Mega Man X widescreen generated-code overrides" VERBATIM)
+                COMMENT "Applying Mega Man X generated-code mod hooks" VERBATIM)
             add_dependencies(${TARGET} ${TARGET}_widescreen_overrides)
         endif()
     endif()
@@ -91,6 +95,10 @@ add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(mmx_password_save_test tests/mmx_password_save_test.cpp src/mmx_password_save.cpp)
+    target_include_directories(mmx_password_save_test PRIVATE src)
+    target_compile_features(mmx_password_save_test PRIVATE cxx_std_17)
+    add_test(NAME mmx_password_save COMMAND mmx_password_save_test)
     add_executable(mmx_display_test tests/mmx_display_test.c src/mmx_display.c)
     target_include_directories(mmx_display_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     add_test(NAME mmx_display_geometry COMMAND mmx_display_test)
@@ -102,7 +110,7 @@ if(BUILD_TESTING)
     add_test(NAME mmx_custom_renderer COMMAND mmx_renderer_test)
     add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c)
     target_include_directories(mmx_render_capture PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
-    foreach(mmx_test mmx_display_test mmx_wide_policy_test mmx_renderer_test)
+    foreach(mmx_test mmx_display_test mmx_wide_policy_test mmx_renderer_test mmx_password_save_test)
         if(MSVC)
             target_compile_options(${mmx_test} PRIVATE /UNDEBUG)
         else()

@@ -19,5 +19,5 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSNESRECOMP_SDL_BACKEND=SDL2 -DSNESRECOMP_SETUP_HOST=ON
       - name: Compile shared desktop host and game adapters
         run: cmake --build build --target MegaManXSNESRecomp RockmanXSNESRecomp --parallel 4
-      - name: Check display geometry and widescreen policy
-        run: cmake --build build --target mmx_display_test mmx_wide_policy_test mmx_renderer_test && ctest --test-dir build --output-on-failure
+      - name: Check display, widescreen and password saves
+        run: cmake --build build --target mmx_display_test mmx_wide_policy_test mmx_renderer_test mmx_password_save_test && ctest --test-dir build --output-on-failure

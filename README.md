@@ -73,6 +73,13 @@ manifested.
 The path you pick is cached to `rom.cfg` next to the exe so subsequent
 launches skip the picker.
 
+## Password saves (experimental)
+
+Source builds also include an experimental **Password Saves (SRAM)** mod.
+It saves the last generated password to a PC file and prefills the title
+screen's Password option. See [Password saves](docs/password-saves.md) for
+the optional file picker and default save location.
+
 ## Controls (default `keybinds.ini`)
 
 | SNES button | Default key |
