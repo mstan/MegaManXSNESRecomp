@@ -1,5 +1,8 @@
 # MegaManXSNESRecomp
 
+Version 1.6.3 fixes widescreen sprite layering on Boomer Kuwanger's tower and
+the corrupted electric effect around X after Zero's explosion in Sigma 1.
+
 Version 1.6.2 makes adaptive and fixed widescreen respect **Display Aspect**.
 Choose **8:7 (Square pixels)** with **Fit to screen** to fill a wide window
 while keeping sprites at square-pixel proportions.
