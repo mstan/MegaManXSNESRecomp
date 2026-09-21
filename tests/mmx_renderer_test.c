@@ -1038,6 +1038,74 @@ static void fortress_actor_presentation(void) {
   g_mmx_custom_renderer = false; MmxRendererReset();
 }
 
+static void sprite_priority_and_cutscene_binding(void) {
+  memset(rom_bytes, 0, sizeof(rom_bytes));
+  memset(ram, 0, sizeof(ram)); memset(&ppu, 0, sizeof(ppu));
+  MmxRendererReset();
+  /* Resource 1 is resident only in section 1. Its private art is red, while
+   * the live tile is blue: replacing an intentional binding is observable. */
+  rom_word(0x32cee, 0x20); rom_word(0x32cf0, 0x24);
+  rom_word(0x32d0e, 0x30); rom_word(0x32d10, 0x40);
+  rom_bytes[0x32d1e] = 255;
+  rom_bytes[0x32d2e] = 1; rom_word(0x32d31, 2);
+  rom_bytes[0x32d33] = 0x40; rom_bytes[0x32d34] = 255;
+  rom_bytes[0x325e4] = 0x52; rom_bytes[0x325e5] = 1;
+  rom_word(0x376fc, 32); rom_long(0x376fe, 0x808000);
+  for (unsigned i = 0; i < 8; i += 2) rom_bytes[i + 1] = 255;
+  rom_word(0x371b9, 0x200); rom_bytes[0x373b7] = 2; rom_bytes[0x373b8] = 0xe0;
+  rom_word(0x30135, 0x9000); rom_bytes[0x31000] = 16;
+  rom_word(0x31001, 0x9000); rom_bytes[0x31003] = 128;
+  for (unsigned i = 1; i < 16; ++i) rom_word(0x29000 + i * 2, 31);
+  MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4;
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.obsel = 2;
+  ppu.bgXsc[0] = 0x20; ppu.cgram[1] = 31 << 5;
+  ppu.cgram[193] = 31 << 10;
+  for (unsigned i = 0; i < 128; ++i) ppu.oam[i * 2] = 0xe000;
+  for (unsigned i = 0x2000; i < 0x2400; ++i) ppu.vram[i] = 1;
+  for (unsigned y = 0; y < 8; ++y)
+    ppu.vram[16 + y] = ppu.vram[0x4000 + y] = ppu.vram[0x5000 + y] = 255;
+  put_word(0x18, 0x8100); ram[0x1a] = 0x80;
+  ram[0xe72] = 0x3f; ram[0xe7e] = 0x52;
+  g_mmx_custom_renderer = true;
+  MmxRenderView view = MmxRendererViewport(MMX_ASPECT_32_9, 0, 0, kSnesDisplayAspect_Crt4x3);
+  for (unsigned section = 0; section < 2; ++section) {
+    ram[0x1f08] = (uint8_t)section;
+    for (unsigned priority = 0; priority < 4; ++priority) {
+      ram[0xf] = (uint8_t)(8 | (priority << 4));
+      for (int x = 40; x <= 300; x += 260) {
+        put_word(0, x); put_word(2, 40);
+        MmxRendererObserveObject(ram, 0xe68); MmxRendererRecordPiece(ram, 0);
+      }
+      MmxRendererLatchSprites();
+      for (unsigned bg = 0; bg < 2; ++bg) {
+        ppu.screenEnabled[0] = (uint8_t)(16 | bg); capture();
+        assert(MmxRendererDraw(output, view, false));
+        uint32_t expected = bg && priority < 2 ? 0x00ff00 : section ? 0x0000ff : 0xff0000;
+        for (int x = 40; x <= 300; x += 260)
+          assert(output[40 * view.width + view.extra + x] == expected);
+      }
+    }
+    /* The electric effect must keep live art before and after its old
+     * resource leaves the current section. Test native and margin pixels. */
+    ram[0x1472] = 0x16; ram[0x147e] = 0x52; ram[0xf] = 0x29;
+    assert(MmxRenderAssetsSprite(0, section, 0x52));
+    assert(!MmxRenderAssetsObjectSprite(ram, 0x1468, 0x52));
+    assert(MmxRenderAssetsObjectSprite(ram, 0xe68, 0x52));
+    for (int x = 40; x <= 300; x += 260) {
+      put_word(0, x); put_word(2, 40);
+      MmxRendererObserveObject(ram, 0x1468); MmxRendererRecordPiece(ram, 0);
+    }
+    MmxRendererLatchSprites(); ppu.screenEnabled[0] = 16; capture();
+    assert(MmxRendererDraw(output, view, false));
+    for (int x = 40; x <= 300; x += 260)
+      assert(output[40 * view.width + view.extra + x] == 0x0000ff);
+    ram[0x1472] = 0x15;
+    assert(MmxRenderAssetsObjectSprite(ram, 0x1468, 0x52));
+  }
+  g_mmx_custom_renderer = false; MmxRendererReset();
+}
+
 static void weapons_menu_margins(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
@@ -1058,4 +1126,4 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); weapons_menu_margins(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); return 0; }

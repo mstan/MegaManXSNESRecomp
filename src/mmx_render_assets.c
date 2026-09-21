@@ -153,6 +153,12 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
   if (!ram) return NULL;
+  /* Vile's electric restraint ($81:B443, projectile $16) keeps animation
+   * $52 when the fortress cutscene replaces Ride Armor resource $49 with
+   * $9B. Its native-timed live tiles/palette remain valid; the enemy animation
+   * table still names $49 and would substitute unrelated armor fragments. */
+  if (object >= 0x1428 && object < 0x1628 && (object & 63) == 0x28 &&
+      ram[object + 10] == 0x16 && animation == 0x52) return NULL;
   /* Sub Tanks bind resource $8C directly at $81:E4D3, outside the enemy
    * animation table. Cold loads must not depend on previously resident CHR. */
   if (object >= 0x1628 && object < 0x1928 && (object - 0x1628) % 0x30 == 0 &&

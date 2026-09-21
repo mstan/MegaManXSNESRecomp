@@ -667,7 +667,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     /* Keep current allocations and their live flashes/animation. Repair
      * missing or stale bindings using the ROM resource's own palette. */
     if (a && !hit_flash && (!a->current || (s->attr & 255) != ((s->tile + a->tile_base) & 255) ||
-        ((s->attr >> 8) & 0x2f) != (unsigned)(a->attributes | s->palette_bits) ||
+        ((s->attr >> 8) & 15) != (unsigned)((a->attributes & 15) | s->palette_bits) ||
         (s->object == 0xe18 && MmxRenderAssetsRideArmorPalettePending(frame.ram,
             frame.lines[0].palette + 128 + ((s->attr >> 9) & 7) * 16)))) piece_assets[i] = a;
   }
@@ -715,7 +715,11 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           replaced[slot] = true; center = true;
         }
       }
-      unsigned attr = asset ? (s.attr & 0xd000) | 0x2000 | ((asset->attributes & 15) << 8) |
+      /* Resource bindings own CHR/palette, not OBJ priority. Kuwanger's
+       * platform backs deliberately sit behind the tower even though their
+       * foreground pieces use the same resource. Preserve both priority bits
+       * when substituting art, including a missing section's resource. */
+      unsigned attr = asset ? (s.attr & 0xf000) | ((asset->attributes & 15) << 8) |
           (asset->live_tiles ? s.attr & 255 : 0) : s.attr;
       if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
       sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset, s.tile, object_colors, true);
