@@ -79,11 +79,21 @@ if (Test-Path -LiteralPath $kb) {
   Copy-Item -LiteralPath $kb -Destination $stage
 }
 
-$runtimeDlls = @(
-  'libgcc_s_seh-1.dll',
-  'libstdc++-6.dll',
-  'libwinpthread-1.dll'
-)
+# Runtime DLLs are NOT enumerated by hand. A hardcoded list is a snapshot of
+# the import graph on the day it was written, and it silently omits anything a
+# later toolchain/SDL bump pulls in - e.g. SDL3 3.4.14 links libiconv-2.dll
+# where 3.4.12 did not. The gap is invisible on a dev box (MSYS2 / Git for
+# Windows put the DLL on PATH) and fatal on a player's machine: 0xC0000135 if
+# it is simply absent, or 0xC000007B ("unable to start correctly") if the
+# loader finds an unrelated 32-bit copy on PATH.
+#
+# Instead: stage the SDL backend, then walk the actual PE import graph and pull
+# in the full transitive closure of non-OS dependencies. Anything unresolvable
+# fails the release rather than shipping. Builds that link the MinGW runtime
+# statically (SNESRECOMP_STATIC_RUNTIME, the default) correctly ship no
+# libgcc/libstdc++/libwinpthread at all.
+. (Join-Path $root 'snesrecomp\tools\release\RuntimeDllClosure.ps1')
+
 $sdlDll = "$SdlBackend.dll"
 $sdlSource = Join-Path $build $sdlDll
 if (-not (Test-Path -LiteralPath $sdlSource)) {
@@ -93,13 +103,14 @@ if (-not (Test-Path -LiteralPath $sdlSource)) {
   throw "Required $SdlBackend runtime DLL missing from build or runtime bin: $sdlDll"
 }
 Copy-Item -LiteralPath $sdlSource -Destination $stage
-foreach ($name in $runtimeDlls) {
-  $source = Join-Path $RuntimeBinDir $name
-  if (-not (Test-Path -LiteralPath $source)) {
-    throw "Required MinGW runtime DLL missing: $source"
-  }
-  Copy-Item -LiteralPath $source -Destination $stage
+
+$stagedDlls = Copy-RuntimeDllClosure -StageDir $stage -SearchDirs @($build, $RuntimeBinDir)
+if ($stagedDlls.Count -gt 0) {
+  Write-Host "Staged runtime dependency closure: $($stagedDlls -join ', ')"
 }
+# Re-read the stage rather than trusting the copy pass: every non-OS import
+# must resolve inside the package, and every staged PE must be x64.
+Assert-RuntimeDllClosure -StageDir $stage | Out-Null
 
 $objdump = Join-Path $RuntimeBinDir 'objdump.exe'
 if (-not (Test-Path -LiteralPath $objdump)) {

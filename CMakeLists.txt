@@ -37,7 +37,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
         src/mods/mmx_password_plugin.c src/mmx_password_save.cpp)
     target_include_directories(${TARGET} PRIVATE
-        ${CFG_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CFG_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_BINARY_DIR} ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
     target_compile_definitions(${TARGET} PRIVATE
         SMW_DISABLE_LM=1 SYSTEM_VOLUME_MIXER_AVAILABLE=0
