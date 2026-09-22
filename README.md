@@ -1,6 +1,6 @@
 # MegaManXSNESRecomp
 
-Version 1.6.4 saves launcher settings on close and uses shared SNES shader
+Version 1.6.5 saves launcher settings on close and uses shared SNES shader
 presets and pixel-aspect geometry. Bundled shader choices also survive
 AppImage relaunches and moving the installation.
 
