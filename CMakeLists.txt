@@ -56,7 +56,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         target_sources(${TARGET} PRIVATE src/setup_host.c)
     endif()
     snesrecomp_target_config_seed(${TARGET})
-    snesrecomp_target_stage_dir(${TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders" assets/shaders)
+    snesrecomp_target_shader_presets(${TARGET})
     if("${TARGET}" STREQUAL "RockmanXSNESRecomp")
         # JP remains authentic 4:3, with no mod provider.
         snesrecomp_target_mod_catalog(${TARGET} NONE)
