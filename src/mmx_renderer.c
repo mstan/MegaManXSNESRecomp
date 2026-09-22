@@ -61,22 +61,12 @@ MmxRenderView MmxRendererViewport(MmxRenderAspect mode, int w, int h,
                   mode == MMX_ASPECT_21_9 ? 21.0 / 9.0 :
                   mode == MMX_ASPECT_32_9 ? 32.0 / 9.0 :
                   w > 0 && h > 0 ? (double)w / h : 16.0 / 9.0;
-  int par_num, par_den;
-  SnesDisplayAspect_GetPixelAspect(display_aspect, &par_num, &par_den);
-  double pixels_per_aspect = (double)MMX_RENDER_HEIGHT * par_den / par_num;
-  /* Fit and fixed ratios control how much stage is visible, while the regular
-   * display setting controls pixel shape. At the native/capacity bounds, box
-   * the view instead of stretching it beyond the selected proportions. */
-  aspect = fmax(256 / pixels_per_aspect,
-                fmin(MMX_RENDER_MAX_WIDTH / pixels_per_aspect, aspect));
-  int width = 2 * (int)floor(aspect * pixels_per_aspect / 2 + 0.5);
-  return (MmxRenderView){width, (width - 256) / 2, aspect};
+  SnesDisplayFrame frame = SnesDisplayAspect_ComputeAdaptiveFrame(
+      256, MMX_RENDER_HEIGHT, MMX_RENDER_MAX_WIDTH, aspect, display_aspect);
+  return (MmxRenderView){frame.width, frame.extra, frame.aspect};
 }
 MmxDisplayViewport MmxRendererDestination(MmxRenderView view, int width, int height) {
-  if (width <= 0 || height <= 0) return (MmxDisplayViewport){0};
-  int w = width, h = (int)floor(width / view.aspect + 0.5);
-  if (h > height) { h = height; w = (int)floor(height * view.aspect + 0.5); }
-  return (MmxDisplayViewport){(width - w) / 2, (height - h) / 2, w, h};
+  return SnesDisplayAspect_FitViewport(view.aspect, width, height);
 }
 static unsigned word(const uint8_t *p, unsigned a) { return p[a] | (p[a + 1] << 8); }
 static const uint8_t *rom_at(unsigned address, size_t length) {

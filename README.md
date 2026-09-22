@@ -1,5 +1,9 @@
 # MegaManXSNESRecomp
 
+Version 1.6.4 saves launcher settings on close and uses shared SNES shader
+presets and pixel-aspect geometry. Bundled shader choices also survive
+AppImage relaunches and moving the installation.
+
 Version 1.6.3 fixes widescreen sprite layering on Boomer Kuwanger's tower and
 the corrupted electric effect around X after Zero's explosion in Sigma 1.
 
