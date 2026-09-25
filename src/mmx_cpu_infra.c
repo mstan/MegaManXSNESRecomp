@@ -26,4 +26,5 @@ const RtlGameInfo kMmxGameInfo = {
   .state_save_extra = &MmxStateSaveExtra,
   .state_load_extra = &MmxStateLoadExtra,
   .on_state_loaded = &MmxOnStateLoaded,
+  .hardware_reset = &MmxOnHardwareReset,
 };

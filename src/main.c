@@ -191,6 +191,8 @@ int MMX_DESKTOP_ENTRY(int argc, char **argv) {
      * puts its switch, depth and interval on the Settings page and persists
      * them, so a player can size it or turn it off without an env var. */
     .rewind_settings = 1,
+    /* Ctrl+L / Select+L3 reopens the launcher over the frozen game (#46). */
+    .in_game_launcher = 1,
     /* Widescreen and MSU-1 remain USA Mods features. */
     .create_spc_player = SmwSpcPlayer_Create,
     .prepare_frame = MmxPrepareFrame, .begin_sim_frame = MmxBeginFrame,

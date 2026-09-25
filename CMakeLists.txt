@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 1.6.5 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 1.6.6 LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
@@ -120,6 +120,16 @@ if(BUILD_TESTING)
     if(NOT WIN32)
         target_link_libraries(mmx_renderer_test PRIVATE m)
         target_link_libraries(mmx_render_capture PRIVATE m)
+    endif()
+    # End to end through the real executable (#45: Reset must reboot). Needs
+    # the ROM, so only where one is staged -- never in CI.
+    if(TARGET MegaManXSNESRecomp AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        add_test(NAME mmx_reset_reboots
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/reset_boot_test.py
+                --exe $<TARGET_FILE:MegaManXSNESRecomp>
+                --rom ${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc
+                --config ${CMAKE_CURRENT_SOURCE_DIR}/config.ini)
     endif()
 endif()
 include(${SNESRECOMP_ROOT}/runner/cmake/mmx_state_tests.cmake)
