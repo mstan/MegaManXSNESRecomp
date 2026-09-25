@@ -1,5 +1,9 @@
 # MegaManXSNESRecomp
 
+Version 1.6.6 fixes Ctrl+R (Reset) leaving a black screen and lets you
+reopen the launcher mid-game with Ctrl+L (or Select+L3 on a controller),
+change settings, and resume from the same moment.
+
 Version 1.6.5 saves launcher settings on close and uses shared SNES shader
 presets and pixel-aspect geometry. Bundled shader choices also survive
 AppImage relaunches and moving the installation.
