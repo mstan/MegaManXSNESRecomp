@@ -13,5 +13,7 @@ struct SaveLoadInfo;
 void MmxStateSaveExtra(struct SaveLoadInfo *sli);
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version);
 void MmxOnStateLoaded(uint32_t version);
+/* RtlGameInfo.hardware_reset: reboot through I_RESET after the Reset hotkey. */
+void MmxOnHardwareReset(void);
 
 #endif  // SMW_SMW_RTL_H_

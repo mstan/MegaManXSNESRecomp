@@ -1640,3 +1640,41 @@ static void MmxWideStateApply(bool loaded) {
   }
   s_ws_spawn_pass.active = 0;
 }
+
+/* RtlGameInfo.hardware_reset: the Reset hotkey reset the machine under a live
+ * session. Everything that says "the game already booted" is host state, so
+ * without this the next frame skipped I_RESET and ran NMI plus the $8099
+ * scheduler against a force-blanked PPU -- a black screen that never
+ * recovers (GitHub #45). Runs on the main fiber, never inside a slot fiber,
+ * so every slot fiber can be deleted here. */
+void MmxOnHardwareReset(void) {
+  for (int i = 0; i < MMX_NSLOTS; i++) {
+    if (g_slot_fiber[i] != NULL) {
+      DeleteFiber(g_slot_fiber[i]);
+      g_slot_fiber[i] = NULL;
+    }
+  }
+  memset(g_slot_fiber_pc, 0, sizeof(g_slot_fiber_pc));
+  memset(g_slot_prev_state, 0, sizeof(g_slot_prev_state));
+  memset(g_slot_done, 0, sizeof(g_slot_done));
+  memset(g_slot_yield_cd, 0, sizeof(g_slot_yield_cd));
+  memset(g_slot_saved_state, 0, sizeof(g_slot_saved_state));
+  memset(&g_saved_scheduler_state, 0, sizeof(g_saved_scheduler_state));
+  memset(g_slot_resume, 0, sizeof(g_slot_resume));
+  memset(g_slot_base_s, 0, sizeof(g_slot_base_s));
+  memset(g_slot_resume_pending, 0, sizeof(g_slot_resume_pending));
+  g_current_slot_idx = 0xFF;
+  g_mmx_task_slot_x = 0;
+  g_mmx_task_yield_countdown = 0;
+  g_yield_captures_resume = 1;
+  g_load_chunk_ok = 0;
+  g_load_complete = g_load_native_streakers = false;
+  s_ws_recover_armor = false;
+  s_ws_spawn_cursor.valid = false;
+  s_ws_spawn_cursor_stage = 0xff;
+  MmxWideStateApply(false);
+  memset(&s_ws_spawn_pass, 0, sizeof(s_ws_spawn_pass));
+  memset(&s_ws_fire, 0, sizeof(s_ws_fire));
+  g_did_reset = false;
+  g_first_frame_done = false;
+}

@@ -121,6 +121,16 @@ if(BUILD_TESTING)
         target_link_libraries(mmx_renderer_test PRIVATE m)
         target_link_libraries(mmx_render_capture PRIVATE m)
     endif()
+    # End to end through the real executable (#45: Reset must reboot). Needs
+    # the ROM, so only where one is staged -- never in CI.
+    if(TARGET MegaManXSNESRecomp AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        add_test(NAME mmx_reset_reboots
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/reset_boot_test.py
+                --exe $<TARGET_FILE:MegaManXSNESRecomp>
+                --rom ${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc
+                --config ${CMAKE_CURRENT_SOURCE_DIR}/config.ini)
+    endif()
 endif()
 include(${SNESRECOMP_ROOT}/runner/cmake/mmx_state_tests.cmake)
 snesrecomp_target_mmx_state_tests(MegaManXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
