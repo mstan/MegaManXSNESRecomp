@@ -58,9 +58,20 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(MmxRendererSaveCapture("rush-title.cap"),"fourth title entry capture saves");
   frame(SNES_PAD_Y);frame(SNES_PAD_Y);
   check(MmxRendererSaveCapture("rush-confirm.cap"),"confirmation keeps the selected fourth row");
+  fprintf(stderr,"rush confirm state=%u/%u/%u/%u script=%u xy=%u,%u action=%u:%u\n",g_ram[0x38],g_ram[0x39],g_ram[0x3b],g_ram[0x3c],g_ram[0xc01],g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbb0]|g_ram[0xbb1]<<8,g_ram[0xbaa],g_ram[0xbab]);
+  check(g_ram[0xbab]==2 && (g_ram[0xbb0]|g_ram[0xbb1]<<8)==214,
+      "native title confirmation shot runs on the Boss Rush row");
   check(MmxBossRushGetState().mode==MMX_RUSH_LOADING,"Boss Rush starts directly without a mode submenu");
   check(MmxBossRushGetState().coop==(coop_assets!=NULL),"Boss Rush respects the configured co-op mod");
-  for(unsigned t=0;t<1800 && MmxBossRushGetState().mode==MMX_RUSH_LOADING;++t) frame(SNES_PAD_Y);
+  bool title_shot=false;
+  for(unsigned t=0;t<1800 && MmxBossRushGetState().mode==MMX_RUSH_LOADING;++t) {
+    frame(SNES_PAD_Y);
+    if(!MmxBossRushGetState().stage_started) {
+      if(t==12) check(MmxRendererSaveCapture("rush-title-shot.cap"),"native title shot capture saves");
+      for(unsigned d=0x1228;d<0x1428;d+=64) title_shot|=g_ram[d]!=0;
+    }
+  }
+  check(title_shot,"native title confirmation produces a projectile before the fade");
   fprintf(stderr,"rush load mode=%u stage=%u checkpoint=%u/%u game=%u/%u/%u player=%u action=%u:%u xy=%u,%u camera=%u/%u\n",
       MmxBossRushGetState().mode,g_ram[0x1f7a],g_ram[0x1f81],g_ram[0x1f82],g_ram[0xd1],g_ram[0xd2],g_ram[0xd3],
       g_ram[0xba9],g_ram[0xbaa],g_ram[0xbab],g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbb0]|g_ram[0xbb1]<<8,
@@ -85,11 +96,29 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
         "both co-op players start alive");
     check((c.players[0].body[0x27]&127)==32 && (c.players[1].body[0x27]&127)==32,"both co-op players start at maximum health");
   }
-  for(unsigned t=0;t<1200 && MmxBossRushGetState().mode==MMX_RUSH_PREPARING;++t) frame(SNES_PAD_RIGHT);
+  unsigned stage_bank=g_ram[0xfffd];bool native_door=false,music_replayed=false;
+  for(unsigned t=0;t<1200 && MmxBossRushGetState().mode==MMX_RUSH_PREPARING;++t) {
+    if(!music_replayed && MmxBossRushGetState().loaded==MMX_RUSH_MUSIC_PENDING) {
+      size_t pending=RtlSaveSnapshotToMemory(expected,cap);
+      check(pending!=0,"pending native music upload snapshot saves");
+      frame(SNES_PAD_RIGHT);size_t en=RtlSaveSnapshotToMemory(actual,cap);
+      check(RtlLoadSnapshotFromMemory(expected,pending),"pending native music upload restores");
+      frame(SNES_PAD_RIGHT);size_t an=RtlSaveSnapshotToMemory(start,cap);
+      same(actual,en,start,an,"pending native music upload replays deterministically");
+      music_replayed=true;
+    }
+    frame(SNES_PAD_RIGHT);native_door|=g_ram[0xbaa]==0x18 || g_ram[0xbaa]==0x1a;
+  }
+  fprintf(stderr,"rush music bank before=%02x after=%02x door=%u\n",
+      stage_bank,g_ram[0xfffd],native_door);
   fprintf(stderr,"rush door mode=%u camera=%u player=%u action=%u:%u lock=%u flags=%u/%u/%u section=%u\n",
       MmxBossRushGetState().mode,g_ram[0x1e4d]|g_ram[0x1e4e]<<8,
       g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbaa],g_ram[0xbab],g_ram[0xc16],
       g_ram[0x1f23],g_ram[0x1f26],g_ram[0x1f13],g_ram[0x1f08]);
+  check(native_door,"second door runs the native player door controller");
+  unsigned boss_bank=g_snes->cart->rom[0x3007b+g_snes->cart->rom[0x3006b+0x21]];
+  check(g_ram[0xfffd]==boss_bank && g_ram[0xfffd]!=stage_bank,
+      "native boss music bank replaces the stage bank");
   check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");
   size_t baseline=RtlSaveSnapshotToMemory(start,cap);check(baseline!=0,"arena snapshot saves");
   unsigned before=g_ram[0xbad]|g_ram[0xbae]<<8;

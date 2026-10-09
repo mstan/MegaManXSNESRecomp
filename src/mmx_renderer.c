@@ -8,6 +8,7 @@
 #include "mmx_weapon_combat.h"
 #include "mmx_coop_view.h"
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_score.h"
 #include <math.h>
 
 /* Mode-1 decode/composition follows SuperMetroidRecomp's sm_renderer.c.
@@ -1313,14 +1314,17 @@ static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const 
   for(int row=0;row<8;++row) {
     if(y+row<0 || y+row>=224) continue;
     const Raster *r=&frame.lines[y+row];Ppu p={0};memcpy(&p,r->registers,sizeof(r->registers));
-    if(p.inidisp&128) continue;
+    if((p.inidisp&128) && palette<8) continue;
     for(unsigned n=0;s[n];++n) for(int col=0;col<8;++col) {
       int dx=x+(int)n*8+col;if(dx<0 || dx>=view.width) continue;
       unsigned pixel=tile_pixel(r->vram,((p.bgTileAdr>>8)&15)*4096+(unsigned char)s[n]*8,col,row,2);
       if(!pixel) continue;
-      unsigned color=r->palette[palette*4+pixel];uint32_t rgb=0;
+      /* Results outlive the native death palette fade. Keep the original
+       * font's three shades readable independently of faded live CGRAM. */
+      static const uint16_t menu_colors[2][4]={{0,0x7fff,0x7fe0,0x4080},{0,0x7fff,0x7fff,0x7fe0}};
+      unsigned color=palette>=8?menu_colors[palette==9][pixel]:r->palette[palette*4+pixel];uint32_t rgb=0;
       for(unsigned c=0;c<3;++c) {
-        unsigned v=(color>>(c*5))&31;v=(v<<3)|(v>>2);v=v*(p.inidisp&15)/15;
+        unsigned v=(color>>(c*5))&31;v=(v<<3)|(v>>2);if(palette<8) v=v*(p.inidisp&15)/15;
         rgb|=v<<(16-c*8);
       }
       out[(y+row)*view.width+dx]=rgb;
@@ -1333,6 +1337,21 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(&stats, 0, sizeof(stats)); stats.pieces = frame.piece_count;
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
+  if(frame_rush.mode==MMX_RUSH_FINISHED) {
+    /* Own the whole page so native death flashes, HUD badges and the world
+     * cannot bleed through the options-style results screen. */
+    int center=view.width/2;char score[40];
+    rush_native_text(out,view,center-36,48,"GAME OVER",8);
+    snprintf(score,sizeof(score),"DEFEATED %u",frame_rush.defeated);
+    rush_native_text(out,view,center-(int)strlen(score)*4,80,score,8);
+    uint32_t best=MmxBossRushHighScore();if(best<frame_rush.defeated) best=frame_rush.defeated;
+    snprintf(score,sizeof(score),"HIGH SCORE %u",best);
+    rush_native_text(out,view,center-(int)strlen(score)*4,96,score,8);
+    rush_native_text(out,view,center-20,136,"RETRY",frame_rush.result_selection?8:9);
+    rush_native_text(out,view,center-36,160,"MAIN MENU",frame_rush.result_selection?9:8);
+    rush_native_text(out,view,center-68,frame_rush.result_selection?160:136,">",9);
+    return true;
+  }
   bool zero_menu = zero_weapons_menu();
   bool weapon_menu = MmxWeaponsMenuVisible(frame.ram);
   bool menu = zero_menu || weapon_menu;
@@ -1708,18 +1727,12 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     }
   }
   MmxBossRushDraw(out,view.width,view.extra,&frame_rush);
-  if(frame_rush.mode==MMX_RUSH_PLAYING || frame_rush.mode==MMX_RUSH_FINISHED) {
+  if(frame_rush.mode==MMX_RUSH_PLAYING) {
     char count[32];snprintf(count,sizeof(count),"DEFEATED %u",frame_rush.defeated);
     rush_native_text(out,view,view.width/2-(int)strlen(count)*4,24,count,7);
     static const char *const labels[]={"CP","SM","AA","LO","BK","SC","SE","FM"};
     for(unsigned i=0;i<2;++i) if(frame_rush.bosses[i].phase)
       rush_native_text(out,view,view.width-40+(int)i*16,96,labels[frame_rush.bosses[i].id],7);
-  }
-  if(frame_rush.mode==MMX_RUSH_FINISHED) {
-    rush_native_text(out,view,view.width/2-48,90,"RUN FINISHED",7);
-    rush_native_text(out,view,view.width/2-20,112,"RETRY",7);
-    rush_native_text(out,view,view.width/2-36,132,"MAIN MENU",7);
-    rush_native_text(out,view,view.width/2-60,frame_rush.result_selection?132:112,">",7);
   }
   return true;
 }

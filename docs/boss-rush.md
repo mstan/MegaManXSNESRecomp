@@ -12,7 +12,11 @@ The native player death animation finishes before results appear.
 Select **Boss Rush** beneath **Option Mode**. Enable the launcher's existing
 co-op mod and supply its X3 ROM to play together. Two native meters on the right
 identify each boss by initials; the shared defeat
-counter stays at the top. Results offer **Retry** and **Main Menu**.
+counter stays at the top. The black **Game Over** page uses native font tiles
+with blue/cyan shading, shows the final defeat count and high score, and offers
+**Retry** and **Main Menu**. The best score persists locally across runs and
+launches in `mmx-boss-rush-score.dat` beside the executable. It is local results
+metadata and does not affect gameplay snapshots or rollback.
 
 ## Runtime ownership
 
@@ -32,15 +36,24 @@ boss, its children, and both players' projectiles.
 
 The run loads Chill Penguin's last native checkpoint between the boss doors.
 Players can prepare weapons there; crossing the second door scrolls into the
-enclosed room and starts the encounter. The room retains native scenery,
+enclosed room and starts the encounter and boss music. Door, checkpoint and
+camera events remain active during preparation; stock stage enemies are
+filtered before allocation. Because Rush bypasses the stock boss's shared
+player intro, the encounter requests boss music through the native dispatcher
+after the door releases; it uploads the SPC bank and supports the existing
+MSU1 hook. The call stays inside the guest scheduler so an upload can yield
+across frames. Its saved registers live on the guest stack and its pending
+return is snapshot-owned, with the existing state layout preserved.
+The room retains native scenery,
 metatile collision data and its fixed camera. Kuwanger
 starts higher to finish his native downward entrance above that floor. Mammoth
 uses a fixed arrival position and bypasses the factory's player-distance gate;
 his native entrance animation and health-fill states still run.
 
 The title entry uses the native BG3 font and selection palettes. Confirmation
-keeps the selected row through the native fade without its scripted buster
-shot; held confirmation buttons are consumed until released. Boss meters
+plays the native mini charged shot on the selected fourth row before the fade;
+held confirmation buttons are consumed until released so they do not fire
+again after arrival. Boss meters
 reuse the game's original frame, overlapping energy strips and skull footer;
 the counter, initials and results also use native font tiles. Weakness hits
 that immediately advance an arriving boss into a hurt/death state still count
@@ -96,7 +109,11 @@ set `MMX_BOSS_RUSH_TEST=1` and pass the verified USA ROM to run the title-menu,
 28-pair entrance, replacement, 600-frame combat and snapshot-replay checks in
 an empty private working directory. Add `MMX_BOSS_RUSH_COOP=<private Zero asset
 file>` to run those checks in local co-op, including one-player and team deaths.
-The same checks exercise Retry and Main Menu. The compatibility pass holds
+The same checks verify the native title projectile, second-door controller and
+actual boss music bank upload, then exercise Retry and Main Menu. If an upload
+spans frames, the fixture also checks snapshot replay while it is suspended. Portable
+checks also cover results-page isolation from death flashes/HUD and high-score
+persistence, monotonic records and rejection of malformed files. The compatibility pass holds
 player HP full to isolate boss behavior. Each pair must create a new boss
 generation after cleanup. Additional checks use native Fire Wave and Homing
 Torpedo finishing hits against Penguin and Kuwanger (fixtures start at 1 HP),

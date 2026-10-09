@@ -1,4 +1,6 @@
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_score.h"
+#include "host_paths.h"
 #include "mmx_coop.h"
 #include "mmx_renderer.h"
 #include "mmx_render_assets.h"
@@ -16,6 +18,17 @@
 extern uint8_t g_ram[0x20000];
 static unsigned word(const uint8_t *p) {return p[0]|p[1]<<8;}
 static void put(uint8_t *p,unsigned v) {p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
+static void stack_push(CpuState *cpu,unsigned v,unsigned bytes) {
+  while(bytes) {cpu_write8(cpu,0,cpu->S,(uint8_t)(v>>(--bytes*8)));--cpu->S;}
+}
+static unsigned stack_pop(CpuState *cpu,unsigned bytes) {
+  unsigned v=0;for(unsigned i=0;i<bytes;++i) v|=(unsigned)cpu_read8(cpu,0,++cpu->S)<<(i*8);
+  return v;
+}
+static bool arena_ready(const uint8_t *r) {
+  return word(r+0x1e4d)==0x1e00 && word(r+0xbad)>=0x1e20 &&
+      r[0xbaa]!=0x1a && r[0xbaa]!=0x18 && !r[0xc16];
+}
 /* These are scene/camera flags, not inventory or player combat state. Native
  * entrances may borrow them during their own update, never across actors. */
 static const uint16_t globals[]={0x1f0c,0x1f0e,0x1f0f,0x1f13,0x1f14,0x1f15,
@@ -68,6 +81,37 @@ static void actor_hook(CpuState *cpu,uint32_t pc) {
 static void boss_hook(CpuState *cpu,uint32_t pc) {
   MmxBossRushState s=MmxBossRushGetState();int owner=MmxBossRushOwner(cpu->D);
   unsigned at=pc&0x7fffff;
+  if(at==0x00d1ed && s.mode==MMX_RUSH_PREPARING) {
+    /* Run the native music call inside the guest scheduler, so a multi-frame
+     * SPC upload can yield and resume normally. Saved registers live on the
+     * guest stack; the pending return is part of the existing snapshot state.
+     * $81:8C95 requests $21 in retail's shared boss intro, which Rush bypasses. */
+    if(s.loaded==MMX_RUSH_MUSIC_PENDING) {
+      cpu->A=(uint16_t)stack_pop(cpu,2);cpu->X=(uint16_t)stack_pop(cpu,2);
+      cpu->Y=(uint16_t)stack_pop(cpu,2);cpu->D=(uint16_t)stack_pop(cpu,2);
+      cpu->DB=(uint8_t)stack_pop(cpu,1);cpu->P=(uint8_t)stack_pop(cpu,1);
+      cpu_p_to_mirrors(cpu);
+      s.loaded=MMX_RUSH_ARENA_LOADED;s.mode=MMX_RUSH_PLAYING;MmxBossRushSetState(&s);
+    } else if(arena_ready(g_ram)) {
+      cpu_mirrors_to_p(cpu);
+      stack_push(cpu,cpu->P,1);stack_push(cpu,cpu->DB,1);stack_push(cpu,cpu->D,2);
+      stack_push(cpu,cpu->Y,2);stack_push(cpu,cpu->X,2);stack_push(cpu,cpu->A,2);
+      stack_push(cpu,pc>>16,1);stack_push(cpu,(pc-1)&65535,2);
+      cpu->D=0;cpu->DB=0x86;cpu->A=0x21;cpu->P|=0x30;cpu_p_to_mirrors(cpu);
+      cpu->X&=255;cpu->Y&=255;
+      s.loaded=MMX_RUSH_MUSIC_PENDING;MmxBossRushSetState(&s);
+      interp_bridge_pre_opcode_redirect(0x8087a2);return;
+    }
+  }
+  if(at==0x00dd47 && (s.mode==MMX_RUSH_PREPARING ||
+      (s.mode==MMX_RUSH_LOADING && s.stage_started && !s.return_title))) {
+    /* Keep native door/camera/checkpoint records; suppress stage enemies,
+     * including the stock Penguin, before their object allocation. */
+    unsigned record=word(g_ram+cpu->D+0x18);
+    if((cpu_read8(cpu,cpu->DB,(uint16_t)record)&15)==3) {
+      interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xdd94);return;
+    }
+  }
   if(at==0x00e68e && s.mode==MMX_RUSH_LOADING && s.stage_started && !s.return_title) {
     /* Stage initialization clears the checkpoint after the title callback.
      * Select it when the native checkpoint table is actually read. */
@@ -87,7 +131,7 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     g_ram[0x1f7a]=8;g_ram[0x1f81]=2;g_ram[0x1f82]=0;
     equipment(g_ram);s.stage_started=1;MmxBossRushSetState(&s);
   }
-  if(at==0x00dc36 && (playing() || s.mode==MMX_RUSH_PREPARING)) {
+  if(at==0x00dc36 && playing()) {
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xdcda);return;
   }
   if(!playing()) return;
@@ -135,6 +179,16 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
 }
 void MmxBossRushHostFrame(void) {
 #if !MMX_VARIANT_JP
+  static bool score_opened,score_warned;
+  if(!score_opened) {
+    char path[4096];score_opened=true;
+    if(!snesrecomp_exe_dir_path("mmx-boss-rush-score.dat",path,sizeof(path)) || !MmxBossRushScoreOpen(path))
+      fprintf(stderr,"[mmx-rush] high score could not be loaded; existing record left unchanged\n");
+  }
+  MmxBossRushState result=MmxBossRushGetState();
+  if(result.mode==MMX_RUSH_FINISHED && !MmxBossRushScoreRecord(result.defeated) && !score_warned) {
+    score_warned=true;fprintf(stderr,"[mmx-rush] high score retained for this session but could not be saved\n");
+  }
   bool registered=true;
   /* Idempotent registration: mod activation can replace shared hooks. Add
    * ours after its setup so co-op contact replay stays authoritative. */
@@ -142,7 +196,7 @@ void MmxBossRushHostFrame(void) {
   for(unsigned i=0;i<sizeof(actors)/sizeof(*actors);++i)
     registered&=interp_bridge_add_pre_opcode_hook(actors[i],actor_hook);
   const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,
-    0x848fca,0x848fad,0x9ac7,0xdc36,0x94d9,0xe68e,0x879258,0x879276};
+    0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
   static bool warned;
@@ -168,11 +222,11 @@ static void load(uint8_t *r,bool coop) {
   s.menu_input=held&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y);
   MmxBossRushSetState(&s);
   if(title(r)) {
-    /* Enter the native confirmation/fade state without its buster script
-     * ($92B0). Keep the fourth row visible until the title fades out. */
+    /* Use the same mini charged shot and delay as the other native choices,
+     * keeping the cursor and lettering on the fourth row until the fade. */
     MmxBossRushState s=MmxBossRushGetState();s.menu=1;s.selection=3;
     MmxBossRushSetState(&s);
-    r[0x3c]=0;r[0x39]=4;r[0x3b]=0;r[0xc01]=0;
+    r[0x3c]=0;r[0x39]=4;r[0x3b]=60;r[0xc01]=2;
     memset(r+0xac,0,4);put(r+0xbb0,214);
   }
 }
@@ -191,9 +245,7 @@ static bool prepare(uint8_t *r) {
    * Preserve its native arrival, room map, collision and camera. */
   MmxBossRushState s=MmxBossRushGetState();
   s.camera_x=0x1e00;s.camera_y=0x100;s.loaded=1;s.mode=MMX_RUSH_PREPARING;s.menu=0;
-  /* The stage scanner normally supplies the boss-door marker. Rush skips
-   * its stock encounter, but the native door still needs it for boss music. */
-  r[0x1f26]=0xff;r[0x1fa0]=0;
+  r[0x1fa0]=0;
   equipment(r);
   MmxBossRushSetState(&s);
   if(MmxCoopEnabled()) {
@@ -299,13 +351,8 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
 }
 void MmxBossRushAfterFrame(uint8_t *r) {
   if(MmxBossRushGetState().mode==MMX_RUSH_PREPARING) {
-    /* The second native door owns its scroll, close animation and boss
-     * music. Begin after it releases the player's door action. */
-    if(word(r+0x1e4d)==0x1e00 && word(r+0xbad)>=0x1e20 &&
-        r[0xbaa]!=0x1a && r[0xbaa]!=0x18 && !r[0xc16]) {
-      MmxBossRushState s=MmxBossRushGetState();s.mode=MMX_RUSH_PLAYING;
-      MmxBossRushSetState(&s);
-    }
+    /* Door completion and native music upload release the encounter at the
+     * next guest player-update boundary, including any upload yields. */
     return;
   }
   if(!playing()) return;

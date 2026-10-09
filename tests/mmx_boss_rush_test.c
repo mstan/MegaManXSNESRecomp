@@ -41,6 +41,8 @@ int main(void) {
   bad=saved;bad.queue[1]=bad.queue[0];bad.queued=2;assert(!MmxBossRushSetState(&bad));
   bad=saved;bad.random=0;assert(!MmxBossRushSetState(&bad));
   bad=saved;bad.actor=1;bad.actor_object=0x1228;assert(!MmxBossRushSetState(&bad));
+  bad=saved;bad.loaded=MMX_RUSH_MUSIC_PENDING;assert(!MmxBossRushSetState(&bad));
+  bad.mode=MMX_RUSH_PREPARING;assert(MmxBossRushValidState(&bad));
   static uint32_t image[256*224];
   saved.mode=MMX_RUSH_FINISHED;MmxBossRushDraw(image,256,0,&saved);
   unsigned pixels=0;for(unsigned i=0;i<256*224;++i) pixels+=image[i]!=0;assert(pixels>100);

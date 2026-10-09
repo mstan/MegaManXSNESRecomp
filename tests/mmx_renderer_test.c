@@ -1,4 +1,5 @@
 #include "mmx_renderer.h"
+#include "mmx_boss_rush.h"
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
 #include "mmx_knc_bugfix.h"
@@ -1277,4 +1278,21 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); return 0; }
+static void rush_results_page(void) {
+  memset(&ppu,0,sizeof(ppu));memset(ram,0,sizeof(ram));
+  ram[0xd1]=2;ram[0xd2]=ram[0xd3]=4;
+  ppu.inidisp=15;ppu.bgmode=1;ppu.cgram[0]=0x7fff;
+  ppu.screenEnabled[0]=16;ppu.oam[0]=0x4040;
+  for(int y=0;y<8;++y) ppu.vram[y]=255;
+  /* A faded white world and a live HUD sprite must both disappear. Retain
+   * the native font bitmap, with readable cyan independent of dead CGRAM. */
+  for(unsigned ch=32;ch<128;++ch) for(unsigned y=0;y<8;++y) ppu.vram[ch*8+y]=0xff00;
+  MmxBossRushStart(false,123);MmxBossRushFinish();capture();
+  MmxRenderView view={256,0,4.0/3.0};
+  assert(MmxRendererDraw(output,view,true));
+  for(unsigned y=0;y<224;++y) for(unsigned x=0;x<256;++x)
+    if(y<48 || y>=168 || x<32 || x>=224) assert((output[y*256+x]&0xffffff)==0);
+  assert((output[48*256+92]&0xffffff)==0x00ffff);
+  MmxBossRushReset();
+}
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); rush_results_page(); return 0; }
