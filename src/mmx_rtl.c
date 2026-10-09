@@ -868,6 +868,7 @@ void MmxDrawPpuFrame(void) {
 }
 
 void RunOneFrameOfGame(void) {
+  RtlSetPadState(0,MmxBossRushFilterInput(RtlGetPadState(0)));
   s_graphics_frame_start = g_cpu.master_cycles;
   s_graphics_frame_active = g_did_reset;
 #if !MMX_VARIANT_JP

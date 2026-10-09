@@ -68,6 +68,11 @@ static void actor_hook(CpuState *cpu,uint32_t pc) {
 static void boss_hook(CpuState *cpu,uint32_t pc) {
   MmxBossRushState s=MmxBossRushGetState();int owner=MmxBossRushOwner(cpu->D);
   unsigned at=pc&0x7fffff;
+  if(at==0x00e68e && s.mode==MMX_RUSH_LOADING && s.stage_started && !s.return_title) {
+    /* Stage initialization clears the checkpoint after the title callback.
+     * Select it when the native checkpoint table is actually read. */
+    g_ram[0x1f81]=2;g_ram[0x1f82]=0;
+  }
   if(at==0x0094d9 && s.return_title) {
     MmxBossRushReset();MmxCoopReset();
     memset(g_ram+0xd1,0,4);
@@ -82,15 +87,26 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     g_ram[0x1f7a]=8;g_ram[0x1f81]=2;g_ram[0x1f82]=0;
     equipment(g_ram);s.stage_started=1;MmxBossRushSetState(&s);
   }
+  if(at==0x00dc36 && (playing() || s.mode==MMX_RUSH_PREPARING)) {
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xdcda);return;
+  }
   if(!playing()) return;
   if(at==0x009ac7) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x9ad9);return;}
-  /* Stage event scans and camera follow cannot introduce an unrelated actor
-   * or move this room. Their entry/return frames remain native and balanced. */
-  if(at==0x00dc36) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xdcda);return;}
   if(owner<0) return;
+  if(at==0x048fca) {
+    /* Boss art is decoded privately per pose. Its native DMA would read the
+     * Penguin stage's staging buffer and overwrite X/weapon/other boss CHR. */
+    g_ram[cpu->D+0x17]&=127;
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x9085);return;
+  }
+  if(at==0x048fad) {
+    /* Keep palette-controller timing, but do not replace shared CGRAM. This
+     * point precedes PHD; $8FC7 unwinds the existing DB/status frames. */
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x8fc7);return;
+  }
   if(s.bosses[owner].id==7 && s.bosses[owner].phase==MMX_RUSH_ENTERING) {
     if(at==0x079258) {
-      put(g_ram+cpu->D+5,144);put(g_ram+cpu->D+8,160);
+      put(g_ram+cpu->D+5,s.camera_x+144);put(g_ram+cpu->D+8,s.camera_y+160);
     }
     /* The factory waits for a player to walk under the entrance platform.
      * In this fixed room the arrival starts independently of that distance. */
@@ -106,8 +122,8 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
      * through combat/hurt/death between the host's end-of-frame observations. */
     if(s.bosses[owner].object==cpu->D && s.bosses[owner].phase!=MMX_RUSH_DYING) {
       s.bosses[owner].phase=MMX_RUSH_FIGHTING;s.bosses[owner].health=0;
-      s.bosses[owner].death_x=(int16_t)word(g_ram+cpu->D+5);
-      s.bosses[owner].death_y=(int16_t)word(g_ram+cpu->D+8);
+      s.bosses[owner].death_x=(int16_t)(word(g_ram+cpu->D+5)-s.camera_x);
+      s.bosses[owner].death_y=(int16_t)(word(g_ram+cpu->D+8)-s.camera_y);
       MmxBossRushSetState(&s);MmxBossRushDefeat((unsigned)owner);
     }
     /* Retail death starts a global freeze, palette flash and victory task.
@@ -125,7 +141,8 @@ void MmxBossRushHostFrame(void) {
   const unsigned actors[]={0xd4f6,0xd4f9,0xd515,0xd522,0xd499,0xd49c,0xd4b8,0xd4c5,0xd359,0xd35c};
   for(unsigned i=0;i<sizeof(actors)/sizeof(*actors);++i)
     registered&=interp_bridge_add_pre_opcode_hook(actors[i],actor_hook);
-  const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,0x9ac7,0xdc36,0x94d9,0x879258,0x879276};
+  const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,
+    0x848fca,0x848fad,0x9ac7,0xdc36,0x94d9,0xe68e,0x879258,0x879276};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
   static bool warned;
@@ -145,52 +162,39 @@ static void equipment(uint8_t *r) {
   r[0x1f80]=0; /* No spare-life re-entry. */
 }
 static void load(uint8_t *r,bool coop) {
+  uint16_t held=MmxBossRushGetState().input;
   MmxBossRushStart(coop,0x4d4d5852u);MmxCoopReset();
+  MmxBossRushState s=MmxBossRushGetState();s.input=held;
+  s.menu_input=held&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y);
+  MmxBossRushSetState(&s);
   if(title(r)) {
-    /* Let the native title selection/fade finish. The mode loop at $94D9
-     * launches the arena only after that coroutine has returned. */
-    r[0x3c]=0;put(r+0xbb0,166);r[0xac]=0x10;
+    /* Enter the native confirmation/fade state without its buster script
+     * ($92B0). Keep the fourth row visible until the title fades out. */
+    MmxBossRushState s=MmxBossRushGetState();s.menu=1;s.selection=3;
+    MmxBossRushSetState(&s);
+    r[0x3c]=0;r[0x39]=4;r[0x3b]=0;r[0xc01]=0;
+    memset(r+0xac,0,4);put(r+0xbb0,214);
   }
 }
-static bool arena(uint8_t *r) {
+uint16_t MmxBossRushFilterInput(uint16_t input) {
+  MmxBossRushState s=MmxBossRushGetState();
+  if(s.mode!=MMX_RUSH_OFF && s.mode!=MMX_RUSH_FINISHED && s.menu_input) {
+    /* Confirmation is consumed until released, including a long hold across
+     * the fade/arrival. Store the release gate in snapshot-owned state. */
+    s.menu_input&=input;MmxBossRushSetState(&s);input&=~s.menu_input;
+  }
+  return input;
+}
+static bool prepare(uint8_t *r) {
   if(!g_snes || !g_snes->cart) return false;
-  const uint8_t *rom=g_snes->cart->rom;size_t size=g_snes->cart->romSize;
-  unsigned table=word(r+0xb92)|(r[0xb94]<<16);
-  int empty=-1,solid=-1;
-  /* Select actual loaded metatiles, preserving the native collision and
-   * background formats. No binary ROM or editor-generated ROM is shipped. */
-  for(unsigned p=0x2000;p<0xe000;p+=2) {
-    unsigned tile=word(r+p),address=table+tile;
-    if((address&65535)<0x8000) continue;
-    size_t off=((address>>16)&127)*32768+(address&32767);
-    if(off>=size) continue;
-    unsigned type=rom[off]&63;
-    if(!type && empty<0) empty=(int)tile;
-    if((type==0x13 || type==0x3b) && solid<0) solid=(int)tile;
-  }
-  if(empty<0 || solid<0) return false;
-  MmxBossRushState s=MmxBossRushGetState();s.empty_tile=(uint16_t)empty;s.solid_tile=(uint16_t)solid;
-  /* Preserve the final screen for presentation; screen zero owns the
-   * independent, flat collision arena. The native room begins at $1E00,$0100. */
-  s.camera_x=0x1e00;s.camera_y=0x100;s.loaded=1;s.mode=MMX_RUSH_PLAYING;
-  r[0xe800]=0;
-  for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x)
-    put(r+0x2000+y*32+x*2,(y==0 || y>=12 || x==0 || x==15)?solid:empty);
-  memset(r+0xe18,0,0x1d08-0xe18);memset(r+0x1f0c,0,0x40);
-  put(r+0xbad,80);put(r+0xbb0,176);put(r+0xbca,80);put(r+0xbcc,176);
-  r[0xba9]=2;r[0xbaa]=r[0xbab]=r[0xc16]=0;
-  r[0xbac]=r[0xbaf]=r[0xc0c]=0;put(r+0xbc2,0);put(r+0xbc4,0);
-  r[0xbd3]=4;
+  /* Checkpoint 2 already spawns at $1D80,$0100 between the two doors.
+   * Preserve its native arrival, room map, collision and camera. */
+  MmxBossRushState s=MmxBossRushGetState();
+  s.camera_x=0x1e00;s.camera_y=0x100;s.loaded=1;s.mode=MMX_RUSH_PREPARING;s.menu=0;
+  /* The stage scanner normally supplies the boss-door marker. Rush skips
+   * its stock encounter, but the native door still needs it for boss music. */
+  r[0x1f26]=0xff;r[0x1fa0]=0;
   equipment(r);
-  /* Populate the native animation -> tile/palette bindings as well as the
-   * compositor's private art. The room's stage does not load the other bosses. */
-  for(unsigned kind=1;kind<=0x68;++kind) {
-    size_t p=0x325e4+(kind-1)*2;if(p+2>size) break;
-    unsigned stage=8;
-    for(unsigned id=0;id<8;++id) if(kMmxBossRushBosses[id].kind==kind) stage=kMmxBossRushBosses[id].stage;
-    const MmxSpriteAsset *a=MmxRenderAssetsRushSprite(stage,rom[p]);
-    if(a) {r[0x18200+rom[p+1]]=a->tile_base;r[0x18300+rom[p+1]]=a->attributes;}
-  }
   MmxBossRushSetState(&s);
   if(MmxCoopEnabled()) {
     MmxCoopInitialize(r);MmxCoopCapture(r);MmxCoopState c=MmxCoopGetState();
@@ -201,7 +205,7 @@ static bool arena(uint8_t *r) {
       c.players[i].body[0x27]=0xa0;c.players[i].body[2]=c.players[i].body[3]=0;
       c.players[i].zero.hp[0]=c.players[i].zero.hp[1]=32;
       c.players[i].zero.hp_max=32;c.players[i].zero.hp_valid=1;
-      c.players[i].zero.swap_phase=0;put(c.players[i].body+5,64+i*32);put(c.players[i].body+8,176);
+      c.players[i].zero.swap_phase=0;put(c.players[i].body+5,word(r+0xbad)-16+i*32);
       for(unsigned n=1;n<16;n+=2) c.players[i].energy[n]=28;
     }
     /* Select captures the outgoing body before projecting another seat.
@@ -212,8 +216,11 @@ static bool arena(uint8_t *r) {
   return true;
 }
 static void camera(uint8_t *r) {
-  put(r+0x1e4d,0);put(r+0x1e50,0);
-  for(unsigned a=0x1e56;a<=0x1e62;a+=2) put(r+a,0);
+  MmxBossRushState s=MmxBossRushGetState();
+  put(r+0x1e4d,s.camera_x);put(r+0x1e50,s.camera_y);
+  put(r+0x1e56,s.camera_x);put(r+0x1e58,s.camera_x);
+  put(r+0x1e5a,s.camera_y);put(r+0x1e5c,s.camera_y);
+  put(r+0x1e5e,s.camera_x);put(r+0x1e60,s.camera_x);put(r+0x1e62,s.camera_y);
 }
 void MmxBossRushFrame(uint8_t *r,uint16_t input) {
 #if MMX_VARIANT_JP
@@ -251,9 +258,10 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
   MmxBossRushSetState(&s);
   if(s.mode==MMX_RUSH_LOADING) {
     if(r[0xd1]==2 && r[0xd2]==4 && r[0xd3]==4 && r[0xba9]==2 &&
-        r[0xbaa]!=14 && !r[0xc0c] && !r[0xc16]) arena(r);
+        r[0xbaa]!=14 && !r[0xc0c] && !r[0xc16]) prepare(r);
     return;
   }
+  if(s.mode==MMX_RUSH_PREPARING) return;
   camera(r);
   if(r[0xd3]==4 && !r[0x1f19] && !MmxWeaponsMenuVisible(r) && !MmxCoopGetState().menu_owner) {
     for(unsigned i=0;i<2;++i) {
@@ -277,15 +285,29 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
         if(!object) continue;
         int id=MmxBossRushNextBoss();if(id<0) continue;
         if(!MmxBossRushAssign(i,(unsigned)id,(uint16_t)object)) continue;
+        s=MmxBossRushGetState();
+        for(unsigned n=0;n<sizeof(globals)/sizeof(*globals);++n)
+          s.bosses[i].globals[n]=r[globals[n]];
+        MmxBossRushSetState(&s);
         memset(r+object,0,64);r[object]=0x81;r[object+10]=kMmxBossRushBosses[id].kind;
-        unsigned y=id==4?43:96; /* Kuwanger's entrance traverses 128 px down. */
-        put(r+object+5,144+i*48);put(r+object+8,y);put(r+object+0x22,144+i*48);put(r+object+0x24,y);
+        unsigned x=s.camera_x+144+i*48,y=s.camera_y+(id==4?43:96);
+        put(r+object+5,x);put(r+object+8,y);put(r+object+0x22,x);put(r+object+0x24,y);
       }
     }
   }
 #endif
 }
 void MmxBossRushAfterFrame(uint8_t *r) {
+  if(MmxBossRushGetState().mode==MMX_RUSH_PREPARING) {
+    /* The second native door owns its scroll, close animation and boss
+     * music. Begin after it releases the player's door action. */
+    if(word(r+0x1e4d)==0x1e00 && word(r+0xbad)>=0x1e20 &&
+        r[0xbaa]!=0x1a && r[0xbaa]!=0x18 && !r[0xc16]) {
+      MmxBossRushState s=MmxBossRushGetState();s.mode=MMX_RUSH_PLAYING;
+      MmxBossRushSetState(&s);
+    }
+    return;
+  }
   if(!playing()) return;
   MmxBossRushState s=MmxBossRushGetState();
   for(unsigned i=0;i<2;++i) {
@@ -298,17 +320,24 @@ void MmxBossRushAfterFrame(uint8_t *r) {
         (native==6 || !r[b->object]))) hp=0;
     b->health=(uint8_t)(hp>32?32:hp);
     if(b->phase==MMX_RUSH_FIGHTING && !b->health) {
-      b->death_x=(int16_t)word(r+b->object+5);b->death_y=(int16_t)word(r+b->object+8);
+      b->death_x=(int16_t)(word(r+b->object+5)-s.camera_x);
+      b->death_y=(int16_t)(word(r+b->object+8)-s.camera_y);
     }
   }
   MmxBossRushSetState(&s);
   for(unsigned i=0;i<2;++i) if(s.bosses[i].phase==MMX_RUSH_FIGHTING && !s.bosses[i].health)
     MmxBossRushDefeat(i);
   bool alive=(r[0xbcf]&127)!=0;
+  bool death_complete=r[0xbaa]==12 && r[0xbab]>=6;
   if(s.coop) {
     MmxCoopCapture(r);MmxCoopState c=MmxCoopGetState();alive=false;
-    for(unsigned i=0;i<2;++i) alive|=c.players[i].status==MMX_COOP_ALIVE && (c.players[i].body[0x27]&127);
+    death_complete=true;
+    for(unsigned i=0;i<2;++i) {
+      const MmxCoopPlayer *p=&c.players[i];
+      alive|=p->status==MMX_COOP_ALIVE && (p->body[0x27]&127);
+      death_complete&=p->status!=MMX_COOP_ALIVE || (p->body[2]==12 && p->body[3]>=6);
+    }
   }
-  if(!alive) MmxBossRushFinish();
+  if(!alive && death_complete) MmxBossRushFinish();
   camera(r);put(r+0x1f0e,0);
 }

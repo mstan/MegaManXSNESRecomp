@@ -19,7 +19,7 @@ bool MmxBossRushActive(void) {return state.mode!=MMX_RUSH_OFF;}
 bool MmxBossRushCoop(void) {return state.mode==MMX_RUSH_OFF || state.coop!=0;}
 MmxBossRushState MmxBossRushGetState(void) {return state;}
 bool MmxBossRushValidState(const MmxBossRushState *s) {
-  if(!s || s->mode>MMX_RUSH_FINISHED || s->coop>1 || s->loaded>1 || s->queued>8 ||
+  if(!s || s->mode>MMX_RUSH_PREPARING || s->coop>1 || s->loaded>1 || s->queued>8 ||
       s->menu>2 || s->selection>3 || s->result_selection>1 || s->actor>2 ||
       s->stage_started>1 || s->return_title>1) return false;
   if(s->mode!=MMX_RUSH_OFF && !s->random) return false;

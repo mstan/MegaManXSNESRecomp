@@ -11,9 +11,12 @@ typedef struct MmxSpriteAsset {
 } MmxSpriteAsset;
 
 void MmxRenderAssetsSetRom(const uint8_t *rom, size_t size);
+void MmxRenderAssetsPreloadRush(void);
 const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, unsigned sprite);
 /* Private residency for cross-stage boss/child actors in the rush arena. */
 const MmxSpriteAsset *MmxRenderAssetsRushSprite(unsigned stage,unsigned sprite);
+const MmxSpriteAsset *MmxRenderAssetsRushObjectSprite(const uint8_t ram[0x20000],
+    unsigned object,unsigned stage,unsigned sprite);
 const MmxSpriteAsset *MmxRenderAssetsCaptiveZero(void);
 /* Original X1 body/beam CHR and blue palette, decoded without touching VRAM. */
 const MmxSpriteAsset *MmxRenderAssetsTeleportX(unsigned pose);

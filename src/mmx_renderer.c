@@ -130,6 +130,7 @@ static const uint8_t *rom_at(unsigned address, size_t length) {
 }
 void MmxRendererSetRom(const uint8_t *bytes, size_t length) {
   rom = bytes; rom_size = length; MmxRenderAssetsSetRom(bytes, length);
+  MmxRenderAssetsPreloadRush();
 }
 void MmxRendererReset(void) {
   memset(&frame_zero, 0, sizeof(frame_zero));
@@ -635,7 +636,8 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   if ((sc & 1) && (tx & 32)) a += 1024;
   if ((sc & 2) && (ty & 32)) a += (sc & 1) ? 2048 : 1024;
   uint16_t tile = r->vram[a & 0x7fff];
-  if(!stage && layer==2 && frame_rush.mode==MMX_RUSH_OFF && frame_rush.menu) {
+  if(!stage && layer==2 && frame_rush.menu && (frame_rush.mode==MMX_RUSH_OFF ||
+      (frame_rush.mode==MMX_RUSH_LOADING && !frame_rush.stage_started))) {
     /* Native title lettering is ASCII-indexed BG3 CHR. Keep its spacing,
      * cyan/orange palettes, raster brightness and priority for all four rows. */
     if((ty==20 || ty==22 || ty==24) && tx>=10 && tx<21)
@@ -649,7 +651,7 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
     tile = weapon_menu_tile(tx, ty, tile);
   }
   if (stage && size == 8 && layer < 2 && !slime_surface &&
-      (frame_rush.loaded || x < 0 || x >= 256 || view_dx || view_dy)) {
+      (x < 0 || x >= 256 || view_dx || view_dy)) {
     int wx, wy;
     if (layer == 0) {
       wx = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e4d), p->hScroll[0]) + view_dx + x;
@@ -742,14 +744,6 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       }
     }
     uint16_t mapped;
-    if(frame_rush.loaded) {
-      /* The enclosed Penguin room is copied to the arena's origin. Its
-       * backing plane and palette still belong to the original final screen. */
-      wx=x<0?0:x>255?255:x;wy=y;
-      if(layer==0) {wx+=frame_rush.camera_x;wy+=frame_rush.camera_y;}
-      else {wx+=0xf00;wy+=0x280;}
-      asset_x=frame_rush.camera_x;
-    }
     if (MmxRendererStageTile(frame.ram, layer, wx, wy, &mapped)) {
       tile = mapped; px = wx; py = wy;
       /* These backdrops move at half speed. Express the map column as the player
@@ -768,7 +762,6 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
        * The complete ship resources are resident; retain its live binding. */
       if (layer == 1 && frame.ram[0x1f7a] == 0 && frame.ram[0x1e89] == 0x0c)
         asset_x = -1;
-      if(frame_rush.loaded) asset_x=frame_rush.camera_x;
     }
   }
   int cx = px & (size - 1), cy = py & (size - 1);
@@ -1420,7 +1413,11 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     const MmxSpriteAsset *a = MmxRenderAssetsObjectSprite(frame.ram, s->object, s->animation);
     if(frame_rush.mode==MMX_RUSH_PLAYING && s->object>=0xe68 && s->object<0x1d08) {
       unsigned owner=frame_rush.owner[(s->object-0xe68)/32];
-      if(owner && owner<=2) a=MmxRenderAssetsRushSprite(kMmxBossRushBosses[frame_rush.bosses[owner-1].id].stage,s->animation);
+      if(owner && owner<=2) {
+        const MmxSpriteAsset *private=MmxRenderAssetsRushObjectSprite(frame.ram,s->object,
+            kMmxBossRushBosses[frame_rush.bosses[owner-1].id].stage,s->animation);
+        if(private) a=private;
+      }
     }
     /* OBJ palette 0 is the shared hit flash. If the current CHR binding
      * still matches, that deliberate palette change must remain live. */
@@ -1515,6 +1512,11 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
        * when substituting art, including a missing section's resource. */
       unsigned attr = asset ? (s.attr & 0xf000) | ((asset->attributes & 15) << 8) |
           (asset->live_tiles ? s.attr & 255 : 0) : s.attr;
+      /* Cross-stage actors have no live allocation. Their resource supplies
+       * the native priority as well as CHR/palette; retain authored flips. */
+      if(asset && frame_rush.mode==MMX_RUSH_PLAYING && s.object>=0xe68 && s.object<0x1d08 &&
+          frame_rush.owner[(s.object-0xe68)/32])
+        attr=(attr&~0x3000u)|((asset->attributes&0x30)<<8);
       if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
       if (zero_armor || swap_actor || triad_armor || frozen_enemy) continue;
       if (zero_charge && MmxZeroHasChargeArt() && !frame.ram[0xbdb] && !weapon_item) continue;

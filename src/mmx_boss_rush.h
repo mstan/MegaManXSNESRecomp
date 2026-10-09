@@ -3,7 +3,8 @@
 #include <stdint.h>
 
 enum { MMX_RUSH_BOSSES=8, MMX_RUSH_SEATS=2, MMX_RUSH_HP=32 };
-enum { MMX_RUSH_OFF, MMX_RUSH_LOADING, MMX_RUSH_PLAYING, MMX_RUSH_FINISHED };
+enum { MMX_RUSH_OFF, MMX_RUSH_LOADING, MMX_RUSH_PLAYING, MMX_RUSH_FINISHED,
+  MMX_RUSH_PREPARING };
 enum { MMX_RUSH_EMPTY, MMX_RUSH_ENTERING, MMX_RUSH_FIGHTING, MMX_RUSH_DYING };
 typedef struct MmxBossRushBoss {
   uint16_t object, ticks;
@@ -46,6 +47,7 @@ int MmxBossRushOwner(unsigned object);
 void MmxBossRushSetOwner(unsigned object, int owner);
 /* Runtime integration is USA-only; the state machine itself needs no ROM. */
 void MmxBossRushHostFrame(void);
+uint16_t MmxBossRushFilterInput(uint16_t input);
 void MmxBossRushFrame(uint8_t ram[0x20000], uint16_t input);
 void MmxBossRushAfterFrame(uint8_t ram[0x20000]);
 void MmxBossRushDraw(uint32_t *pixels,int width,int extra,const MmxBossRushState *state);

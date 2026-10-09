@@ -38,6 +38,11 @@ static void rush_projectile_defeat(unsigned seat,unsigned weapon) {
 }
 static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,size_t cap) {
   const char *coop_assets=getenv("MMX_BOSS_RUSH_COOP");
+  const char *zero_assets=getenv("MMX_BOSS_RUSH_ZERO");
+  if(zero_assets) {
+    check(MmxZeroLoad(zero_assets),"Add Zero source assets load");MmxZeroRegisterHooks();
+    MmxZeroState zero=MmxZeroGetState();zero.active_x=1;MmxZeroSetState(zero);
+  }
   if(coop_assets) {
     check(MmxZeroLoad(coop_assets),"co-op source assets load");MmxZeroRegisterHooks();
     check(MmxCoopEnable(MMX_COOP_X),"co-op configuration starts as X");
@@ -51,14 +56,25 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   for(unsigned n=0;n<3;++n) {frame(SNES_PAD_DOWN);zero_replay(12);}
   check(MmxBossRushGetState().selection==3,"fourth title option is navigable");
   check(MmxRendererSaveCapture("rush-title.cap"),"fourth title entry capture saves");
-  frame(SNES_PAD_START);frame(0);
+  frame(SNES_PAD_Y);frame(SNES_PAD_Y);
+  check(MmxRendererSaveCapture("rush-confirm.cap"),"confirmation keeps the selected fourth row");
   check(MmxBossRushGetState().mode==MMX_RUSH_LOADING,"Boss Rush starts directly without a mode submenu");
   check(MmxBossRushGetState().coop==(coop_assets!=NULL),"Boss Rush respects the configured co-op mod");
-  for(unsigned t=0;t<1800 && MmxBossRushGetState().mode==MMX_RUSH_LOADING;++t) frame(0);
-  fprintf(stderr,"rush load mode=%u stage=%u game=%u/%u/%u player=%u camera=%u/%u\n",
-      MmxBossRushGetState().mode,g_ram[0x1f7a],g_ram[0xd1],g_ram[0xd2],g_ram[0xd3],
-      g_ram[0xba9],g_ram[0x1e4d]|g_ram[0x1e4e]<<8,g_ram[0x1e50]|g_ram[0x1e51]<<8);
-  check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"title selection loads the universal arena");
+  for(unsigned t=0;t<1800 && MmxBossRushGetState().mode==MMX_RUSH_LOADING;++t) frame(SNES_PAD_Y);
+  fprintf(stderr,"rush load mode=%u stage=%u checkpoint=%u/%u game=%u/%u/%u player=%u action=%u:%u xy=%u,%u camera=%u/%u\n",
+      MmxBossRushGetState().mode,g_ram[0x1f7a],g_ram[0x1f81],g_ram[0x1f82],g_ram[0xd1],g_ram[0xd2],g_ram[0xd3],
+      g_ram[0xba9],g_ram[0xbaa],g_ram[0xbab],g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbb0]|g_ram[0xbb1]<<8,
+      g_ram[0x1e4d]|g_ram[0x1e4e]<<8,g_ram[0x1e50]|g_ram[0x1e51]<<8);
+  check(MmxBossRushGetState().mode==MMX_RUSH_PREPARING,"title selection starts between Penguin's doors");
+  check((g_ram[0xbad]|g_ram[0xbae]<<8)>=0x1d00 &&
+      (g_ram[0xbad]|g_ram[0xbae]<<8)<0x1e00,"player arrives in the native preparation corridor");
+  check(MmxRendererSaveCapture("rush-preparation.cap"),"preparation corridor capture saves");
+  for(unsigned t=0;t<30;++t) frame(SNES_PAD_Y);
+  for(unsigned d=0x1228;d<0x1428;d+=64) check(!g_ram[d],"held confirmation does not fire a weapon");
+  zero_replay(180);
+  check(MmxBossRushGetState().mode==MMX_RUSH_PREPARING &&
+      !MmxBossRushGetState().bosses[0].phase && !MmxBossRushGetState().bosses[1].phase,
+      "preparation waits for the second door before spawning bosses");
   check(g_ram[0x1f9a]==32 && g_ram[0x1f99]==255,"run starts fully upgraded");
   for(unsigned i=0;i<4;++i) check((g_ram[0x1f83+i]&127)==28,"shared subtank starts full");
   for(unsigned i=0;i<8;++i) check(g_ram[0x1f88+i*2]==0xdc,"X1 weapon starts owned and full");
@@ -69,13 +85,21 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
         "both co-op players start alive");
     check((c.players[0].body[0x27]&127)==32 && (c.players[1].body[0x27]&127)==32,"both co-op players start at maximum health");
   }
+  for(unsigned t=0;t<1200 && MmxBossRushGetState().mode==MMX_RUSH_PREPARING;++t) frame(SNES_PAD_RIGHT);
+  fprintf(stderr,"rush door mode=%u camera=%u player=%u action=%u:%u lock=%u flags=%u/%u/%u section=%u\n",
+      MmxBossRushGetState().mode,g_ram[0x1e4d]|g_ram[0x1e4e]<<8,
+      g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbaa],g_ram[0xbab],g_ram[0xc16],
+      g_ram[0x1f23],g_ram[0x1f26],g_ram[0x1f13],g_ram[0x1f08]);
+  check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");
   size_t baseline=RtlSaveSnapshotToMemory(start,cap);check(baseline!=0,"arena snapshot saves");
   unsigned before=g_ram[0xbad]|g_ram[0xbae]<<8;
+  MmxCoopState before_coop=MmxCoopGetState();
+  unsigned partner_before=before_coop.players[1].body[5]|before_coop.players[1].body[6]<<8;
   for(unsigned t=0;t<8;++t) frame(SNES_PAD_RIGHT|(coop_assets?SNES_PAD_LEFT<<12:0));
   check((g_ram[0xbad]|g_ram[0xbae]<<8)>before,"player moves while bosses enter");
   if(coop_assets) {
     MmxCoopState c=MmxCoopGetState();
-    check((c.players[1].body[5]|c.players[1].body[6]<<8)<96,"partner uses port 2 while bosses enter");
+    check((c.players[1].body[5]|c.players[1].body[6]<<8)<partner_before,"partner uses port 2 while bosses enter");
   }
   check(RtlLoadSnapshotFromMemory(start,baseline),"restore arena after input check");
   for(unsigned a=0;a<8;++a) for(unsigned b=a+1;b<8;++b) {
@@ -153,19 +177,24 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
         "replacement is a new distinct boss and death counts once");
   }
   if(coop_assets) {
-    MmxCoopState c=MmxCoopGetState();c.players[0].body[0x27]=128;c.players[0].body[2]=12;
-    if(c.current==0) {g_ram[0xbcf]=128;g_ram[0xbaa]=12;}
+    MmxCoopState c=MmxCoopGetState();c.players[0].body[0x27]=128;c.players[0].body[2]=12;c.players[0].body[3]=0;
+    if(c.current==0) {g_ram[0xbcf]=128;g_ram[0xbaa]=12;g_ram[0xbab]=0;}
     MmxCoopSetState(&c);frame(0);
     check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"one co-op death leaves the run playing");
     c=MmxCoopGetState();
-    for(unsigned i=0;i<2;++i) {c.players[i].body[0x27]=128;c.players[i].body[2]=12;}
-    g_ram[0xbcf]=128;g_ram[0xbaa]=12;MmxCoopSetState(&c);frame(0);
-  } else {g_ram[0xbcf]=0;frame(0);}
+    for(unsigned i=0;i<2;++i) {c.players[i].body[0x27]=128;c.players[i].body[2]=12;c.players[i].body[3]=0;}
+    g_ram[0xbcf]=128;g_ram[0xbaa]=12;g_ram[0xbab]=0;MmxCoopSetState(&c);frame(0);
+  } else {g_ram[0xbcf]=128;g_ram[0xbaa]=12;g_ram[0xbab]=0;frame(0);}
+  check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"fatal damage lets the native death controller run");
+  zero_replay(40);
+  check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"results wait while native death orbs animate");
+  check(MmxRendererSaveCapture("rush-player-death.cap"),"native player death capture saves");
+  for(unsigned t=0;t<300 && MmxBossRushGetState().mode==MMX_RUSH_PLAYING;++t) frame(0);
   check(MmxBossRushGetState().mode==MMX_RUSH_FINISHED,"last player death ends the run");
   check(MmxRendererSaveCapture("rush-results.cap"),"results capture saves");
   frame(0);frame(SNES_PAD_START);frame(0);
   for(unsigned t=0;t<1800 && MmxBossRushGetState().mode==MMX_RUSH_LOADING;++t) frame(0);
-  check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING && !MmxBossRushGetState().defeated,"Retry starts a new full run");
+  check(MmxBossRushGetState().mode==MMX_RUSH_PREPARING && !MmxBossRushGetState().defeated,"Retry returns to preparation with a new full run");
   MmxBossRushFinish();frame(0);frame(SNES_PAD_DOWN);frame(0);frame(SNES_PAD_START);frame(0);
   for(unsigned t=0;t<1800 && !MmxBossRushGetState().menu;++t) frame(0);
   fprintf(stderr,"rush return mode=%u menu=%u pending=%u game=%u/%u/%u title=%u/%u xy=%u,%u\n",MmxBossRushGetState().mode,MmxBossRushGetState().menu,MmxBossRushGetState().return_title,g_ram[0xd1],g_ram[0xd2],g_ram[0xd3],g_ram[0x38],g_ram[0x39],g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbb0]|g_ram[0xbb1]<<8);

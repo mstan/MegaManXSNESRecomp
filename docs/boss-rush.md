@@ -7,6 +7,7 @@ The arena starts with full health, all native X1 weapons, maximum health and
 armor, and four full **shared** Sub Tanks; Hadouken is not acquired. There are no automatic refills or
 revivals. Two different Mavericks remain present, with each defeated boss
 replaced after cleanup. A run ends when its last player dies.
+The native player death animation finishes before results appear.
 
 Select **Boss Rush** beneath **Option Mode**. Enable the launcher's existing
 co-op mod and supply its X3 ROM to play together. Two native meters on the right
@@ -29,19 +30,27 @@ global victory/death effect is replaced by a local cleanup interval. Each
 boss's child actors belong to its encounter; cleanup preserves the other
 boss, its children, and both players' projectiles.
 
-The arena uses Chill Penguin's enclosed boss-room scenery, native metatile collision data and
-a fixed camera: walls at x=0/240, ceiling at y=0 and floor at y=192. Kuwanger
+The run loads Chill Penguin's last native checkpoint between the boss doors.
+Players can prepare weapons there; crossing the second door scrolls into the
+enclosed room and starts the encounter. The room retains native scenery,
+metatile collision data and its fixed camera. Kuwanger
 starts higher to finish his native downward entrance above that floor. Mammoth
 uses a fixed arrival position and bypasses the factory's player-distance gate;
 his native entrance animation and health-fill states still run.
 
-The title entry uses the native BG3 font and selection palettes. Boss meters
+The title entry uses the native BG3 font and selection palettes. Confirmation
+keeps the selected row through the native fade without its scripted buster
+shot; held confirmation buttons are consumed until released. Boss meters
 reuse the game's original frame, overlapping energy strips and skull footer;
 the counter, initials and results also use native font tiles. Weakness hits
 that immediately advance an arriving boss into a hurt/death state still count
 the defeat and schedule a replacement.
-Graphics use privately decoded cross-stage resources so loading another
-boss does not replace the first boss's art in the compositor.
+Graphics resources are decompressed once from the owner's ROM when it is
+assigned to the renderer and cached in process memory. Owned bosses render
+their own stage's resource, palette and pose DMA remapping privately. Their
+native shared OBJ uploads and palette copies are suppressed so cross-stage
+actors cannot overwrite X, weapons or another boss. No decoded graphics or
+ROM-derived cache files are distributed with the build.
 
 ## Disassembly references
 
