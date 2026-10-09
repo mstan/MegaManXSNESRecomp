@@ -1,15 +1,16 @@
 # Endless Boss Rush
 
-Boss Rush adds a fourth entry to the USA game's title menu. Select Solo or
-Co-op; co-op uses the existing X + Zero mod and its owner-supplied X3 assets.
+Boss Rush adds a fourth entry to the USA game's title menu. It starts directly
+in solo or co-op according to the launcher's existing X + Zero mod setting.
+Co-op uses that mod's owner-supplied X3 assets.
 The arena starts with full health, all native X1 weapons, maximum health and
 armor, and four full **shared** Sub Tanks; Hadouken is not acquired. There are no automatic refills or
 revivals. Two different Mavericks remain present, with each defeated boss
 replaced after cleanup. A run ends when its last player dies.
 
-Select **Boss Rush** beneath **Option Mode**, then select **Solo** or **Coop**.
-Enable the launcher's existing co-op mod and supply its X3 ROM before choosing
-Coop. Two meters on the right identify each boss by initials; the shared defeat
+Select **Boss Rush** beneath **Option Mode**. Enable the launcher's existing
+co-op mod and supply its X3 ROM to play together. Two native meters on the right
+identify each boss by initials; the shared defeat
 counter stays at the top. Results offer **Retry** and **Main Menu**.
 
 ## Runtime ownership
@@ -28,11 +29,17 @@ global victory/death effect is replaced by a local cleanup interval. Each
 boss's child actors belong to its encounter; cleanup preserves the other
 boss, its children, and both players' projectiles.
 
-The generic room uses fortress-stage art, native metatile collision data and
+The arena uses Chill Penguin's enclosed boss-room scenery, native metatile collision data and
 a fixed camera: walls at x=0/240, ceiling at y=0 and floor at y=192. Kuwanger
 starts higher to finish his native downward entrance above that floor. Mammoth
 uses a fixed arrival position and bypasses the factory's player-distance gate;
 his native entrance animation and health-fill states still run.
+
+The title entry uses the native BG3 font and selection palettes. Boss meters
+reuse the game's original frame, overlapping energy strips and skull footer;
+the counter, initials and results also use native font tiles. Weakness hits
+that immediately advance an arriving boss into a hurt/death state still count
+the defeat and schedule a replacement.
 Graphics use privately decoded cross-stage resources so loading another
 boss does not replace the first boss's art in the compositor.
 
@@ -74,15 +81,18 @@ Neither editor establishes that native boss controllers can coexist safely.
 ## Validation
 
 `mmx_boss_rush_test` exercises long replacement runs, duplicate exclusion,
-shuffle fairness, deterministic state restore, invalid state rejection and HUD
+shuffle fairness, deterministic state restore, invalid state rejection and overlay
 drawing without a ROM. Build `mmx_state_tests` with `MMX_STATE_TESTS=ON`, then
 set `MMX_BOSS_RUSH_TEST=1` and pass the verified USA ROM to run the title-menu,
 28-pair entrance, replacement, 600-frame combat and snapshot-replay checks in
 an empty private working directory. Add `MMX_BOSS_RUSH_COOP=<private Zero asset
 file>` to run those checks in local co-op, including one-player and team deaths.
 The same checks exercise Retry and Main Menu. The compatibility pass holds
-player HP full to isolate boss behavior; defeat/replacement checks inject boss
-HP=0. These checks do not establish gameplay balance or long-session stability.
+player HP full to isolate boss behavior. Each pair must create a new boss
+generation after cleanup. Additional checks use native Fire Wave and Homing
+Torpedo finishing hits against Penguin and Kuwanger (fixtures start at 1 HP),
+and cover entrance-to-hurt/death transitions. These checks do not establish
+gameplay balance or long-session stability.
 
 Online uses the existing co-op transport and serialized game state. Per the
 owner's direction, this feature relies on the engine's existing netplay

@@ -108,7 +108,7 @@ static bool zero_title_menu(void) {
   unsigned y = word(frame.ram,0xbb0);
   return MmxZeroEnabled() && !frame_zero.active_x && frame.ram[0xd1] == 0 && frame.ram[0xba9] == 2 &&
       frame.ram[0xbbe] == 0 && word(frame.ram,0xbad) == 32 &&
-      y >= 166 && y <= 198;
+      y >= 166 && y <= 214;
 }
 /* X1's buster charge cycles palette 1 in CGRAM itself while its sparkle
  * objects (class 1, $0C98..$0E17, $82:82ED) are live. The co-op weapon
@@ -635,12 +635,21 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   if ((sc & 1) && (tx & 32)) a += 1024;
   if ((sc & 2) && (ty & 32)) a += (sc & 1) ? 2048 : 1024;
   uint16_t tile = r->vram[a & 0x7fff];
+  if(!stage && layer==2 && frame_rush.mode==MMX_RUSH_OFF && frame_rush.menu) {
+    /* Native title lettering is ASCII-indexed BG3 CHR. Keep its spacing,
+     * cyan/orange palettes, raster brightness and priority for all four rows. */
+    if((ty==20 || ty==22 || ty==24) && tx>=10 && tx<21)
+      tile=(uint16_t)((tile&~0x1c00)|(((ty-20)/2==frame_rush.selection)?0x400:0));
+    if(ty==26 && tx>=10 && tx<19)
+      tile=(uint16_t)(0x2000|(frame_rush.selection==3?0x400:0)|"BOSS RUSH"[tx-10]);
+  }
   if (layer == 0 && !stage) {
     int icon = weapon_menu_icon(x, y);
     if (icon >= 0) { *private_color = icon; return 0x8001; }
     tile = weapon_menu_tile(tx, ty, tile);
   }
-  if (stage && size == 8 && layer < 2 && !slime_surface && (x < 0 || x >= 256 || view_dx || view_dy)) {
+  if (stage && size == 8 && layer < 2 && !slime_surface &&
+      (frame_rush.loaded || x < 0 || x >= 256 || view_dx || view_dy)) {
     int wx, wy;
     if (layer == 0) {
       wx = MmxDisplay_ExpandStageScroll((uint16_t)word(frame.ram, 0x1e4d), p->hScroll[0]) + view_dx + x;
@@ -733,6 +742,14 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
       }
     }
     uint16_t mapped;
+    if(frame_rush.loaded) {
+      /* The enclosed Penguin room is copied to the arena's origin. Its
+       * backing plane and palette still belong to the original final screen. */
+      wx=x<0?0:x>255?255:x;wy=y;
+      if(layer==0) {wx+=frame_rush.camera_x;wy+=frame_rush.camera_y;}
+      else {wx+=0xf00;wy+=0x280;}
+      asset_x=frame_rush.camera_x;
+    }
     if (MmxRendererStageTile(frame.ram, layer, wx, wy, &mapped)) {
       tile = mapped; px = wx; py = wy;
       /* These backdrops move at half speed. Express the map column as the player
@@ -751,6 +768,7 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
        * The complete ship resources are resident; retain its live binding. */
       if (layer == 1 && frame.ram[0x1f7a] == 0 && frame.ram[0x1e89] == 0x0c)
         asset_x = -1;
+      if(frame_rush.loaded) asset_x=frame_rush.camera_x;
     }
   }
   int cx = px & (size - 1), cy = py & (size - 1);
@@ -1288,6 +1306,34 @@ static void coop_hud_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView view
     }
   }
 }
+static void rush_hud_row(const Ppu *p,const Raster *r,int y,MmxRenderView view,
+                         uint16_t *objects,int *colors) {
+  for(unsigned i=0;i<2;++i) {
+    const MmxBossRushBoss *b=&frame_rush.bosses[i];if(!b->phase) continue;
+    int x=view.width-view.extra-40+(int)i*16;
+    coop_meter_row(p,r,y,view,objects,colors,x,b->health,32,2,NULL,80,false);
+    /* $D94A's native boss footer, rather than the player's X badge. */
+    sprite(p,r,x,80,0x34aa,16,y,view,objects,false,NULL,0xaa,colors,true,false,false);
+  }
+}
+static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const char *s,unsigned palette) {
+  for(int row=0;row<8;++row) {
+    if(y+row<0 || y+row>=224) continue;
+    const Raster *r=&frame.lines[y+row];Ppu p={0};memcpy(&p,r->registers,sizeof(r->registers));
+    if(p.inidisp&128) continue;
+    for(unsigned n=0;s[n];++n) for(int col=0;col<8;++col) {
+      int dx=x+(int)n*8+col;if(dx<0 || dx>=view.width) continue;
+      unsigned pixel=tile_pixel(r->vram,((p.bgTileAdr>>8)&15)*4096+(unsigned char)s[n]*8,col,row,2);
+      if(!pixel) continue;
+      unsigned color=r->palette[palette*4+pixel];uint32_t rgb=0;
+      for(unsigned c=0;c<3;++c) {
+        unsigned v=(color>>(c*5))&31;v=(v<<3)|(v>>2);v=v*(p.inidisp&15)/15;
+        rgb|=v<<(16-c*8);
+      }
+      out[(y+row)*view.width+dx]=rgb;
+    }
+  }
+}
 bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if (!out || !frame.valid || view.width < 256 || view.width > MMX_RENDER_MAX_WIDTH ||
       view.extra != (view.width - 256) / 2 || (view.width & 1)) return false;
@@ -1396,7 +1442,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     const Raster *r = &frame.lines[y]; Ppu p;
     memcpy(&p, r->registers, PPU_SAVESTATE_REGS_SIZE);
     if (beam_count) p.cgwsel = (p.cgwsel & 0xcf) | 0x20;
-    if ((p.bgmode & 7) != 1 || (!stage && !menu && !zero_title)) {
+    if ((p.bgmode & 7) != 1 || (!stage && !menu && !zero_title && !frame_rush.menu)) {
       memcpy(out + y * view.width + view.extra, frame.stock + y * 256, 256 * sizeof(*out));
       ++stats.fallback_lines; continue;
     }
@@ -1623,6 +1669,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     }
     if (swapping) teleport_actor_row(frame.ram,&frame_zero,&p,r,y,view,objects,object_colors);
     if(coop_hud) coop_hud_row(&p,r,y,view,hud,objects,object_colors);
+    if(stage && frame_rush.loaded) rush_hud_row(&p,r,y,view,objects,object_colors);
     for (int sx = 0; sx < view.width; ++sx) {
       int x = sx - view.extra;
       if (menu && (x < 0 || x >= 256)) { out[y * view.width + sx] = 0; continue; }
@@ -1659,5 +1706,18 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     }
   }
   MmxBossRushDraw(out,view.width,view.extra,&frame_rush);
+  if(frame_rush.mode==MMX_RUSH_PLAYING || frame_rush.mode==MMX_RUSH_FINISHED) {
+    char count[32];snprintf(count,sizeof(count),"DEFEATED %u",frame_rush.defeated);
+    rush_native_text(out,view,view.width/2-(int)strlen(count)*4,24,count,7);
+    static const char *const labels[]={"CP","SM","AA","LO","BK","SC","SE","FM"};
+    for(unsigned i=0;i<2;++i) if(frame_rush.bosses[i].phase)
+      rush_native_text(out,view,view.width-40+(int)i*16,96,labels[frame_rush.bosses[i].id],7);
+  }
+  if(frame_rush.mode==MMX_RUSH_FINISHED) {
+    rush_native_text(out,view,view.width/2-48,90,"RUN FINISHED",7);
+    rush_native_text(out,view,view.width/2-20,112,"RETRY",7);
+    rush_native_text(out,view,view.width/2-36,132,"MAIN MENU",7);
+    rush_native_text(out,view,view.width/2-60,frame_rush.result_selection?132:112,">",7);
+  }
   return true;
 }

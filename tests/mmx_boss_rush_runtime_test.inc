@@ -8,6 +8,34 @@ static void rush_keep_players_alive(void) {
     MmxCoopSetState(&c);
   }
 }
+static void rush_projectile_defeat(unsigned seat,unsigned weapon) {
+  MmxBossRushState s=MmxBossRushGetState();unsigned object=s.bosses[seat].object;
+  unsigned count=s.defeated;g_ram[object+0x27]=1;
+  g_ram[0xbdb]=(uint8_t)(weapon*2);
+  for(unsigned t=0;t<360 && MmxBossRushGetState().defeated==count;++t) {
+    /* Give a real native weapon projectile a guaranteed collision. Reducing
+     * the fixture to 1 HP saves time; the finishing hit and death are guest code. */
+    for(unsigned d=0x1228;d<0x1428;d+=64) if(g_ram[d]) {
+      memcpy(g_ram+d+5,g_ram+object+5,2);memcpy(g_ram+d+8,g_ram+object+8,2);
+      g_ram[d+4]=g_ram[d+7]=0;
+    }
+    if(MmxCoopEnabled()) MmxCoopCapture(g_ram);
+    frame(t%12==0?SNES_PAD_Y:0);rush_keep_players_alive();
+  }
+  s=MmxBossRushGetState();
+  fprintf(stderr,"rush lethal boss=%u count=%u native=%u:%u hp=%u gates=%u/%u/%u\n",
+      s.bosses[seat].id,s.defeated,g_ram[object+1],g_ram[object+2],g_ram[object+0x27],
+      g_ram[0xd3],g_ram[0x1f19],MmxCoopGetState().menu_owner);
+  if(s.defeated==count) {
+    fprintf(stderr,"lethal fixture player=%u:%u at=%u,%u weapon=%u input=%u flags=%u/%u/%u\n",
+      g_ram[0xbaa],g_ram[0xbab],g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbb0]|g_ram[0xbb1]<<8,
+      g_ram[0xbdb],g_ram[0xac],g_ram[0xc0c],g_ram[0xc16],g_ram[0x1f17]);
+    for(unsigned d=0x1228;d<0x1428;d+=64)
+      fprintf(stderr,"shot %x: %u:%u kind=%u at=%u,%u\n",d,g_ram[d],g_ram[d+1],g_ram[d+10],
+        g_ram[d+5]|g_ram[d+6]<<8,g_ram[d+8]|g_ram[d+9]<<8);
+  }
+  check(s.defeated==count+1,"native weapon finishing hit counts exactly one defeat");
+}
 static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,size_t cap) {
   const char *coop_assets=getenv("MMX_BOSS_RUSH_COOP");
   if(coop_assets) {
@@ -24,9 +52,8 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(MmxBossRushGetState().selection==3,"fourth title option is navigable");
   check(MmxRendererSaveCapture("rush-title.cap"),"fourth title entry capture saves");
   frame(SNES_PAD_START);frame(0);
-  check(MmxBossRushGetState().menu==2,"Boss Rush exposes solo and co-op selection");
-  if(coop_assets) {frame(SNES_PAD_DOWN);frame(0);}
-  frame(SNES_PAD_START);frame(0);
+  check(MmxBossRushGetState().mode==MMX_RUSH_LOADING,"Boss Rush starts directly without a mode submenu");
+  check(MmxBossRushGetState().coop==(coop_assets!=NULL),"Boss Rush respects the configured co-op mod");
   for(unsigned t=0;t<1800 && MmxBossRushGetState().mode==MMX_RUSH_LOADING;++t) frame(0);
   fprintf(stderr,"rush load mode=%u stage=%u game=%u/%u/%u player=%u camera=%u/%u\n",
       MmxBossRushGetState().mode,g_ram[0x1f7a],g_ram[0xd1],g_ram[0xd2],g_ram[0xd3],
@@ -74,6 +101,34 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
     check(s.bosses[0].health==32 && s.bosses[1].health==32,"both boss meters fill independently");
     char capture[40];snprintf(capture,sizeof(capture),"rush-pair-%u-%u.cap",a,b);
     check(MmxRendererSaveCapture(capture),"native boss pair capture saves");
+    if(a==0 && b==4) {
+      size_t pair_snapshot=RtlSaveSnapshotToMemory(expected,cap);
+      for(unsigned seat=0;seat<2;++seat) {
+        check(RtlLoadSnapshotFromMemory(expected,pair_snapshot),"restore weakness finishing-hit fixture");
+        uint32_t generation=MmxBossRushGetState().bosses[seat].generation;
+        rush_projectile_defeat(seat,seat?1:4);
+        for(unsigned t=0;t<60;++t) {frame(0);rush_keep_players_alive();}
+        check(MmxBossRushGetState().bosses[seat].phase && MmxBossRushGetState().defeated==1 &&
+            MmxBossRushGetState().bosses[seat].generation>generation,
+            "native weakness finishing hit replaces its boss");
+      }
+      check(RtlLoadSnapshotFromMemory(expected,pair_snapshot),"restore boss pair after native finishing hits");
+      s=MmxBossRushGetState();s.bosses[0].phase=MMX_RUSH_ENTERING;MmxBossRushSetState(&s);
+      g_ram[s.bosses[0].object+1]=8;MmxBossRushAfterFrame(g_ram);
+      check(MmxBossRushGetState().bosses[0].phase==MMX_RUSH_FIGHTING,
+          "entrance completion followed by a hit reaction still enters combat");
+      s=MmxBossRushGetState();s.bosses[0].phase=MMX_RUSH_ENTERING;MmxBossRushSetState(&s);
+      g_ram[s.bosses[0].object+1]=6;g_ram[s.bosses[0].object+0x27]=0;MmxBossRushAfterFrame(g_ram);
+      check(MmxBossRushGetState().defeated==1,"death after an unobserved combat state still counts once");
+      for(unsigned t=0;t<60;++t) {frame(0);rush_keep_players_alive();}
+      fprintf(stderr,"rush transition cleanup phase=%u ticks=%u actor=%u object=%x S=%x gates=%u/%u/%u\n",
+          MmxBossRushGetState().bosses[0].phase,MmxBossRushGetState().bosses[0].ticks,
+          MmxBossRushGetState().actor,MmxBossRushGetState().actor_object,MmxBossRushGetState().actor_s,
+          g_ram[0xd3],g_ram[0x1f19],MmxCoopGetState().menu_owner);
+      check(MmxBossRushGetState().bosses[0].phase!=MMX_RUSH_DYING,
+          "death after an unobserved combat state advances the queue");
+      check(RtlLoadSnapshotFromMemory(expected,pair_snapshot),"restore boss pair after entrance regression");
+    }
     if(!a && b==1) {
       for(unsigned t=0;t<180;++t) {frame(t%12==0?SNES_PAD_Y:0);rush_keep_players_alive();}
       s=MmxBossRushGetState();
@@ -87,12 +142,15 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
     frame(0);size_t an=RtlSaveSnapshotToMemory(expected,cap);
     same(actual,en,expected,an,"boss pair replays deterministically");
     s=MmxBossRushGetState();unsigned survivor=s.bosses[1].object,id=s.bosses[1].id;
+    uint32_t generation=s.bosses[0].generation;
     g_ram[s.bosses[0].object+0x27]=0;frame(0);
     check(MmxBossRushGetState().defeated==1,"one defeat increments the counter once");
     for(unsigned t=0;t<60;++t) {frame(0);rush_keep_players_alive();}
     s=MmxBossRushGetState();
     check(s.bosses[1].object==survivor && s.bosses[1].id==id && g_ram[survivor],"replacement preserves the surviving boss");
-    check(s.bosses[0].phase && s.bosses[0].id!=id && s.defeated==1,"replacement is distinct and death counts once");
+    check(s.bosses[0].phase && s.bosses[0].phase!=MMX_RUSH_DYING &&
+        s.bosses[0].generation>generation && s.bosses[0].id!=id && s.defeated==1,
+        "replacement is a new distinct boss and death counts once");
   }
   if(coop_assets) {
     MmxCoopState c=MmxCoopGetState();c.players[0].body[0x27]=128;c.players[0].body[2]=12;

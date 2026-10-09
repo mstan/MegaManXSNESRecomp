@@ -78,7 +78,8 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
   }
   if(at==0x0094d9 && s.mode==MMX_RUSH_LOADING && !s.stage_started) {
     g_ram[0xd1]=2;g_ram[0xd2]=2;g_ram[0xd3]=g_ram[0xd4]=0;
-    g_ram[0x1f7a]=11;g_ram[0x1f81]=g_ram[0x1f82]=0;
+    /* Chill Penguin's third checkpoint loads the enclosed boss-room art. */
+    g_ram[0x1f7a]=8;g_ram[0x1f81]=2;g_ram[0x1f82]=0;
     equipment(g_ram);s.stage_started=1;MmxBossRushSetState(&s);
   }
   if(!playing()) return;
@@ -101,6 +102,14 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
   if(at==0x04a003 && s.bosses[owner].phase==MMX_RUSH_ENTERING) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xa00c);return;}
   if(at==0x04aadd) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xaaf3);return;}
   if(at==0x04a677) {
+    /* Observe the native death entry itself. A weakness reaction can advance
+     * through combat/hurt/death between the host's end-of-frame observations. */
+    if(s.bosses[owner].object==cpu->D && s.bosses[owner].phase!=MMX_RUSH_DYING) {
+      s.bosses[owner].phase=MMX_RUSH_FIGHTING;s.bosses[owner].health=0;
+      s.bosses[owner].death_x=(int16_t)word(g_ram+cpu->D+5);
+      s.bosses[owner].death_y=(int16_t)word(g_ram+cpu->D+8);
+      MmxBossRushSetState(&s);MmxBossRushDefeat((unsigned)owner);
+    }
     /* Retail death starts a global freeze, palette flash and victory task.
      * Rush owns its explosion interval; the boss's eventual removal is local. */
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xa6d2);return;
@@ -161,8 +170,10 @@ static bool arena(uint8_t *r) {
   }
   if(empty<0 || solid<0) return false;
   MmxBossRushState s=MmxBossRushGetState();s.empty_tile=(uint16_t)empty;s.solid_tile=(uint16_t)solid;
-  s.camera_x=s.camera_y=0;s.loaded=1;s.mode=MMX_RUSH_PLAYING;
-  memset(r+0xe800,0,1024);
+  /* Preserve the final screen for presentation; screen zero owns the
+   * independent, flat collision arena. The native room begins at $1E00,$0100. */
+  s.camera_x=0x1e00;s.camera_y=0x100;s.loaded=1;s.mode=MMX_RUSH_PLAYING;
+  r[0xe800]=0;
   for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x)
     put(r+0x2000+y*32+x*2,(y==0 || y>=12 || x==0 || x==15)?solid:empty);
   memset(r+0xe18,0,0x1d08-0xe18);memset(r+0x1f0c,0,0x40);
@@ -172,10 +183,10 @@ static bool arena(uint8_t *r) {
   r[0xbd3]=4;
   equipment(r);
   /* Populate the native animation -> tile/palette bindings as well as the
-   * compositor's private art. The arena's stage only loads half the refights. */
+   * compositor's private art. The room's stage does not load the other bosses. */
   for(unsigned kind=1;kind<=0x68;++kind) {
     size_t p=0x325e4+(kind-1)*2;if(p+2>size) break;
-    unsigned stage=11;
+    unsigned stage=8;
     for(unsigned id=0;id<8;++id) if(kMmxBossRushBosses[id].kind==kind) stage=kMmxBossRushBosses[id].stage;
     const MmxSpriteAsset *a=MmxRenderAssetsRushSprite(stage,rom[p]);
     if(a) {r[0x18200+rom[p+1]]=a->tile_base;r[0x18300+rom[p+1]]=a->attributes;}
@@ -211,24 +222,17 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
   MmxBossRushState s=MmxBossRushGetState();unsigned pressed=input&~s.input;s.input=input;
   if(s.mode==MMX_RUSH_OFF) {
     if(!title(r)) {s.menu=0;s.menu_input=input;MmxBossRushSetState(&s);return;}
-    if(s.menu==2) {
-      memset(r+0xac,0,4);
-      if(pressed&(SNES_PAD_UP|SNES_PAD_DOWN)) s.selection^=1;
-      if(pressed&SNES_PAD_B) {s.menu=1;s.selection=3;}
-      else if(pressed&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y)) {
-        if(!s.selection || MmxCoopEnabled()) {
-          MmxBossRushSetState(&s);load(r,s.selection!=0);return;
-        }
-      }
-      MmxBossRushSetState(&s);return;
-    }
+    /* Old playtest snapshots may contain the removed mode submenu. */
+    if(s.menu==2) s.selection=3;
     s.menu=1;
     if(s.selection!=3) s.selection=(uint8_t)((word(r+0xbb0)-166)/16);
     if(s.selection==2 && (pressed&SNES_PAD_DOWN)) s.selection=3;
     if(s.selection==3) {
       memset(r+0xac,0,4);put(r+0xbb0,214);
       if(pressed&SNES_PAD_UP) {s.selection=2;put(r+0xbb0,198);}
-      else if(pressed&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y)) {s.menu=2;s.selection=0;}
+      else if(pressed&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y)) {
+        MmxBossRushSetState(&s);load(r,MmxCoopEnabled());return;
+      }
     }
     MmxBossRushSetState(&s);return;
   }
@@ -254,14 +258,18 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
   if(r[0xd3]==4 && !r[0x1f19] && !MmxWeaponsMenuVisible(r) && !MmxCoopGetState().menu_owner) {
     for(unsigned i=0;i<2;++i) {
       s=MmxBossRushGetState();MmxBossRushBoss *b=&s.bosses[i];
-      if(b->phase==MMX_RUSH_DYING && ++b->ticks>=48) {
-        for(unsigned d=0xe68;d<0x1d08;) {
-          if(d==0x1228) {d=0x1428;continue;}
-          unsigned n=(d-0xe68)/32;
-          if(s.owner[n]==i+1) {memset(r+d,0,object_step(d));s.owner[n]=0;}
-          d+=object_step(d);
+      if(b->phase==MMX_RUSH_DYING) {
+        if(++b->ticks>=48) {
+          for(unsigned d=0xe68;d<0x1d08;) {
+            if(d==0x1228) {d=0x1428;continue;}
+            unsigned n=(d-0xe68)/32;
+            if(s.owner[n]==i+1) {memset(r+d,0,object_step(d));s.owner[n]=0;}
+            d+=object_step(d);
+          }
+          memset(b,0,sizeof(*b));
         }
-        memset(b,0,sizeof(*b));MmxBossRushSetState(&s);
+        /* Persist every tick, including frames before the cleanup threshold. */
+        MmxBossRushSetState(&s);
       }
       if(!MmxBossRushGetState().bosses[i].phase) {
         unsigned object=0;
@@ -282,12 +290,16 @@ void MmxBossRushAfterFrame(uint8_t *r) {
   MmxBossRushState s=MmxBossRushGetState();
   for(unsigned i=0;i<2;++i) {
     MmxBossRushBoss *b=&s.bosses[i];if(!b->phase) continue;
-    b->health=r[b->object+0x27]&127;
+    unsigned native=r[b->object+1],hp=r[b->object+0x27]&127;
+    /* State 4 is ordinary combat, 8 is a hit reaction and 6 is death.
+     * Watching only state 4 misses a boss hit as its entrance completes. */
+    if(b->phase==MMX_RUSH_ENTERING && native>=4) b->phase=MMX_RUSH_FIGHTING;
+    if(b->phase==MMX_RUSH_DYING || (b->phase==MMX_RUSH_FIGHTING &&
+        (native==6 || !r[b->object]))) hp=0;
+    b->health=(uint8_t)(hp>32?32:hp);
     if(b->phase==MMX_RUSH_FIGHTING && !b->health) {
       b->death_x=(int16_t)word(r+b->object+5);b->death_y=(int16_t)word(r+b->object+8);
     }
-    if(b->phase==MMX_RUSH_ENTERING && r[b->object+1]==4 && b->health)
-      b->phase=MMX_RUSH_FIGHTING;
   }
   MmxBossRushSetState(&s);
   for(unsigned i=0;i<2;++i) if(s.bosses[i].phase==MMX_RUSH_FIGHTING && !s.bosses[i].health)
