@@ -116,7 +116,16 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
       g_ram[0xbad]|g_ram[0xbae]<<8,g_ram[0xbaa],g_ram[0xbab],g_ram[0xc16],
       g_ram[0x1f23],g_ram[0x1f26],g_ram[0x1f13],g_ram[0x1f08]);
   check(native_door,"second door runs the native player door controller");
-  unsigned boss_bank=g_snes->cart->rom[0x3007b+g_snes->cart->rom[0x3006b+0x21]];
+  /* Derive the expected track from the retail Penguin health-fill controller,
+   * independently of Rush's chosen command. A valid SPC upload alone would
+   * also pass for the victory song, which is the wrong encounter music. */
+  const uint8_t *rom=g_snes->cart->rom;
+  static const uint8_t music_call[]={0x22,0xa2,0x87,0x80};
+  check(rom[0xb617]==0xa9 && !memcmp(rom+0xb619,music_call,sizeof(music_call)),
+      "retail Penguin entrance supplies a native music command");
+  unsigned boss_song=rom[0xb618];
+  unsigned boss_bank=rom[0x3007b+rom[0x3006b+boss_song]];
+  fprintf(stderr,"retail Penguin battle command=%02x bank=%02x\n",boss_song,boss_bank);
   check(g_ram[0xfffd]==boss_bank && g_ram[0xfffd]!=stage_bank,
       "native boss music bank replaces the stage bank");
   check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");

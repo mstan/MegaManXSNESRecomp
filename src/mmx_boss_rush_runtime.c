@@ -85,7 +85,8 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     /* Run the native music call inside the guest scheduler, so a multi-frame
      * SPC upload can yield and resume normally. Saved registers live on the
      * guest stack; the pending return is part of the existing snapshot state.
-     * $81:8C95 requests $21 in retail's shared boss intro, which Rush bypasses. */
+     * Penguin's health-fill controller requests battle song $1E at $81:B617.
+     * Rush isolates that controller's global intro flags, bypassing its call. */
     if(s.loaded==MMX_RUSH_MUSIC_PENDING) {
       cpu->A=(uint16_t)stack_pop(cpu,2);cpu->X=(uint16_t)stack_pop(cpu,2);
       cpu->Y=(uint16_t)stack_pop(cpu,2);cpu->D=(uint16_t)stack_pop(cpu,2);
@@ -97,7 +98,7 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
       stack_push(cpu,cpu->P,1);stack_push(cpu,cpu->DB,1);stack_push(cpu,cpu->D,2);
       stack_push(cpu,cpu->Y,2);stack_push(cpu,cpu->X,2);stack_push(cpu,cpu->A,2);
       stack_push(cpu,pc>>16,1);stack_push(cpu,(pc-1)&65535,2);
-      cpu->D=0;cpu->DB=0x86;cpu->A=0x21;cpu->P|=0x30;cpu_p_to_mirrors(cpu);
+      cpu->D=0;cpu->DB=0x86;cpu->A=0x1e;cpu->P|=0x30;cpu_p_to_mirrors(cpu);
       cpu->X&=255;cpu->Y&=255;
       s.loaded=MMX_RUSH_MUSIC_PENDING;MmxBossRushSetState(&s);
       interp_bridge_pre_opcode_redirect(0x8087a2);return;

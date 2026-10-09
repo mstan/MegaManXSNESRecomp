@@ -39,11 +39,13 @@ Players can prepare weapons there; crossing the second door scrolls into the
 enclosed room and starts the encounter and boss music. Door, checkpoint and
 camera events remain active during preparation; stock stage enemies are
 filtered before allocation. Because Rush bypasses the stock boss's shared
-player intro, the encounter requests boss music through the native dispatcher
+player intro, the encounter requests battle song `$1E` through the native dispatcher
 after the door releases; it uploads the SPC bank and supports the existing
 MSU1 hook. The call stays inside the guest scheduler so an upload can yield
 across frames. Its saved registers live on the guest stack and its pending
 return is snapshot-owned, with the existing state layout preserved.
+This matches Chill Penguin's health-fill controller at `$81:B617`; `$21`
+is the victory song and must not be used for the encounter.
 The room retains native scenery,
 metatile collision data and its fixed camera. Kuwanger
 starts higher to finish his native downward entrance above that floor. Mammoth
@@ -110,7 +112,8 @@ set `MMX_BOSS_RUSH_TEST=1` and pass the verified USA ROM to run the title-menu,
 an empty private working directory. Add `MMX_BOSS_RUSH_COOP=<private Zero asset
 file>` to run those checks in local co-op, including one-player and team deaths.
 The same checks verify the native title projectile, second-door controller and
-actual boss music bank upload, then exercise Retry and Main Menu. If an upload
+actual boss music bank upload against the command in the original Penguin
+controller, then exercise Retry and Main Menu. If an upload
 spans frames, the fixture also checks snapshot replay while it is suspended. Portable
 checks also cover results-page isolation from death flashes/HUD and high-score
 persistence, monotonic records and rejection of malformed files. The compatibility pass holds
