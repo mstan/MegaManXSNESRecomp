@@ -7,6 +7,7 @@
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
 #include "mmx_coop_view.h"
+#include "mmx_boss_rush.h"
 #include <math.h>
 
 /* Mode-1 decode/composition follows SuperMetroidRecomp's sm_renderer.c.
@@ -17,6 +18,7 @@ typedef struct Raster {
   uint16_t palette[256], oam[256], vram[0x8000];
   uint8_t high_oam[32];
 } Raster;
+static MmxBossRushState frame_rush;
 typedef struct Piece {
   int16_t x, y; uint16_t attr; uint8_t size, animation;
   /* Palette occupies bits 1..3; the five spare bits retain charged-shot
@@ -320,6 +322,7 @@ static void trace_objects(const uint8_t *ram) {
   }
 }
 void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
+  frame_rush=MmxBossRushGetState();
   memset(&frame_coop,0,sizeof(frame_coop));
   trace_objects(ram);
   frame.valid = false; frame.captured = 0;
@@ -405,14 +408,15 @@ bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path) return false;
   FILE *f = fopen(path, "wb");
   if (!f) return false;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 17 : 16,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 19 : 18,
       sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
-      (frame_coop.initialized ? sizeof(frame_coop) : 0)};
+      (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush)};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 && fwrite(&frame, sizeof(frame), 1, f) == 1 &&
       fwrite(&frame_zero, sizeof(frame_zero), 1, f) == 1 &&
       fwrite(&frame_weapons, sizeof(frame_weapons), 1, f) == 1 &&
       fwrite(&frame_weapon_combat, sizeof(frame_weapon_combat), 1, f) == 1;
   if (ok && frame_coop.initialized) ok = fwrite(&frame_coop,sizeof(frame_coop),1,f) == 1;
+  if(ok) ok=fwrite(&frame_rush,sizeof(frame_rush),1,f)==1;
   return fclose(f) == 0 && ok;
 }
 bool MmxRendererLoadCapture(const char *path) {
@@ -425,6 +429,7 @@ bool MmxRendererLoadCapture(const char *path) {
   memset(&frame_weapons, 0, sizeof(frame_weapons));
   memset(&frame_weapon_combat, 0, sizeof(frame_weapon_combat));
   memset(&frame_coop,0,sizeof(frame_coop));
+  memset(&frame_rush,0,sizeof(frame_rush));
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
       ((h[1] == 2 && h[2] == sizeof(frame)) || (h[1] == 3 && h[2] == sizeof(frame) + MMX_ZERO_LEGACY_STATE_SIZE) ||
        (h[1] == 4 && h[2] == sizeof(frame) + MMX_ZERO_ANIMATION_STATE_SIZE) ||
@@ -439,7 +444,8 @@ bool MmxRendererLoadCapture(const char *path) {
        (h[1] == 13 && h[2] == sizeof(frame) + MMX_ZERO_HEALTH_STATE_SIZE + sizeof(frame_weapons) + sizeof(frame_weapon_combat) + MMX_COOP_LEGACY_STATE_SIZE) ||
        (h[1] == 14 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
        ((h[1] == 15 || h[1] == 17) && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) + sizeof(frame_coop)) ||
-       (h[1] == 16 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat))) &&
+       (h[1] == 16 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
+       ((h[1]==18 || h[1]==19) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+(h[1]==19?sizeof(frame_coop):0))) &&
       fread(&frame, sizeof(frame), 1, f) == 1 &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES && frame.valid;
   size_t zero_size = h[1] == 3 ? MMX_ZERO_LEGACY_STATE_SIZE :
@@ -472,7 +478,7 @@ bool MmxRendererLoadCapture(const char *path) {
       }
     }
   }
-  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17)) {
+  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19)) {
     MmxCoopState coop;
     if (h[1] == 13) {
       uint8_t legacy[MMX_COOP_LEGACY_STATE_SIZE];
@@ -485,6 +491,7 @@ bool MmxRendererLoadCapture(const char *path) {
         MmxWeaponsValidState(&coop.players[i].weapons) && MmxWeaponsValidCombatState(&coop.players[i].combat);
     if (ok) MmxRendererCoopFrame(&coop);
   }
+  if(ok && h[1]>=18) ok=fread(&frame_rush,sizeof(frame_rush),1,f)==1 && MmxBossRushValidState(&frame_rush);
   ok = ok && fgetc(f) == EOF;
   fclose(f); frame.valid = ok; return ok;
 }
@@ -1365,6 +1372,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
     const MmxSpriteAsset *a = MmxRenderAssetsObjectSprite(frame.ram, s->object, s->animation);
+    if(frame_rush.mode==MMX_RUSH_PLAYING && s->object>=0xe68 && s->object<0x1d08) {
+      unsigned owner=frame_rush.owner[(s->object-0xe68)/32];
+      if(owner && owner<=2) a=MmxRenderAssetsRushSprite(kMmxBossRushBosses[frame_rush.bosses[owner-1].id].stage,s->animation);
+    }
     /* OBJ palette 0 is the shared hit flash. If the current CHR binding
      * still matches, that deliberate palette change must remain live. */
     bool hit_flash = a && a->current &&
@@ -1647,5 +1658,6 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
                                        dialogue_backdrop && (x < 0 || x >= 256));
     }
   }
+  MmxBossRushDraw(out,view.width,view.extra,&frame_rush);
   return true;
 }

@@ -8,6 +8,7 @@
 #include "mmx_knc_bugfix.h"
 #include "mmx_coop_trace.h"
 #include "mmx_coop_view.h"
+#include "mmx_boss_rush.h"
 #include "variables.h"
 #include "common_cpu_infra.h"
 #include "snes/snes.h"
@@ -364,7 +365,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 17u /* KNC Bugfix */
+#define MMX_SAV_CHUNK_VERSION 18u /* deterministic Boss Rush */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -400,6 +401,7 @@ static MmxWeaponCombatState g_load_weapon_combat;
 static MmxCoopState g_load_coop;
 static MmxKncBugfixState g_load_knc_bugfix;
 static MmxCoopViewWorldState g_load_views;
+static MmxBossRushState g_load_rush;
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -447,6 +449,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   }
   MmxKncBugfixState knc_bugfix=MmxKncBugfixGetState();
   sli->func(sli,&knc_bugfix,sizeof(knc_bugfix));
+  MmxBossRushState rush=MmxBossRushGetState();
+  sli->func(sli,&rush,sizeof(rush));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -459,6 +463,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_coop, 0, sizeof(g_load_coop));
   memset(&g_load_knc_bugfix,0,sizeof(g_load_knc_bugfix));
   memset(&g_load_views,0,sizeof(g_load_views));
+  memset(&g_load_rush,0,sizeof(g_load_rush));
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
@@ -530,6 +535,12 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       if(!MmxKncBugfixValidState(&g_load_knc_bugfix)) g_load_chunk_ok=0;
     } else g_load_chunk_ok=0;
   }
+  if(g_load_complete && g_load_chunk.version>=18) {
+    if(RtlStateBytesRemaining(sli)>=sizeof(g_load_rush)) {
+      sli->func(sli,&g_load_rush,sizeof(g_load_rush));
+      if(!MmxBossRushValidState(&g_load_rush)) g_load_chunk_ok=0;
+    } else g_load_chunk_ok=0;
+  }
   if(g_load_complete && g_load_chunk.version<16)
     g_load_views.contact_player=g_load_coop.anchor;
   if (!g_load_chunk_ok)
@@ -541,6 +552,8 @@ static bool s_ws_recover_armor;
 static int MmxWsMargin(void);
 void MmxOnStateLoaded(uint32_t version) {
   MmxRendererReset();
+  if(g_load_chunk_ok && g_load_complete) MmxBossRushSetState(&g_load_rush);
+  else MmxBossRushReset();
   MmxKncBugfixSetState(g_load_knc_bugfix);
   s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
   if (g_mmx_custom_renderer && !g_load_native_streakers) {
@@ -981,6 +994,8 @@ void RunOneFrameOfGame(void) {
     }
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2002, "before_Internal");
+  MmxBossRushFrame(g_ram,RtlGetPadState(0));
+  if(MmxBossRushGetState().mode==MMX_RUSH_FINISHED) return;
   MmxKncBugfixTick(g_ram,RtlGetPadState(0),RtlGetPadState(1));
   if (MmxCoopEnabled()) MmxCoopPoll(RtlGetPadState(0), RtlGetPadState(1));
   else if (MmxZeroSwapTick(g_ram)) return;
@@ -1038,6 +1053,7 @@ void RunOneFrameOfGame(void) {
   MmxCoopLiftCarry(g_ram);
   MmxCoopSyncPriority(g_ram);
   MmxCoopCapture(g_ram);
+  MmxBossRushAfterFrame(g_ram);
   MmxCoopTraceFrame(g_ram);
   /* Out of play (death, level setup, arrival) the widened spawn cursor is
    * stale; drop it even when no scan runs before play resumes. */
@@ -1937,6 +1953,7 @@ static void MmxWideStateApply(bool loaded) {
  * recovers (GitHub #45). Runs on the main fiber, never inside a slot fiber,
  * so every slot fiber can be deleted here. */
 void MmxOnHardwareReset(void) {
+  MmxBossRushReset();
   MmxCoopReset();
   for (int i = 0; i < MMX_NSLOTS; i++) {
     if (g_slot_fiber[i] != NULL) {

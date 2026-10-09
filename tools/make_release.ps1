@@ -77,6 +77,7 @@ Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $stage
 $stageDocs = Join-Path $stage 'docs'
 New-Item -ItemType Directory -Path $stageDocs -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'docs/screenshots') -Destination $stageDocs -Recurse
+Copy-Item -LiteralPath (Join-Path $root 'docs/boss-rush.md') -Destination $stageDocs
 Copy-Item -LiteralPath $assets -Destination $stage -Recurse
 if (Test-Path -LiteralPath $mods) {
   Copy-Item -LiteralPath $mods -Destination $stage -Recurse

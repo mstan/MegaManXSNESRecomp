@@ -20,4 +20,4 @@ jobs:
       - name: Compile shared desktop host and game adapters
         run: cmake --build build --target MegaManXSNESRecomp RockmanXSNESRecomp --parallel 4
       - name: Check display, widescreen and password saves
-        run: cmake --build build --target mmx_display_test mmx_wide_policy_test mmx_renderer_test mmx_password_save_test mmx_zero_test && ctest --test-dir build --output-on-failure
+        run: cmake --build build --target mmx_boss_rush_test mmx_display_test mmx_wide_policy_test mmx_renderer_test mmx_password_save_test mmx_zero_test && ctest --test-dir build --output-on-failure

@@ -21,6 +21,8 @@ static MmxSpriteAsset player_weapons[9][2];
 static uint8_t player_weapon_ready[9];
 static uint8_t ready[256], sprite_resource[256];
 static unsigned cached_stage = ~0u, cached_section = ~0u;
+static MmxSpriteAsset rush_assets[256];
+static uint8_t rush_ready[256];
 static unsigned bg_stage = ~0u;
 static uint8_t bg_phase[2][8192], bg_chr[16][65536];
 static bool bg_chr_valid[16][2048], bg_chr_ready[16], bg_palette_ready[16];
@@ -41,6 +43,7 @@ void MmxRenderAssetsSetRom(const uint8_t *bytes, size_t size) {
   memset(dash_effect_ready,0,sizeof(dash_effect_ready));
   memset(charged_buster_ready,0,sizeof(charged_buster_ready));
   memset(player_weapon_ready,0,sizeof(player_weapon_ready));
+  memset(rush_ready,0,sizeof(rush_ready));
 }
 const MmxSpriteAsset *MmxRenderAssetsWeaponX(unsigned weapon, bool body) {
   if (weapon>8 || !rom) return NULL;
@@ -303,6 +306,24 @@ const MmxSpriteAsset *MmxRenderAssetsSprite(unsigned stage, unsigned section, un
   stage_assets(stage, section);
   unsigned id = sprite < 256 ? sprite_resource[sprite] : 255;
   return id < 254 && ready[id] == 1 ? &assets[id] : NULL;
+}
+const MmxSpriteAsset *MmxRenderAssetsRushSprite(unsigned stage,unsigned sprite) {
+  if(sprite>=256 || !rom) return NULL;
+  if(!rush_ready[sprite]) {
+    /* Resource sets include the boss-room sections; scanning them avoids
+     * assuming its art is resident in the arena's native VRAM allocation. */
+    for(unsigned pass=0;pass<13 && !rush_ready[sprite];++pass) {
+      unsigned st=pass?((stage+pass)%13):stage;
+      for(unsigned section=0;section<16;++section) {
+        const MmxSpriteAsset *a=MmxRenderAssetsSprite(st,section,sprite);
+        if(a) {rush_assets[sprite]=*a;rush_assets[sprite].current=false;
+          rush_assets[sprite].live_tiles=rush_assets[sprite].live_colors=false;
+          rush_ready[sprite]=1;break;}
+      }
+    }
+    if(!rush_ready[sprite]) rush_ready[sprite]=2;
+  }
+  return rush_ready[sprite]==1?rush_assets+sprite:NULL;
 }
 const MmxSpriteAsset *MmxRenderAssetsObjectSprite(const uint8_t ram[0x20000],
                                                 unsigned object, unsigned animation) {
