@@ -1,0 +1,369 @@
+format_version = 1
+id = "megaman-x.character.saber-zero"
+version = "0.0.1"
+name = "Saber Zero settings"
+author = "RaphaelAzev"
+description = "Tuning for Saber Zero by RaphaelAzev. Choose Saber Zero as the Zero behavior in Add Zero or Co-op to play it; these settings change its damage, hit priority, finisher window and sound. Saber sprites and sounds from the Zashiko Mod, for non-commercial use."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "requires-same-mods"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "saber-zero"
+name = "Saber Zero settings"
+description = "Applies when Zero behavior is Saber Zero in Add Zero or Co-op. Without these settings, Saber Zero uses the defaults shown here."
+group = "Characters"
+default_enabled = false
+
+[[option]]
+feature = "saber-zero"
+id = "show_hitboxes"
+label = "Show hitboxes"
+description = "Debug: outline enemy, Zero and Saber attack hitboxes (custom renderer only)"
+type = "boolean"
+default = false
+
+[[option]]
+feature = "saber-zero"
+id = "slash1_damage"
+label = "Slash 1 damage"
+description = "Normal damage dealt by the first ground slash."
+type = "integer"
+default = 3
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "slash2_damage"
+label = "Slash 2 damage"
+description = "Normal damage dealt by the second ground slash."
+type = "integer"
+default = 3
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "slash3_damage"
+label = "Slash 3 damage"
+description = "Normal damage dealt by the third ground slash."
+type = "integer"
+default = 8
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "x3_finisher_damage"
+label = "X3 finisher damage"
+description = "Normal damage dealt by the X3 Saber finisher."
+type = "integer"
+default = 16
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "air_damage"
+label = "Air slash damage"
+description = "Normal damage dealt by an air slash."
+type = "integer"
+default = 3
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "wall_damage"
+label = "Wall slash damage"
+description = "Normal damage dealt by a wall slash."
+type = "integer"
+default = 3
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "dash_damage"
+label = "Dash slash damage"
+description = "Normal damage dealt by a dash slash."
+type = "integer"
+default = 3
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "wave_damage"
+label = "Saber wave damage"
+description = "Normal damage dealt by each Saber wave pulse."
+type = "integer"
+default = 6
+min = 1
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_slash1_damage"
+label = "Boss slash 1 damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 1
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_slash2_damage"
+label = "Boss slash 2 damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 1
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_slash3_damage"
+label = "Boss slash 3 damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 2
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_air_damage"
+label = "Boss air slash damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 1
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_wall_damage"
+label = "Boss wall slash damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 1
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_dash_damage"
+label = "Boss dash slash damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 1
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_x3_finisher_damage"
+label = "Boss X3 finisher damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 6
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "boss_wave_damage"
+label = "Boss Saber wave damage"
+description = "0 = same as the normal value"
+type = "integer"
+default = 4
+min = 0
+max = 32
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "slash1_priority"
+label = "Slash 1 hit priority"
+description = "Hit-priority ladder value for the first ground slash."
+type = "integer"
+default = 2
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "slash2_priority"
+label = "Slash 2 hit priority"
+description = "Hit-priority ladder value for the second ground slash."
+type = "integer"
+default = 3
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "slash3_priority"
+label = "Slash 3 hit priority"
+description = "Hit-priority ladder value for the third ground slash."
+type = "integer"
+default = 4
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "air_priority"
+label = "Air slash hit priority"
+description = "Hit-priority ladder value for an air slash."
+type = "integer"
+default = 1
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "wall_priority"
+label = "Wall slash hit priority"
+description = "Hit-priority ladder value for a wall slash."
+type = "integer"
+default = 1
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "dash_priority"
+label = "Dash slash hit priority"
+description = "Hit-priority ladder value for a dash slash."
+type = "integer"
+default = 5
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "charge_small_priority"
+label = "Small charge hit priority"
+description = "Hit-priority ladder value for a small charge shot."
+type = "integer"
+default = 1
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "charge_full_priority"
+label = "Full charge hit priority"
+description = "Hit-priority ladder value for a full charge shot."
+type = "integer"
+default = 1
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "max_shot1_priority"
+label = "Maximum shot 1 hit priority"
+description = "Hit-priority ladder value for the first maximum-charge shot."
+type = "integer"
+default = 2
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "max_shot2_priority"
+label = "Maximum shot 2 hit priority"
+description = "Hit-priority ladder value for the second maximum-charge shot."
+type = "integer"
+default = 3
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "x3_finisher_priority"
+label = "X3 finisher hit priority"
+description = "Hit-priority ladder value for the X3 Saber finisher."
+type = "integer"
+default = 4
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "wave_priority"
+label = "Saber wave hit priority"
+description = "Hit-priority ladder value for a Saber wave."
+type = "integer"
+default = 5
+min = 1
+max = 9
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "priority_window_frames"
+label = "Hit priority window"
+description = "How long after a Saber hit a stronger hit may break enemy invincibility, in frames."
+type = "integer"
+default = 70
+min = 30
+max = 120
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "finisher_window_frames"
+label = "Finisher window"
+description = "How long after the second charged shot the X3 Saber finisher may start, in frames."
+type = "integer"
+default = 27
+min = 12
+max = 60
+step = 1
+
+[[option]]
+feature = "saber-zero"
+id = "saber_swing_volume"
+label = "Saber swing volume"
+description = "Saber swing sound volume as a percentage."
+type = "integer"
+default = 50
+min = 0
+max = 200
+step = 10

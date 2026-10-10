@@ -94,6 +94,39 @@ static void modern_checks(void) {
   assert(!memcmp(before,ram,sizeof(ram))); /* X remains native. */
   MmxZeroSetModern(false); MmxZeroResetState(); player();
 }
+static unsigned ext_pre, ext_resets, ext_damage;
+static bool ext_gate_open = true;
+static uint8_t ext_saved;
+static void ext_pre_player(uint8_t *r) { (void)r; ++ext_pre; }
+static void ext_state_reset(uint8_t *r) { (void)r; ++ext_resets; ext_saved = 0; }
+static unsigned ext_damage_hook(uint8_t *r, unsigned e, unsigned p, unsigned v) {
+  (void)r; (void)e; (void)p; ++ext_damage; return v + 1;
+}
+static void ext_save(uint8_t out[]) { out[0] = 'T'; out[1] = ext_saved; }
+static void ext_load(const uint8_t in[]) { if (in[0] == 'T') ext_saved = in[1]; }
+static bool ext_gate(void) { return ext_gate_open; }
+/* Co-op runs the player routine per seat; the extension follows Zero's seat. */
+static void extension_checks(void) {
+  static const MmxZeroExtension ext = {
+    .pre_player = ext_pre_player, .damage = ext_damage_hook,
+    .state_reset = ext_state_reset, .state_save = ext_save, .state_load = ext_load};
+  uint8_t blob[MMX_ZERO_EXTENSION_STATE_BYTES];
+  MmxZeroSetExtension(&ext);
+  MmxZeroExtPrePlayer(ram); assert(ext_pre == 1);
+  MmxZeroSetExtensionGate(ext_gate); ext_gate_open = false;
+  MmxZeroExtPrePlayer(ram); assert(ext_pre == 1);
+  assert(MmxZeroDamage(ram, 0xe68, 0x1228, 4) == 4 && !ext_damage);
+  ext_gate_open = true;
+  assert(MmxZeroDamage(ram, 0xe68, 0x1228, 4) == 5 && ext_damage == 1);
+  ext_saved = 7; MmxZeroState z = MmxZeroGetState(); unsigned resets = ext_resets;
+  MmxZeroSelectState(z); assert(ext_resets == resets && ext_saved == 7);
+  MmxZeroExtSaveState(blob); assert(blob[0] == 'T' && blob[1] == 7 && !blob[2]);
+  MmxZeroSetState(z); assert(ext_resets > resets && !ext_saved);
+  MmxZeroExtLoadState(blob); assert(ext_saved == 7);
+  memset(blob, 0, sizeof(blob)); MmxZeroExtLoadState(blob); assert(ext_saved == 7);
+  MmxZeroSetExtensionGate(NULL); MmxZeroSetExtension(NULL);
+  MmxZeroExtSaveState(blob); assert(!blob[0] && !blob[1]);
+}
 int main(void) {
   player(); memcpy(before, ram, sizeof(ram));
   tick(0,0); assert(!memcmp(before, ram, sizeof(ram)));
@@ -271,7 +304,8 @@ int main(void) {
   modern_checks();
   MmxZeroDisable(); MmxZeroSetCollisionRom(rom,sizeof(rom));
   assert(!memcmp(rom,clean,sizeof(rom)));
+  extension_checks();
   remove("zero-test.bin"); remove("zero-test-bad.bin");
-  puts("Zero: asset validation, collision restoration, combo, damage, cancellation and state tests passed");
+  puts("Zero: asset validation, collision restoration, combo, damage, cancellation, state and extension-seat tests passed");
   return 0;
 }

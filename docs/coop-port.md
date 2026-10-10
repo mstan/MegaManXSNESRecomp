@@ -386,6 +386,56 @@ saves reset the co-op context; normal public loading must still enforce the
 mod-set compatibility policy. State storage alone does not establish netplay
 compatibility.
 
+## Replaying a netplay log
+
+A netplay session's `logs/coop-netplay-*.csv` records the input both seats
+consumed on every tick from power-on. The simulation is deterministic, so
+those inputs reproduce the session headlessly:
+
+```bash
+python -I tools/coop_replay_from_csv.py logs/coop-netplay-<...>.csv bug.replay
+MMX_COOP_REPLAY=$PWD/bug.replay MMX_ZERO_TEST_ASSETS=<exe-dir>/cache/mmx-source/x3-zero-v7.bin \
+  build/mmx_state_tests <X1 ROM>
+```
+
+The replay checks both seats' positions against the log every 30 ticks and
+names the first divergence. It assumes P1 = X, X3 behavior and
+`Widescreen = 0`; the compositor flag and view width feed culling, so a
+session with other settings diverges early.
+
+`tests/data/coop_highway_collapse.replay` (inputs only) is the Highway
+collapse after Bee Blader. The road (enemy `$22`) and the falling slab (item
+`$08`) carry riders through `$84:AB81`, but only the world actor had a rider
+pass: P2 fell through the slab and stood inside it on the lower road, unable
+to move. Both now get a second-seat pass. `MMX_COOP_COLLAPSE_TEST=<replay>`
+checks the replay follows the recording to the slab, then that P2 lands on
+the road beside X and can walk. (That recording predates the drop-frame pass
+below, so it is matched only up to its last checkpoint before the drop.)
+
+`tests/data/coop_highway_slab_drop.replay` is a later session at the same
+spot. Pressing jump with both seats at once, P2 jumped and X did not. Both
+inputs reached the simulation on the same tick: X's press landed on his
+native landing frame, which retail MMX ignores (verified in single player),
+while P2 had landed on the slab five ticks earlier. The cause was the slab's
+one-frame drop state `$82:E62A`: its `$E64E..E666` block reads the world body
+directly, moving a grounded body down 2 px and latching it as a rider, so
+`$84:AB81` carries it one tick longer. Only X ever ran it; P2 left the road a
+tick early and fell a few pixels ahead. `slab_drop_hook` replays the block for
+the partner's own body (the routine is listed in `apply_coop_hooks.py` so it
+runs on the interpreter under co-op), and keeps each seat's latch as its
+`.2C` bit. Both seats now leave the road on the same tick; any later
+difference comes from their own positions. `MMX_COOP_SLAB_DROP_TEST=<replay>`
+checks both bodies are moved by the drop frame and fall on the same tick.
+
+Other objects that reach `$84:AB81/AB56`, found by walking the generated call
+graph from each class's dispatch entry (items `$00:F320`, enemies `$F8DD`,
+enemy projectiles `$F77D`), still have no second-seat pass: items `$12`,
+enemies `$03` and `$23`, enemy projectile `$17` (none touch `.2C` outside the
+helper), and enemy `$2A`, which also keeps its own state in `.2C`. Enemy `$6B`
+and enemy projectile `$06` could not be separated from shared code, and item
+`$09` is absent from the generated code. These need a decision before they
+join `platform_item()`.
+
 ## Playtest coverage still needed
 
 The focused milestones above cover both roster orders, native/generated

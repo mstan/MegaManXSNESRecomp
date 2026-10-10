@@ -1,3 +1,6 @@
+#include "saber/mmx_saber_plugin.h"
+#include "saber/mmx_saber_tuning.h"
+#include "mmx_hitbox_overlay.h"
 /* Private ROM-backed controller/context checks. No owner save is overwritten. */
 #include "mmx_coop.h"
 static unsigned coop_x(const MmxCoopPlayer *p) { return p->body[5] | p->body[6] << 8; }
@@ -972,10 +975,14 @@ static void coop_launcher_checks(const char *root,const char *rom,const char *x3
     check(p->feature_resource_get(p->ctx,packages[i],features[i],0,&r) && !strcmp(r.path,x3),
         "co-op, exchange and X3 weapons share one source ROM selection");
   }
-  check(p->feature_enable(p->ctx,"megaman-x.character.zero","zero",1),"stage conflicting character mode");
-  check(!p->commit(p->ctx,rom) && p->diagnostic_count(p->ctx,"megaman-x.coop","coop")>0,
-      "launcher rejects simultaneous co-op and exchange");
-  check(p->feature_enable(p->ctx,"megaman-x.character.zero","zero",0),"disable exchange for co-op");
+  /* Features claiming the same trusted plugin are alternatives at selection
+   * time (snesrecomp 0fc01df): choosing one deselects the other. */
+  check(p->feature_enable(p->ctx,"megaman-x.character.zero","zero",1) &&
+      !snes_mod_runtime_feature_enabled_c("megaman-x.coop","coop"),
+      "selecting exchange deselects co-op");
+  check(p->feature_enable(p->ctx,"megaman-x.coop","coop",1) &&
+      !snes_mod_runtime_feature_enabled_c("megaman-x.character.zero","zero"),
+      "selecting co-op deselects exchange");
   for(unsigned character=0;character<2;++character) {
     check(p->feature_set_option(p->ctx,"megaman-x.coop","coop","player1",character?"zero":"x"),
         "launcher selects either P1 character");
@@ -985,6 +992,48 @@ static void coop_launcher_checks(const char *root,const char *rom,const char *x3
     check(MmxCoopEnabled() && MmxZeroEnabled() && s.players[0].character==character &&
         s.players[1].character==(character^1),"real plugin extracts source ROM and activates chosen roster");
   }
+  /* Saber Zero is a Zero behavior shared by co-op and Add Zero, with an
+   * optional settings feature that claims no plugin of its own. */
+  check(!MmxSaberEnabled(),"X3 behavior leaves Saber off");
+  check(p->feature_set_option(p->ctx,"megaman-x.coop","coop","behavior","saber"),
+      "co-op offers the Saber Zero behavior");
+  for(unsigned character=0;character<2;++character) {
+    check(p->feature_set_option(p->ctx,"megaman-x.coop","coop","player1",character?"zero":"x") &&
+        p->commit(p->ctx,rom),"co-op Saber plan commits for either roster");
+    snes_mod_runtime_activate_plugins_c();
+    check(MmxCoopEnabled() && MmxSaberEnabled() && MmxSaberAssetsLoaded() &&
+        MmxSaberWaveLoaded(),"co-op activates Saber for Zero's seat");
+    uint8_t blob[MMX_ZERO_EXTENSION_STATE_BYTES];
+    MmxZeroExtSaveState(blob);
+    check(!memcmp(blob,"SABR",4),"co-op savestates carry Saber state");
+  }
+  check(p->feature_enable(p->ctx,MMX_SABER_SETTINGS_PACKAGE,MMX_SABER_SETTINGS_FEATURE,1) &&
+      p->feature_set_option(p->ctx,MMX_SABER_SETTINGS_PACKAGE,MMX_SABER_SETTINGS_FEATURE,
+          "finisher_window_frames","60") && p->commit(p->ctx,rom),
+      "Saber settings enable beside co-op");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxCoopEnabled() && MmxSaberEnabled() && MmxSaberTuningFinisherWindowFrames()==60,
+      "Saber settings tune co-op Saber");
+  check(p->feature_set_option(p->ctx,"megaman-x.coop","coop","behavior","x3") &&
+      p->commit(p->ctx,rom),"co-op returns to X3 behavior");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxCoopEnabled() && !MmxSaberEnabled(),"X3 behavior turns Saber off in co-op");
+  check(p->feature_enable(p->ctx,"megaman-x.coop","coop",0) &&
+      p->feature_enable(p->ctx,MMX_SABER_SETTINGS_PACKAGE,MMX_SABER_SETTINGS_FEATURE,0) &&
+      p->feature_enable(p->ctx,"megaman-x.character.zero","zero",1) &&
+      p->feature_set_option(p->ctx,"megaman-x.character.zero","zero","behavior","saber") &&
+      p->commit(p->ctx,rom),"Add Zero offers the Saber Zero behavior");
+  snes_mod_runtime_activate_plugins_c();
+  check(!MmxCoopEnabled() && MmxZeroEnabled() && MmxSaberEnabled(),
+      "Add Zero activates single-player Saber");
+  check(MmxSaberTuningFinisherWindowFrames()==27,
+      "disabled Saber settings keep their stored values out of the game");
+  check(p->feature_set_option(p->ctx,"megaman-x.character.zero","zero","behavior","x3") &&
+      p->feature_enable(p->ctx,"megaman-x.character.zero","zero",0) &&
+      p->feature_enable(p->ctx,"megaman-x.coop","coop",1) && p->commit(p->ctx,rom),
+      "restore the ordinary co-op plan");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxCoopEnabled() && !MmxSaberEnabled(),"ordinary co-op is Saber-free again");
   check(!MmxCoopDiagnosticsEnabled(),"ordinary co-op leaves diagnostics off");
   check(p->feature_enable(p->ctx,diagnostics,"coop-diagnostics",1) && p->commit(p->ctx,rom),
       "launcher ticks and commits diagnostic checkbox");
@@ -999,6 +1048,26 @@ static void coop_launcher_checks(const char *root,const char *rom,const char *x3
       "launcher unticks and commits diagnostic checkbox");
   snes_mod_runtime_activate_plugins_c();
   check(!MmxCoopDiagnosticsEnabled(),"unticking flushes and disables co-op logger");
+  /* Developer hitbox overlay: presentation only, so a granted match leaves it
+   * out of the set peers compare; ungranted it is reported, never hidden. */
+  const char *overlay="megaman-x.developer.hitbox-overlay";
+  char set[4096],unapproved[1024];
+  check(p->feature_enable(p->ctx,overlay,"hitbox-overlay",1) && p->commit(p->ctx,rom),
+      "launcher ticks and commits the hitbox overlay");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxHitboxOverlayEnabled() && MmxCoopEnabled(),"hitbox overlay activates beside co-op");
+  snes_mod_runtime_set_cosmetic_allow_c(NULL);
+  check(snes_mod_runtime_unapproved_cosmetics_c(unapproved,sizeof(unapproved))>0 &&
+      strstr(unapproved,overlay),"an ungranted overlay is reported as unapproved");
+  snes_mod_runtime_set_cosmetic_allow_c("megaman-x.developer.hitbox-overlay@1.0.0");
+  check(snes_mod_runtime_effective_set_c(set,sizeof(set))<(int)sizeof(set) &&
+      !strstr(set,overlay) && strstr(set,"megaman-x.coop"),
+      "a granted overlay is left out of the netplay mod set");
+  snes_mod_runtime_set_cosmetic_allow_c(NULL);
+  check(p->feature_enable(p->ctx,overlay,"hitbox-overlay",0) && p->commit(p->ctx,rom),
+      "launcher unticks the hitbox overlay");
+  snes_mod_runtime_activate_plugins_c();
+  check(!MmxHitboxOverlayEnabled(),"unticking turns the hitbox overlay off");
   check(p->feature_enable(p->ctx,"megaman-x.coop","coop",0) && p->commit(p->ctx,rom),
       "launcher disables co-op");
   snes_mod_runtime_activate_plugins_c();

@@ -20,7 +20,7 @@ rom.cfg
 # Extracted ROM data (generated from ROM at build time — copyrighted)
 smw_assets.dat
 zero-x3.bin
-assets/
+/assets/*
 
 # Save files
 saves/
@@ -54,6 +54,10 @@ __pycache__/
 
 # Local-only config overrides (per-developer, applied after smw.ini)
 smw.local.ini
+
+# Private ROM-derived inputs and generated caches
+/_private/
+/cache/
 
 
 # Active recompiler output — generated locally per-developer
@@ -110,3 +114,11 @@ ghidra/*
 # Player configuration and controller-specific bindings
 /config.local.ini
 /input-bindings/
+
+# Shipped Saber Zero donor art and sound effects.
+!/assets/saber-zero/
+!/assets/saber-zero/CREDITS.md
+!/assets/saber-zero/sprites/
+!/assets/saber-zero/sprites/*.png
+!/assets/saber-zero/sfx/
+!/assets/saber-zero/sfx/*.ogg

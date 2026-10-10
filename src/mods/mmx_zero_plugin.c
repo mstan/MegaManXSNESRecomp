@@ -9,6 +9,7 @@
 #include "mmx_source_assets.h"
 #include "mmx_coop.h"
 #include "mmx_coop_view.h"
+#include "saber/mmx_saber_plugin.h"
 #include "sdl_compat.h"
 #include <stdio.h>
 #include <string.h>
@@ -65,6 +66,7 @@ static void hook(CpuState *cpu, uint32_t pc) {
     case 0x00d76a: MmxRendererRecordPiece(g_ram, cpu->D); break;
     case 0x01971f: case 0x019796: case 0x0198ff: if (MmxZeroActive()) cpu->A |= 8; break;
     case 0x01815c:
+      MmxZeroExtPrePlayer(g_ram);
       MmxZeroSlideTick(g_ram);
       MmxZeroMovementTick(g_ram);
       MmxWeaponsPlayerTick(g_ram);
@@ -72,7 +74,7 @@ static void hook(CpuState *cpu, uint32_t pc) {
       break;
     case 0x019d47: MmxWeaponsMarkShot(g_ram, cpu->X); break;
     case 0x0194af: MmxWeaponsSelectShot(g_ram, cpu->X); break;
-    case 0x018165: MmxZeroPlayerEnd(g_ram); break;
+    case 0x018165: MmxZeroPlayerEnd(g_ram); MmxZeroExtPlayerEnd(g_ram); break;
     case 0x0491dc: MmxWeaponsTerrainEnd(g_ram,cpu->D); break;
     case 0x01898e: case 0x018999: case 0x018965: {
       static const struct { unsigned from, to; } slide[] = {
@@ -132,6 +134,19 @@ static void hook(CpuState *cpu, uint32_t pc) {
       cpu->P=(cpu->P&~0x82)|(cpu->_flag_Z?2:0)|(cpu->_flag_N?128:0);
       break;
     }
+    case 0x049e45: {
+      /* Interpret the pre-opcode $EF37+Y load directly; A is not published
+       * yet at this point, so this mirrors the compiled hook's input. */
+      unsigned original = cpu_read8(cpu, cpu->DB, (uint16_t)(0xef37 + cpu->Y));
+      unsigned value = MmxZeroResponse(g_ram, cpu->D, cpu->X, original);
+      value &= 255;
+      cpu->A = (cpu->A & 0xff00) | value;
+      cpu->_flag_Z = (value & 255) == 0;
+      cpu->_flag_N = (value & 128) != 0;
+      cpu->P = (cpu->P & ~0x82) | (cpu->_flag_Z ? 2 : 0) |
+          (cpu->_flag_N ? 128 : 0);
+      break;
+    }
     case 0x049e76: {
       unsigned original = cpu_read8(cpu, cpu->DB, (uint16_t)(0xef37 + cpu->Y));
       unsigned damage = MmxWeaponsDamage(g_ram, cpu->D, cpu->X,
@@ -174,7 +189,7 @@ static bool zero_terrain_solid(const uint8_t *r, int x, int y) {
 void MmxZeroRegisterHooks(void) {
   MmxZeroSetTerrainQuery(zero_terrain_solid);
   const unsigned pcs[] = {0x009dca, 0x00d6a7, 0x00d76a, 0x01971f, 0x019796, 0x0198ff,
-                          0x01815c, 0x018165, 0x019d47, 0x0194af, 0x00d3e7, 0x00d4f4, 0x00d511, 0x049e1d, 0x049e3a, 0x049e76, 0x049c19, 0x048f07, 0x048eea, 0x018b04, 0x0491dc, 0x02823e,
+                          0x01815c, 0x018165, 0x019d47, 0x0194af, 0x00d3e7, 0x00d4f4, 0x00d511, 0x049e1d, 0x049e3a, 0x049e45, 0x049e76, 0x049c19, 0x048f07, 0x048eea, 0x018b04, 0x0491dc, 0x02823e,
                           0x01898e, 0x018999, 0x018965,
                           0x028403,0x03958f,0x039dcf,
                           0x01a57d,0x038b6f,0x038d87,0x038ed7,0x03951d,0x039841,0x039993,0x03a3cd,
@@ -218,6 +233,7 @@ static void activate(void) {
     fprintf(stderr, "[mmx-zero] Cannot load extracted Zero assets: %s\n", path); return;
   }
   MmxZeroRegisterHooks();
+  if (!strcmp(behavior,"saber")) MmxSaberActivate("megaman-x.character.zero","zero",false);
   fprintf(stderr, "[mmx-zero] Zero 0.0.1 enabled; starting as %s\n", strcmp(start,"zero") ? "X" : "Zero");
 }
 static void activate_coop(void) {
@@ -236,6 +252,7 @@ static void activate_coop(void) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Cannot enable co-op","Cannot initialize the selected characters.",NULL);
     return;
   }
+  if(!strcmp(behavior,"saber")) MmxSaberActivate("megaman-x.coop","coop",true);
   fprintf(stderr,"[mmx-coop] Co-op enabled; P1 is %s\n",p1==MMX_COOP_X?"X":"Zero");
 }
 static void activate_weapons(unsigned game) {

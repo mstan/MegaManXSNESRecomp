@@ -364,7 +364,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 17u /* KNC Bugfix */
+#define MMX_SAV_CHUNK_VERSION 18u /* Zero extension (Saber) state */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -400,6 +400,7 @@ static MmxWeaponCombatState g_load_weapon_combat;
 static MmxCoopState g_load_coop;
 static MmxKncBugfixState g_load_knc_bugfix;
 static MmxCoopViewWorldState g_load_views;
+static uint8_t g_load_zero_extension[MMX_ZERO_EXTENSION_STATE_BYTES];
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -447,6 +448,9 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   }
   MmxKncBugfixState knc_bugfix=MmxKncBugfixGetState();
   sli->func(sli,&knc_bugfix,sizeof(knc_bugfix));
+  uint8_t zero_extension[MMX_ZERO_EXTENSION_STATE_BYTES];
+  MmxZeroExtSaveState(zero_extension);
+  sli->func(sli,zero_extension,sizeof(zero_extension));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -459,6 +463,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_coop, 0, sizeof(g_load_coop));
   memset(&g_load_knc_bugfix,0,sizeof(g_load_knc_bugfix));
   memset(&g_load_views,0,sizeof(g_load_views));
+  memset(g_load_zero_extension,0,sizeof(g_load_zero_extension));
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
@@ -530,6 +535,11 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       if(!MmxKncBugfixValidState(&g_load_knc_bugfix)) g_load_chunk_ok=0;
     } else g_load_chunk_ok=0;
   }
+  if(g_load_complete && g_load_chunk.version>=18) {
+    if(RtlStateBytesRemaining(sli)>=sizeof(g_load_zero_extension))
+      sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
+    else g_load_chunk_ok=0;
+  }
   if(g_load_complete && g_load_chunk.version<16)
     g_load_views.contact_player=g_load_coop.anchor;
   if (!g_load_chunk_ok)
@@ -560,6 +570,7 @@ void MmxOnStateLoaded(uint32_t version) {
   g_first_frame_done = complete ? g_load_frame_flags[1] != 0 : true;
   MmxWideStateApply(complete);
   MmxZeroSetState(g_load_zero);
+  if (complete) MmxZeroExtLoadState(g_load_zero_extension);
   MmxWeaponsSetState(g_load_weapons);
   MmxWeaponsSetCombatState(g_load_weapon_combat);
   if (complete && g_load_chunk.version >= 14) MmxCoopSetState(&g_load_coop);

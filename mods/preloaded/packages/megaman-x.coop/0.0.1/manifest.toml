@@ -37,7 +37,7 @@ label = "Zero"
 feature = "coop"
 id = "behavior"
 label = "Zero behavior"
-description = "Shared with Add Zero. Modern replaces Zero's buster with a direct saber and adds a double jump and air dash. Special weapons remain available."
+description = "Shared with Add Zero. Modern replaces Zero's buster with a direct saber and adds a double jump and air dash. Saber Zero (by RaphaelAzev) adds a Y-button Z-Saber with a 3-hit ground combo, air, wall and dash slashes, and the X3 finisher wave; tune it with Saber Zero settings. Special weapons remain available."
 type = "choice"
 default = "x3"
 [[option.choice]]
@@ -46,6 +46,9 @@ label = "X3 Behavior"
 [[option.choice]]
 value = "modern"
 label = "Modern"
+[[option.choice]]
+value = "saber"
+label = "Saber Zero"
 
 [[option]]
 feature = "coop"

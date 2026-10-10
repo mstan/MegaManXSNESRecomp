@@ -1,0 +1,25 @@
+format_version = 1
+id = "megaman-x.developer.hitbox-overlay"
+version = "1.0.0"
+name = "Mega Man X Hitbox Overlay"
+author = "TechnicallyComputers"
+description = "Outlines the game's own collision boxes: enemies in red, players in green, player shots in yellow, Zero and Saber attacks in cyan, enemy projectiles in magenta. Drawing only; it does not change the game and does not affect netplay."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "hitbox-overlay"
+name = "Hitbox overlay"
+description = "Draw every enemy, player, shot and enemy-projectile hitbox, in single player and for both co-op players."
+group = "Developer"
+default_enabled = false
+presentation_only = true
+
+[[plugin]]
+feature = "hitbox-overlay"
+id = "megaman-x.hitbox-overlay"

@@ -22,11 +22,31 @@ Normal play retains normal pacing/audio. See the shared framework's
 
 Play *Mega Man X* on PC with playable Zero, couch co-op and online netplay,
 all sixteen X2/X3 boss weapons, and adaptive widescreen. Choose Zero's original
-X3 combat or the optional Modern style with direct saber attacks, a second
-jump, and an air dash.
+X3 combat, the optional Modern style with direct saber attacks, a second
+jump, and an air dash, or [Saber Zero](#saber-zero) by RaphaelAzev.
 
 [Download](https://github.com/mstan/MegaManXSNESRecomp/releases/latest) |
 [Getting started](#quick-start-pre-built-release) | [Netplay setup](docs/netplay.md)
+
+## Saber Zero
+
+**Saber Zero** is contributed by [RaphaelAzev](https://github.com/RaphaelAzev),
+from the [MegaManXSNESRecompSaberZero](https://github.com/RaphaelAzev/MegaManXSNESRecompSaberZero)
+fork. It gives Zero a Y-button Z-Saber: a 3-hit ground combo, air, wall and dash
+slashes, the X3 finisher with its Saber wave, hit-priority follow-ups, and Ride
+Armor pilot art. The X button keeps Zero's buster and special weapons.
+
+To play it, choose **Zero behavior → Saber Zero** in either **Characters → Add
+Zero** (single player, Select switches X/Zero) or **Characters → Co-op**
+(whichever player is Zero). Both use your Mega Man X3 USA ROM, like the other
+Zero modes. The optional **Characters → Saber Zero settings** entry tunes its
+damage, hit priorities, finisher window and swing volume, and can outline
+hitboxes. Without it, Saber Zero uses RaphaelAzev's defaults.
+
+The Saber sprites and sound effects come from the
+[Zashiko Mod](assets/saber-zero/CREDITS.md). They are included with permission
+for non-commercial use only. Controls, timings, the priority ladder and every
+option are in the [Saber Zero reference](docs/saber-zero.md).
 
 <a href="https://www.youtube.com/watch?v=TDysNWWJ25g">
   <img src="https://i.ytimg.com/vi/TDysNWWJ25g/maxresdefault.jpg" width="880" alt="Watch the Mega Man X Recompiled gameplay showcase on YouTube">
@@ -145,6 +165,12 @@ numbered segments (`logs/coop-physics-<start time>-<pid>-<n>-001.csv`, `-002.csv
 ...); the newest 32 are kept. Attach every segment of the session. During netplay
 the same mod also writes `logs/coop-netplay-*` segments with the same name stem;
 attach those too, from both players if possible. This extra tracing is off by default.
+
+To see collision boxes, tick **Hitbox overlay** under **Mods > Developer**. It
+outlines each object's native hitbox: enemies red, players green (both players in
+co-op), player shots yellow, Zero and Saber attacks cyan, enemy projectiles
+magenta. It only draws, works with or without widescreen, and does not change the
+game. Items and pickups are not outlined.
 
 <details>
 <summary>Building from source and technical details</summary>

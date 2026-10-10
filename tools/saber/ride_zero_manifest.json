@@ -1,0 +1,67 @@
+{
+  "format": "mmx-saber-manifest",
+  "version": 1,
+  "sources": [
+    {
+      "id": 8,
+      "file": "ride_zero.png",
+      "sha256": "b8e54b3f7841430325c674c1aa8889b5803c63b43de69bdeacc29ea4605eace7"
+    }
+  ],
+  "frames": [
+    {"id": 1101, "source": 8, "body": {"rect": [640, 0, 160, 100], "origin": [80, 50]}, "source_frame": 4},
+    {"id": 1102, "source": 8, "body": {"rect": [0, 500, 160, 100], "origin": [80, 50]}, "source_frame": 35},
+    {"id": 1103, "source": 8, "body": {"rect": [160, 500, 160, 100], "origin": [80, 50]}, "source_frame": 36},
+    {"id": 1104, "source": 8, "body": {"rect": [0, 100, 160, 100], "origin": [80, 50]}, "source_frame": 7},
+    {"id": 1105, "source": 8, "body": {"rect": [160, 100, 160, 100], "origin": [80, 50]}, "source_frame": 8},
+    {"id": 1106, "source": 8, "body": {"rect": [320, 100, 160, 100], "origin": [80, 50]}, "source_frame": 9},
+    {"id": 1107, "source": 8, "body": {"rect": [800, 200, 160, 100], "origin": [80, 50]}, "source_frame": 19},
+    {"id": 1108, "source": 8, "body": {"rect": [0, 200, 160, 100], "origin": [80, 50]}, "source_frame": 14},
+    {"id": 1109, "source": 8, "body": {"rect": [160, 200, 160, 100], "origin": [80, 50]}, "source_frame": 15},
+    {"id": 1110, "source": 8, "body": {"rect": [320, 200, 160, 100], "origin": [80, 50]}, "source_frame": 16},
+    {"id": 1111, "source": 8, "body": {"rect": [800, 0, 160, 100], "origin": [80, 50]}, "source_frame": 5},
+    {"id": 1112, "source": 8, "body": {"rect": [960, 0, 160, 100], "origin": [80, 50]}, "source_frame": 6},
+    {"id": 1113, "source": 8, "body": {"rect": [800, 300, 160, 100], "origin": [80, 50]}, "source_frame": 26},
+    {"id": 1114, "source": 8, "body": {"rect": [0, 300, 160, 100], "origin": [80, 50]}, "source_frame": 21},
+    {"id": 1115, "source": 8, "body": {"rect": [160, 300, 160, 100], "origin": [80, 50]}, "source_frame": 22},
+    {"id": 1116, "source": 8, "body": {"rect": [320, 300, 160, 100], "origin": [80, 50]}, "source_frame": 23},
+    {"id": 1117, "source": 8, "body": {"rect": [160, 0, 160, 100], "origin": [80, 50]}, "source_frame": 1},
+    {"id": 1118, "source": 8, "body": {"rect": [320, 0, 160, 100], "origin": [80, 50]}, "source_frame": 2},
+    {"id": 1119, "source": 8, "body": {"rect": [480, 0, 160, 100], "origin": [80, 50]}, "source_frame": 3},
+    {"id": 1120, "source": 8, "body": {"rect": [0, 400, 160, 100], "origin": [80, 50]}, "source_frame": 28},
+    {"id": 1121, "source": 8, "body": {"rect": [320, 400, 160, 100], "origin": [80, 50]}, "source_frame": 30},
+    {"id": 1122, "source": 8, "body": {"rect": [480, 400, 160, 100], "origin": [80, 50]}, "source_frame": 31},
+    {"id": 1123, "source": 8, "body": {"rect": [640, 400, 160, 100], "origin": [80, 50]}, "source_frame": 32}
+  ],
+  "animations": [
+    {
+      "id": 107,
+      "facing_xor": 1,
+      "steps": [
+        {"frame": 1101, "ticks": 1},
+        {"frame": 1102, "ticks": 1},
+        {"frame": 1103, "ticks": 1},
+        {"frame": 1104, "ticks": 1},
+        {"frame": 1105, "ticks": 1},
+        {"frame": 1106, "ticks": 1},
+        {"frame": 1107, "ticks": 1},
+        {"frame": 1108, "ticks": 1},
+        {"frame": 1109, "ticks": 1},
+        {"frame": 1110, "ticks": 1},
+        {"frame": 1111, "ticks": 1},
+        {"frame": 1112, "ticks": 1},
+        {"frame": 1113, "ticks": 1},
+        {"frame": 1114, "ticks": 1},
+        {"frame": 1115, "ticks": 1},
+        {"frame": 1116, "ticks": 1},
+        {"frame": 1117, "ticks": 1},
+        {"frame": 1118, "ticks": 1},
+        {"frame": 1119, "ticks": 1},
+        {"frame": 1120, "ticks": 1},
+        {"frame": 1121, "ticks": 1},
+        {"frame": 1122, "ticks": 1},
+        {"frame": 1123, "ticks": 1}
+      ]
+    }
+  ]
+}
