@@ -227,6 +227,18 @@ static const uint8_t *sprite_arrangement(unsigned animation, unsigned f) {
   const uint8_t *arrangement = rom_at(address, 1);
   return arrangement && rom_at(address, 1 + arrangement[0] * 4) ? arrangement : NULL;
 }
+/* X1's Ride Armor pilot frames (groups $6A/$6B) hold one 16x16 piece: the
+ * pilot's head. The other pieces are arms and shoulders, and which one comes
+ * first varies (punch frames list an arm first), so anchoring Zero's helmet to
+ * the first piece sank or shifted it for those frames. Offsets of the head
+ * piece from the body origin; the first piece if a frame has none. */
+static void pilot_head_offset(const uint8_t *layout, int *dx, int *dy) {
+  unsigned head = 0;
+  for (unsigned i = 0; i < layout[0]; ++i)
+    if (layout[i * 4 + 4] & 0x20) { head = i; break; }
+  *dx = (int8_t)layout[head * 4 + 1];
+  *dy = (int8_t)layout[head * 4 + 2];
+}
 static void expand_object(const uint8_t *ram, unsigned object) {
   if (object < 0x20 || object > 0x1fe0) return;
   unsigned animation = ram[object + 0x16], f = ram[object + 0x17] & 127;
@@ -1415,7 +1427,10 @@ static void coop_partner_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView 
     bool pilot=ram[0xbbe]==0x6a || ram[0xbbe]==0x6b;
     if (pilot) {
       const uint8_t *a=sprite_arrangement(ram[0xbbe],ram[0xbbf]&127);
-      if (a && a[0]) {int dx=(int8_t)a[1]+5;x+=(ram[0xbb9]&64)?-dx:dx;sy+=8+(int8_t)a[2]+20;}
+      if (a && a[0]) {
+        int hx,hy;pilot_head_offset(a,&hx,&hy);
+        int dx=hx+5;x+=(ram[0xbb9]&64)?-dx:dx;sy+=8+hy+20;
+      }
       body=MmxZeroMenuPose();blade=charge=NULL;
     }
     int row = y-sy+64;
@@ -1869,11 +1884,26 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
              * numbers are not movement poses. Keep its authored entry/walk/
              * punch offsets and expose Zero's original helmet/shoulders over
              * the cockpit. Vanilla X3 Zero has no Ride Armor pilot artwork. */
-            const uint8_t *layout=sprite_arrangement(s.animation,frame.ram[0xbbf]&127);
-            if(layout && layout[0]) {
-              int dx=(int8_t)layout[1]+5;
-              zx+=(frame.ram[0xbb9]&64)?-dx:dx;
-              zy+=8+(int8_t)layout[2]+20;
+            /* Anchor on the native head piece this frame actually submitted.
+             * The armor's sprites are built before it moves, so placing the
+             * helmet from the pilot's RAM position led a jumping or lunging
+             * armor by one frame of motion and the head floated above it. */
+            const Piece *head=NULL;
+            for(unsigned k=0;k<frame.piece_count && !head;++k) {
+              const Piece *q=&frame.pieces[k];
+              if(q->object==0xba8 && q->animation==s.animation && q->size==16) head=q;
+            }
+            if(head) {
+              zx=head->x-view_dx+((head->attr&0x4000)?11:5);
+              zy=head->y-view_dy+20;
+            } else {
+              const uint8_t *layout=sprite_arrangement(s.animation,frame.ram[0xbbf]&127);
+              if(layout && layout[0]) {
+                int hx,hy;pilot_head_offset(layout,&hx,&hy);
+                int dx=hx+5;
+                zx+=(frame.ram[0xbb9]&64)?-dx:dx;
+                zy+=8+hy+20;
+              }
             }
             body=MmxZeroMenuPose();
           }
