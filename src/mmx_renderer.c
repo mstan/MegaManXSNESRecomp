@@ -20,6 +20,7 @@ typedef struct Raster {
   uint8_t high_oam[32];
 } Raster;
 static MmxBossRushState frame_rush;
+static MmxBossRushVisualState frame_rush_visual;
 typedef struct Piece {
   int16_t x, y; uint16_t attr; uint8_t size, animation;
   /* Palette occupies bits 1..3; the five spare bits retain charged-shot
@@ -325,6 +326,7 @@ static void trace_objects(const uint8_t *ram) {
 }
 void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
   frame_rush=MmxBossRushGetState();
+  frame_rush_visual=MmxBossRushVisualGetState();
   memset(&frame_coop,0,sizeof(frame_coop));
   trace_objects(ram);
   frame.valid = false; frame.captured = 0;
@@ -410,15 +412,16 @@ bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path) return false;
   FILE *f = fopen(path, "wb");
   if (!f) return false;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 19 : 18,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 21 : 20,
       sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
-      (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush)};
+      (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) + sizeof(frame_rush_visual)};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 && fwrite(&frame, sizeof(frame), 1, f) == 1 &&
       fwrite(&frame_zero, sizeof(frame_zero), 1, f) == 1 &&
       fwrite(&frame_weapons, sizeof(frame_weapons), 1, f) == 1 &&
       fwrite(&frame_weapon_combat, sizeof(frame_weapon_combat), 1, f) == 1;
   if (ok && frame_coop.initialized) ok = fwrite(&frame_coop,sizeof(frame_coop),1,f) == 1;
   if(ok) ok=fwrite(&frame_rush,sizeof(frame_rush),1,f)==1;
+  if(ok) ok=fwrite(&frame_rush_visual,sizeof(frame_rush_visual),1,f)==1;
   return fclose(f) == 0 && ok;
 }
 bool MmxRendererLoadCapture(const char *path) {
@@ -432,6 +435,7 @@ bool MmxRendererLoadCapture(const char *path) {
   memset(&frame_weapon_combat, 0, sizeof(frame_weapon_combat));
   memset(&frame_coop,0,sizeof(frame_coop));
   memset(&frame_rush,0,sizeof(frame_rush));
+  memset(&frame_rush_visual,0,sizeof(frame_rush_visual));
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
       ((h[1] == 2 && h[2] == sizeof(frame)) || (h[1] == 3 && h[2] == sizeof(frame) + MMX_ZERO_LEGACY_STATE_SIZE) ||
        (h[1] == 4 && h[2] == sizeof(frame) + MMX_ZERO_ANIMATION_STATE_SIZE) ||
@@ -447,7 +451,7 @@ bool MmxRendererLoadCapture(const char *path) {
        (h[1] == 14 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
        ((h[1] == 15 || h[1] == 17) && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) + sizeof(frame_coop)) ||
        (h[1] == 16 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
-       ((h[1]==18 || h[1]==19) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+(h[1]==19?sizeof(frame_coop):0))) &&
+       ((h[1]>=18 && h[1]<=21) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0))) &&
       fread(&frame, sizeof(frame), 1, f) == 1 &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES && frame.valid;
   size_t zero_size = h[1] == 3 ? MMX_ZERO_LEGACY_STATE_SIZE :
@@ -480,7 +484,7 @@ bool MmxRendererLoadCapture(const char *path) {
       }
     }
   }
-  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19)) {
+  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21)) {
     MmxCoopState coop;
     if (h[1] == 13) {
       uint8_t legacy[MMX_COOP_LEGACY_STATE_SIZE];
@@ -494,6 +498,7 @@ bool MmxRendererLoadCapture(const char *path) {
     if (ok) MmxRendererCoopFrame(&coop);
   }
   if(ok && h[1]>=18) ok=fread(&frame_rush,sizeof(frame_rush),1,f)==1 && MmxBossRushValidState(&frame_rush);
+  if(ok && h[1]>=20) ok=fread(&frame_rush_visual,sizeof(frame_rush_visual),1,f)==1 && MmxBossRushVisualValidState(&frame_rush_visual);
   ok = ok && fgetc(f) == EOF;
   fclose(f); frame.valid = ok; return ok;
 }
@@ -894,13 +899,26 @@ static unsigned spark_lights(LightBeam beams[2], int extra) {
   return count;
 }
 static bool condition(unsigned mode, bool inside) { return mode == 3 || (mode == 1 && !inside) || (mode == 2 && inside); }
-static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3], bool dialogue_margin) {
+static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3], bool dialogue_margin, uint16_t camouflage_bg) {
   unsigned rgb = palette[main & 255], layer = (main >> 8) & 15;
   if (object_color >= 0 && (layer == 4 || layer == 6)) rgb = (unsigned)object_color;
   if (layer < 3 && bg_colors[layer] >= 0) rgb = (unsigned)bg_colors[layer];
+  bool camouflage=object_color>=0 && (object_color&0x8000) && (layer==4 || layer==6);
+  if(camouflage) {
+    /* $88:85DE selects full additive OBJ/subscreen math. Black fades into
+     * the room; applying it privately leaves X and the other boss alone. */
+    unsigned bg_layer=(camouflage_bg>>8)&15;
+    unsigned backdrop=bg_layer<3 && bg_colors[bg_layer]>=0?(unsigned)bg_colors[bg_layer]:palette[camouflage_bg&255];
+    unsigned added=0;
+    for(unsigned shift=0;shift<15;shift+=5) {
+      unsigned component=((rgb>>shift)&31)+((backdrop>>shift)&31);
+      added|=(component>31?31:component)<<shift;
+    }
+    rgb=added;
+  }
   bool clipped = condition(p->cgwsel >> 6, inside);
   bool math = !condition((p->cgwsel >> 4) & 3, inside) && ((p->cgadsub & 63) & (1u << layer));
-  if (dialogue_margin && layer == 5) math = false;
+  if ((dialogue_margin && layer == 5) || camouflage) math = false;
   unsigned other = p->fixedColor;
   bool half = math && (p->cgadsub & 64) && !clipped;
   if (math && (p->cgwsel & 2)) {
@@ -1428,6 +1446,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       fortress_waiting_pieces(waiting, pieces, piece_count) : 0;
   const MmxSpriteAsset *waiting_zero = waiting_count ? MmxRenderAssetsCaptiveZero() : NULL;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
+  MmxSpriteAsset camouflage_art;
+  bool camouflage_ready=false;
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
     const MmxSpriteAsset *a = MmxRenderAssetsObjectSprite(frame.ram, s->object, s->animation);
@@ -1437,6 +1457,21 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         const MmxSpriteAsset *private=MmxRenderAssetsRushObjectSprite(frame.ram,s->object,
             kMmxBossRushBosses[frame_rush.bosses[owner-1].id].stage,s->animation);
         if(private) a=private;
+        unsigned seat=owner-1;
+        if(private && s->object==frame_rush.bosses[seat].object &&
+            frame_rush.bosses[seat].id==5 && s->animation==0x23 &&
+            frame_rush_visual.initialized[seat] &&
+            frame_rush_visual.generation[seat]==frame_rush.bosses[seat].generation) {
+          if(!camouflage_ready) {
+            camouflage_art=*private;
+            memcpy(camouflage_art.colors,frame_rush_visual.colors[seat],sizeof(camouflage_art.colors));
+            /* $C1 is entry 24 in the per-actor scene flags. */
+            if(frame_rush.bosses[seat].globals[24]==2)
+              for(unsigned c=0;c<16;++c) camouflage_art.colors[c]|=0x8000;
+            camouflage_ready=true;
+          }
+          a=&camouflage_art;
+        }
       }
     }
     /* OBJ palette 0 is the shared hit flash. If the current CHR binding
@@ -1708,12 +1743,14 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         for (int layer = 0; layer < 3; ++layer) if (bg_colors[layer] >= 0)
           bg_colors[layer] = MmxRenderAssetsFadeColor((uint16_t)bg_colors[layer], palette_fade);
         if (object_colors[sx] >= 0)
-          object_colors[sx] = MmxRenderAssetsFadeColor((uint16_t)object_colors[sx], palette_fade);
+          object_colors[sx] = MmxRenderAssetsFadeColor((uint16_t)object_colors[sx], palette_fade)|(object_colors[sx]&0x8000);
       }
+      uint16_t camouflage_bg=0x500;
       for (int sub = 0; sub < 2; ++sub) {
         for (int layer = 0; layer < 3; ++layer)
           if ((p.screenEnabled[sub] & (1 << layer)) &&
               (!(p.screenWindowed[sub] & (1 << layer)) || !window(&p, layer, x, view.extra)) && bg[layer] > screens[sub]) screens[sub] = bg[layer];
+        if(!sub) camouflage_bg=screens[0];
         if ((p.screenEnabled[sub] & 16) && (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, view.extra)) &&
             objects[sx] > screens[sub]) screens[sub] = objects[sx];
       }
@@ -1724,7 +1761,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           color_window |= x >= beams[i].left[y] && x <= beams[i].right[y];
       }
       out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], color_window, object_colors[sx], bg_colors,
-                                       dialogue_backdrop && (x < 0 || x >= 256));
+                                       dialogue_backdrop && (x < 0 || x >= 256),camouflage_bg);
     }
   }
   if(stage) MmxBossRushDraw(out,view.width,view.extra,&frame_rush);

@@ -366,7 +366,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 19u /* Boss Rush native effect requests */
+#define MMX_SAV_CHUNK_VERSION 20u /* Boss Rush native camouflage colors */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -404,6 +404,7 @@ static MmxKncBugfixState g_load_knc_bugfix;
 static MmxCoopViewWorldState g_load_views;
 static MmxBossRushState g_load_rush;
 static MmxBossRushAudioState g_load_rush_audio;
+static MmxBossRushVisualState g_load_rush_visual;
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -455,6 +456,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&rush,sizeof(rush));
   MmxBossRushAudioState audio=MmxBossRushAudioGetState();
   sli->func(sli,&audio,sizeof(audio));
+  MmxBossRushVisualState visual=MmxBossRushVisualGetState();
+  sli->func(sli,&visual,sizeof(visual));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -469,6 +472,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_views,0,sizeof(g_load_views));
   memset(&g_load_rush,0,sizeof(g_load_rush));
   memset(&g_load_rush_audio,0,sizeof(g_load_rush_audio));
+  memset(&g_load_rush_visual,0,sizeof(g_load_rush_visual));
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
@@ -552,6 +556,12 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       if(!MmxBossRushAudioValidState(&g_load_rush_audio)) g_load_chunk_ok=0;
     } else g_load_chunk_ok=0;
   }
+  if(g_load_complete && g_load_chunk.version>=20) {
+    if(RtlStateBytesRemaining(sli)>=sizeof(g_load_rush_visual)) {
+      sli->func(sli,&g_load_rush_visual,sizeof(g_load_rush_visual));
+      if(!MmxBossRushVisualValidState(&g_load_rush_visual)) g_load_chunk_ok=0;
+    } else g_load_chunk_ok=0;
+  }
   if(g_load_complete && g_load_chunk.version<16)
     g_load_views.contact_player=g_load_coop.anchor;
   if (!g_load_chunk_ok)
@@ -565,6 +575,8 @@ void MmxOnStateLoaded(uint32_t version) {
   MmxRendererReset();
   if(g_load_chunk_ok && g_load_complete) MmxBossRushSetState(&g_load_rush);
   else MmxBossRushReset();
+  MmxBossRushVisualState empty_visual={0};
+  MmxBossRushVisualSetState(g_load_chunk_ok && g_load_complete?&g_load_rush_visual:&empty_visual);
   MmxBossRushAudioReset();
   if(g_load_chunk_ok && g_load_complete) MmxBossRushAudioSetState(&g_load_rush_audio);
   if(!RtlIsRollbackLoad()) MmxBossRushAudioLoaded();

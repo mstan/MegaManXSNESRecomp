@@ -154,6 +154,22 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     if(end) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;}
   }
   if(owner<0) return;
+  if(s.bosses[owner].id==5 && s.bosses[owner].object==cpu->D) {
+    /* Native $88:8DAB/$8E0F increment/decrement each RGB5 channel. Their
+     * shared $0480/$04A0 buffers belong to the arena; update private colors
+     * at these same calls instead. The initial clear is $88:85B5. */
+    unsigned end=at==0x0885b5?0x85c0:at==0x088dab?0x8e0e:at==0x088e0f?0x8e4e:0;
+    if(end) {
+      const MmxSpriteAsset *art=MmxRenderAssetsRushSprite(2,0x23);
+      if(art) MmxBossRushVisualFade((unsigned)owner,s.bosses[owner].generation,
+          art->colors,at==0x0885b5?0:at==0x088dab?1:-1);
+      interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;
+    }
+    /* His native HDMA bends the entire stage's BG2. Keep the phase update,
+     * but do not install or remove a shared arena task for one boss. */
+    end=at==0x088d79?0x8daa:at==0x088d2f?0x8d49:at==0x088d5e?0x8d76:at==0x08876a?0x876d:0;
+    if(end) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;}
+  }
   if(at==0x048fca) {
     /* Boss art is decoded privately per pose. Its native DMA would read the
      * Penguin stage's staging buffer and overwrite X/weapon/other boss CHR. */
@@ -219,7 +235,8 @@ void MmxBossRushHostFrame(void) {
   for(unsigned i=0;i<sizeof(actors)/sizeof(*actors);++i)
     registered&=interp_bridge_add_pre_opcode_hook(actors[i],actor_hook);
   const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,
-    0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276,0x8088d6,0x849f19,0x849f2a,0x849f2f,0x849f7e};
+    0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276,0x8088d6,0x849f19,0x849f2a,0x849f2f,0x849f7e,
+    0x8885b5,0x888dab,0x888e0f,0x888d79,0x888d2f,0x888d5e,0x88876a};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
   static bool warned;

@@ -356,6 +356,10 @@ const MmxSpriteAsset *MmxRenderAssetsRushSprite(unsigned stage,unsigned sprite) 
     if(end<start || end-start>128) return NULL;
     for(unsigned section=(end-start)/2;section && !rush_ready[stage][sprite];) {
       const MmxSpriteAsset *a=MmxRenderAssetsSprite(stage,--section,sprite);
+      /* Armadillo's native controller switches his roll to animation $63 and tile base
+       * $40. Its boss-room resource $5E is absent from the enemy animation
+       * table, which lists only the standing body's $62/$5D binding. */
+      if(!a && stage==3 && sprite==0x63 && ready[0x5e]==1) a=&assets[0x5e];
       if(a) {
         MmxSpriteAsset *copy=malloc(sizeof(*copy));if(!copy) return NULL;
         *copy=*a;copy->current=copy->live_tiles=copy->live_colors=false;

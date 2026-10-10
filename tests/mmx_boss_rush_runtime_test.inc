@@ -11,6 +11,75 @@ static void rush_keep_players_alive(void) {
   }
 }
 static unsigned rush_death_sounds;
+static void rush_visual_checks(uint8_t *snapshot,size_t cap) {
+  MmxBossRushState s=MmxBossRushGetState();
+  static const uint8_t queue[]={2,5,0,1,3,4,6,7};
+  memcpy(s.queue,queue,sizeof(queue));s.queued=8;
+  check(MmxBossRushSetState(&s),"visual fixture queues Armadillo and Chameleon");
+  unsigned roll_seen=0,fade_frames=0;bool camouflage=false,black=false,restored=false,snapshot_checked=false;
+  MmxBossRushVisualState previous={0};
+  for(unsigned t=0;t<1800;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    unsigned arm=s.bosses[0].object,cham=s.bosses[1].object;
+    if(arm && g_ram[arm+22]==0x63 && g_ram[arm+14]) {
+      unsigned pose=g_ram[arm+23]&127;
+      const MmxSpriteAsset *art=MmxRenderAssetsRushObjectSprite(g_ram,arm,3,0x63);
+      check(art && art->id==0x5e && art->tile_base==0x40,"native rolling form resolves its second graphics resource");
+      check(pose<4,"native Armadillo roll has four authored rotation frames");
+      if(!(roll_seen&(1u<<pose))) {
+        char name[64];snprintf(name,sizeof(name),"rush-roll-%u.cap",pose);
+        check(MmxRendererSaveCapture(name),"native roll capture saves");
+      }
+      roll_seen|=1u<<pose;
+    }
+    MmxBossRushVisualState visual=MmxBossRushVisualGetState();
+    const MmxSpriteAsset *base=MmxRenderAssetsRushSprite(2,0x23);
+    if(!camouflage && s.bosses[1].phase==MMX_RUSH_FIGHTING && visual.initialized[1] &&
+        base && !memcmp(visual.colors[1],base->colors,sizeof(base->colors))) {
+      /* Select the native disappear state, then leave all timing and poses
+       * to the original controller. This avoids waiting for its RNG choice. */
+      g_ram[cham+2]=2;g_ram[cham+3]=0;g_ram[cham+0x33]=0;
+      camouflage=true;
+    }
+    if(camouflage && previous.initialized[1] && visual.initialized[1]) {
+      bool changed=false,empty=true;
+      for(unsigned c=0;c<16;++c) {
+        empty&=visual.colors[1][c]==0;
+        for(unsigned shift=0;shift<15;shift+=5) {
+          int delta=((visual.colors[1][c]>>shift)&31)-((previous.colors[1][c]>>shift)&31);
+          check(delta>=-1 && delta<=1,"native camouflage changes each RGB channel by at most one step");
+          changed|=delta!=0;
+        }
+      }
+      if(changed) {
+        ++fade_frames;
+        if(fade_frames==8 || fade_frames==24 || fade_frames==48) {
+          char name[64];snprintf(name,sizeof(name),"rush-camouflage-%u.cap",fade_frames);
+          check(MmxRendererSaveCapture(name),"native camouflage capture saves");
+        }
+      }
+      if(empty && !black) check(MmxRendererSaveCapture("rush-camouflage-black.cap"),"fully camouflaged capture saves");
+      black|=empty;
+      if(black && !restored && !memcmp(visual.colors[1],base->colors,sizeof(base->colors))) {
+        restored=true;
+        check(MmxRendererSaveCapture("rush-camouflage-restored.cap"),"restored camouflage capture saves");
+      }
+      if(fade_frames==12 && !snapshot_checked) {
+        snapshot_checked=true;
+        size_t len=RtlSaveSnapshotToMemory(snapshot,cap);check(len!=0,"camouflage snapshot saves");
+        for(unsigned n=0;n<8;++n) {frame(0);rush_keep_players_alive();}
+        check(RtlLoadSnapshotFromMemory(snapshot,len),"camouflage snapshot loads");
+        MmxBossRushVisualState loaded=MmxBossRushVisualGetState();
+        check(!memcmp(&loaded,&visual,sizeof(visual)),"snapshot restores exact native camouflage colors");
+      }
+    }
+    previous=visual;
+    if(roll_seen==15 && black && restored && fade_frames>32) break;
+  }
+  check(roll_seen==15,"all four native rolling frames retain their graphics");
+  check(camouflage && black && restored && fade_frames>32,"Chameleon fades out completely and restores his native palette gradually");
+  puts("MMX BOSS RUSH NATIVE VISUAL CHECKS PASSED");
+}
 static void rush_death_frame(void) {
   unsigned head=g_ram[0xba3]&30;frame(0);
   for(unsigned end=g_ram[0xba3]&30;head!=end;head=(head+2)&30)
@@ -258,6 +327,7 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");
   if(getenv("MMX_BOSS_RUSH_AUDIO_TEST")) {rush_audio_checks(start,cap);return;}
   if(getenv("MMX_BOSS_RUSH_DEATH_TEST")) {rush_natural_death_checks();return;}
+  if(getenv("MMX_BOSS_RUSH_VISUAL_TEST")) {rush_visual_checks(start,cap);return;}
   size_t baseline=RtlSaveSnapshotToMemory(start,cap);check(baseline!=0,"arena snapshot saves");
   unsigned before=g_ram[0xbad]|g_ram[0xbae]<<8;
   MmxCoopState before_coop=MmxCoopGetState();

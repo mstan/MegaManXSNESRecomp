@@ -14,7 +14,38 @@ const MmxBossRushDefinition kMmxBossRushBosses[8]={
   {"FLAME MAMMOTH",0x8791a7,0x0c,4}
 };
 static MmxBossRushState state;
-void MmxBossRushReset(void) {memset(&state,0,sizeof(state));}
+static MmxBossRushVisualState visual;
+void MmxBossRushReset(void) {memset(&state,0,sizeof(state));memset(&visual,0,sizeof(visual));}
+MmxBossRushVisualState MmxBossRushVisualGetState(void) {return visual;}
+bool MmxBossRushVisualValidState(const MmxBossRushVisualState *s) {
+  if(!s) return false;
+  for(unsigned i=0;i<2;++i) {
+    if(s->initialized[i]>1 || s->reserved[i]) return false;
+    for(unsigned c=0;c<16;++c) if(s->colors[i][c]&0x8000) return false;
+  }
+  return true;
+}
+bool MmxBossRushVisualSetState(const MmxBossRushVisualState *s) {
+  if(!MmxBossRushVisualValidState(s)) return false;
+  visual=*s;return true;
+}
+void MmxBossRushVisualFade(unsigned owner,uint32_t generation,
+    const uint16_t target[16],int direction) {
+  if(owner>=2 || !target) return;
+  if(!visual.initialized[owner] || visual.generation[owner]!=generation) {
+    memcpy(visual.colors[owner],target,sizeof(visual.colors[owner]));
+    visual.generation[owner]=generation;visual.initialized[owner]=1;
+  }
+  for(unsigned c=0;c<16;++c) {
+    unsigned color=0;
+    for(unsigned shift=0;shift<15;shift+=5) {
+      unsigned value=(visual.colors[owner][c]>>shift)&31,limit=(target[c]>>shift)&31;
+      value=!direction?0:direction<0?(value?value-1:0):(value<limit?value+1:limit);
+      color|=value<<shift;
+    }
+    visual.colors[owner][c]=(uint16_t)color;
+  }
+}
 bool MmxBossRushActive(void) {return state.mode!=MMX_RUSH_OFF;}
 bool MmxBossRushCoop(void) {return state.mode==MMX_RUSH_OFF || state.coop!=0;}
 MmxBossRushState MmxBossRushGetState(void) {return state;}

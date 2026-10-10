@@ -27,6 +27,19 @@ typedef struct MmxBossRushState {
   uint8_t globals[40], occupied[128], owner[128];
   uint16_t empty_tile, solid_tile, camera_x, camera_y;
 } MmxBossRushState;
+/* Chameleon's native fades have history, independent of the arena CGRAM.
+ * Keep it outside the original Rush ABI so older snapshots remain readable. */
+typedef struct MmxBossRushVisualState {
+  uint32_t generation[2];
+  uint16_t colors[2][16];
+  uint8_t initialized[2], reserved[2];
+} MmxBossRushVisualState;
+MmxBossRushVisualState MmxBossRushVisualGetState(void);
+bool MmxBossRushVisualValidState(const MmxBossRushVisualState *state);
+bool MmxBossRushVisualSetState(const MmxBossRushVisualState *state);
+/* direction: 0 initializes black, +1 restores colors, -1 fades to black. */
+void MmxBossRushVisualFade(unsigned owner, uint32_t generation,
+    const uint16_t target[16], int direction);
 typedef struct MmxBossRushDefinition {
   const char *name;
   uint32_t controller;

@@ -27,10 +27,12 @@ the next shuffle; a boss that survives a long time cannot block replacements
 or produce a duplicate. The opening shuffle mixes native RNG/NMI timing and
 the previous queue RNG,
 so confirmation timing and Retry vary the opening pair while snapshot replay
-retains the same encounter. Snapshot chunk v19 includes all run state and
-native effect requests, including an interrupted actor call. Chunk v18 retains
+retains the same encounter. Snapshot chunk v20 includes all run state, native
+effect requests and camouflage colors, including an interrupted actor call.
+Chunk v19 has effect requests without private palette history. Chunk v18 retains
 Boss Rush with no pending audio cues; saves before v18 load with Rush inactive.
-Renderer captures v18/v19 preserve the solo/co-op run and its HUD.
+Renderer captures v20/v21 preserve solo/co-op runs, their HUD and private
+camouflage colors; v18/v19 captures remain readable.
 
 Native controllers advance once in the existing enemy loop. Entrances retain
 their animation and native health-fill states; mode hooks suppress player
@@ -169,3 +171,26 @@ a replacement enters. Watch boss grabs, rolling/airborne attacks and child
 objects near walls. Check pause/menu behavior, boss art and hit feedback, and
 death followed by Retry/Main Menu. The flat arena and spawn positions are the
 initial layout; balance and presentation can be tuned after that playtest.
+
+## Rolling graphics and camouflage
+
+Armadillo's standing body uses animation `$62` / resource `$5D`; his rolling
+attack switches to animation `$63` / resource `$5E`, with tile base `$40`.
+The enemy animation table only contains the standing binding. Boss Rush
+resolves the second resource from his original boss-room section, retaining
+all four native rotation arrangements instead of borrowing Penguin's VRAM.
+
+Chameleon's native `$88:8DAB` / `$88:8E0F` helpers restore or darken each RGB5
+channel by one step. Their original `$0480` / `$04A0` palette buffers and BG2
+HDMA task are shared stage resources. Rush maintains private palette history
+at those exact native calls and applies additive camouflage only to his body.
+It suppresses his shared palette writes and arena-wide BG2 HDMA while keeping
+his native phase counter, animation sequences, movement and attack timing.
+Private colors are serialized in game chunk v20 and render captures v20/v21;
+older game chunks and captures remain readable.
+
+Set `MMX_BOSS_RUSH_VISUAL_TEST=1` alongside `MMX_BOSS_RUSH_TEST=1` to exercise
+all four original rolling frames and a native disappear/reappear cycle, check
+bounded RGB steps and complete palette restoration, and restore a snapshot
+mid-fade. This fixture selects the original camouflage behavior directly to
+avoid depending on an RNG decision; it never substitutes host animation timing.

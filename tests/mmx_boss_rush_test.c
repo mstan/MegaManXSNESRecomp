@@ -14,7 +14,29 @@ static void retire(unsigned slot) {
   s=MmxBossRushGetState();memset(s.bosses+slot,0,sizeof(s.bosses[slot]));
   assert(MmxBossRushSetState(&s));
 }
+static void visual_history(void) {
+  uint16_t target[16];for(unsigned i=0;i<16;++i) target[i]=(uint16_t)(i|((31-i)<<5)|(15<<10));
+  MmxBossRushReset();MmxBossRushVisualFade(1,123,target,0);
+  for(unsigned i=0;i<8;++i) MmxBossRushVisualFade(1,123,target,1);
+  MmxBossRushVisualState saved=MmxBossRushVisualGetState();
+  assert(saved.colors[1][0]==(8<<5|8<<10));
+  for(unsigned i=0;i<32;++i) MmxBossRushVisualFade(1,123,target,1);
+  MmxBossRushVisualState complete=MmxBossRushVisualGetState();
+  assert(!memcmp(complete.colors[1],target,sizeof(target)));
+  for(unsigned i=0;i<32;++i) MmxBossRushVisualFade(1,123,target,-1);
+  complete=MmxBossRushVisualGetState();
+  for(unsigned i=0;i<16;++i) assert(!complete.colors[1][i]);
+  assert(MmxBossRushVisualSetState(&saved));
+  MmxBossRushVisualFade(1,123,target,1);
+  complete=MmxBossRushVisualGetState();assert(complete.colors[1][0]==(9<<5|9<<10));
+  assert(!complete.initialized[0]);
+  MmxBossRushVisualState bad=saved;bad.colors[1][0]|=0x8000;assert(!MmxBossRushVisualSetState(&bad));
+  MmxBossRushVisualFade(1,124,target,-1);
+  complete=MmxBossRushVisualGetState();assert(complete.generation[1]==124 && complete.colors[1][0]==(30<<5|14<<10));
+  MmxBossRushReset();complete=MmxBossRushVisualGetState();assert(!complete.initialized[1]);
+}
 int main(void) {
+  visual_history();
   MmxBossRushReset();assert(!MmxBossRushActive());assert(MmxBossRushCoop());
   MmxBossRushStart(false,123);assert(!MmxBossRushCoop());
   unsigned seen=0;
