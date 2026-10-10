@@ -1993,7 +1993,16 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       bool zero_icon = (stage || zero_menu) && MmxZeroEnabled() && !frame_zero.active_x && slot == 0 &&
           x == 8 && sy == 80 && attr == 0x3486 && size == 16;
       bool anchored = stage && hud && sy < 96 && (slot < 16 || (bar_count >= 4 && slot >= bar_first && slot < bar_first + bar_count));
-      if(stage && !anchored) {x-=view_dx;sy-=view_dy;}
+      bool reprojected = stage && !anchored && (view_dx || view_dy);
+      if(reprojected) {
+        /* OAM hides unused slots below the native viewport while retaining
+         * their old tiles. Moving those slots into a distant peer view would
+         * resurrect stale player/platform strips. A genuine top-edge sprite
+         * wraps past y=255; unwrap it before applying the world-view offset. */
+        if(sy>=224 && sy+size<=256) continue;
+        if(sy>=224) sy-=256;
+        x-=view_dx;sy-=view_dy;
+      }
       if (anchored) { if (x < 25) x -= view.extra; else if (x >= 216) x += view.extra; }
       if (stage && frame_weapons.page && frame_weapons.weapon && slot == 7 && (pos & 255) == 24 && sy == 80 && attr == 0x3620) {
         /* Dedicated source gameplay footer, with its original frame,
@@ -2010,7 +2019,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         }
         continue;
       }
-      sprite(&p, r, x, sy, attr, size, y, view, objects, false, NULL, 0, object_colors, false, zero_icon, false);
+      sprite(&p, r, x, sy, attr, size, y, view, objects, false, NULL, 0, object_colors, reprojected, zero_icon, false);
     }
     if (charge && zero_drawn[0] && !swapping) {
       int zx=(int16_t)(word(frame.ram,0xbad)-view_camera(frame.ram,0x1e4d));

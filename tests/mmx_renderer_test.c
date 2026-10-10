@@ -1,4 +1,5 @@
 #include "mmx_renderer.h"
+#include "mmx_coop_view.h"
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
 #include "mmx_knc_bugfix.h"
@@ -122,6 +123,55 @@ static void sprite_coordinates(void) {
 static void put_word(unsigned a, unsigned v) { ram[a] = (uint8_t)v; ram[a + 1] = (uint8_t)(v >> 8); }
 static void rom_word(unsigned a, unsigned v) { rom_bytes[a] = (uint8_t)v; rom_bytes[a + 1] = (uint8_t)(v >> 8); }
 static void rom_long(unsigned a, unsigned v) { rom_word(a, v); rom_bytes[a + 2] = (uint8_t)(v >> 16); }
+static void independent_oam_visibility(void) {
+  /* Native OAM contains hidden slots and wraps sprites across y=255.
+   * Neither is a full world coordinate after selecting a distant peer view. */
+  MmxRendererSetRom(NULL,0);MmxZeroDisable();MmxRendererSetCompactCoopHud(false);
+  MmxCoopViewsSetOnline(true);g_mmx_custom_renderer=true;
+  const int separation[]={0,208,256,-256,512,-512};
+  for(unsigned anchor=0;anchor<2;++anchor) for(unsigned n=0;n<6;++n)
+      for(unsigned kind=0;kind<3;++kind) {
+    memset(&ppu,0,sizeof(ppu));memset(ram,0,sizeof(ram));memset(stock,0,sizeof(stock));
+    MmxRendererReset();
+    ram[0xd1]=2;ram[0xd2]=ram[0xd3]=4;ram[0x1f7a]=7;
+    put_word(0x1e4d,128);put_word(0x1e50,1024);
+    put_word(0x1e58,4096);put_word(0x1e5c,4096);
+    ppu.inidisp=15;ppu.bgmode=1;ppu.screenEnabled[0]=16;ppu.cgram[129]=31;
+    for(unsigned i=0;i<128;++i) ppu.oam[i*2]=0xe000;
+    for(unsigned y=0;y<8;++y) {ppu.vram[y]=255;ppu.vram[256+y]=255;}
+    /* Fixed HUD marker, plus a stale hidden slot, a visible object, or a
+     * 16px object whose bottom wraps onto the native view's top edge. */
+    ppu.oam[0]=0x1008;
+    int sy=kind==0?224:kind==1?40:252;
+    ppu.oam[32]=(uint16_t)(sy<<8|200);ppu.oam[33]=0x2000;
+    if(kind==2) ppu.highOam[4]=2;
+    MmxCoopState s={0};s.initialized=1;s.anchor=s.current=(uint8_t)anchor;
+    for(unsigned seat=0;seat<2;++seat) {
+      s.players[seat].status=MMX_COOP_ALIVE;s.players[seat].body[0x27]=32;
+      unsigned x=seat==anchor?256:384,y=seat==anchor?1184:1184+separation[n];
+      s.players[seat].body[5]=(uint8_t)x;s.players[seat].body[6]=(uint8_t)(x>>8);
+      s.players[seat].body[8]=(uint8_t)y;s.players[seat].body[9]=(uint8_t)(y>>8);
+    }
+    capture();MmxRendererCoopFrame(&s);
+    for(unsigned seat=0;seat<2;++seat) {
+      MmxRendererSetPeerView((int)seat);
+      assert(MmxRendererDraw(output,(MmxRenderView){256,0,4.0/3.0},true));
+      assert(output[16*256+8]==0xff0000); /* HUD remains screen-relative. */
+      int top=kind==2?-4:sy;
+      if(seat!=anchor) top-=separation[n];
+      int x=seat==anchor?200:72,size=kind==2?16:8;
+      for(int y=0;y<224;++y) {
+        bool visible=kind!=0 && y>=top && y<top+size;
+        if(output[y*256+x]!=(visible?0xff0000u:0u))
+          fprintf(stderr,"OAM reprojection: anchor=%u seat=%u dy=%d kind=%u x=%d y=%d pixel=%06x expected=%06x\n",
+              anchor,seat,separation[n],kind,x,y,output[y*256+x],visible?0xff0000:0);
+        assert(output[y*256+x]==(visible?0xff0000u:0u));
+      }
+    }
+  }
+  MmxRendererSetPeerView(-1);MmxCoopViewsSetOnline(false);
+  MmxRendererSetCompactCoopHud(true);g_mmx_custom_renderer=false;MmxRendererReset();
+}
 static void expanded_capacity(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
   ram[0xd1] = 2; ram[0xd2] = 4; ram[0xd3] = 4;
@@ -1237,4 +1287,4 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); return 0; }
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); independent_oam_visibility(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); return 0; }
