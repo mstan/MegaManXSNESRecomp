@@ -1,5 +1,7 @@
 /* Exercise the title entry and the original controllers in a real ROM.
  * Kept separate from the portable queue tests: no ROM fixtures are shipped. */
+#include "mod_audio.h"
+
 static void rush_keep_players_alive(void) {
   g_ram[0xbcf]=0xa0;
   if(MmxCoopEnabled()) {
@@ -8,6 +10,131 @@ static void rush_keep_players_alive(void) {
     MmxCoopSetState(&c);
   }
 }
+static unsigned rush_death_sounds;
+static void rush_death_frame(void) {
+  unsigned head=g_ram[0xba3]&30;frame(0);
+  for(unsigned end=g_ram[0xba3]&30;head!=end;head=(head+2)&30)
+    rush_death_sounds+=g_ram[0xb72+head]==0x0a;
+}
+static void rush_natural_death_checks(void) {
+  check(!MmxCoopEnabled(),"native Boss Rush fatal-contact fixture uses solo play");
+  MmxBossRushState s=MmxBossRushGetState();
+  uint8_t queue[8];
+  const char *boss=getenv("MMX_BOSS_RUSH_DEATH_BOSS");
+  unsigned first=boss?(unsigned)strtoul(boss,NULL,10):0;
+  check(first<8,"fatal-contact fixture selects a valid native boss");
+  queue[0]=(uint8_t)first;queue[1]=(uint8_t)(first==0?4:0);unsigned pos=2;
+  for(unsigned i=0;i<8;++i) if(i!=queue[0] && i!=queue[1]) queue[pos++]=(uint8_t)i;
+  memcpy(s.queue,queue,sizeof(queue));s.queued=8;
+  check(MmxBossRushSetState(&s),"fatal-contact fixture queues the selected boss and a survivor");
+  for(unsigned t=0;t<1500;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    if(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING) break;
+  }
+  check(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING,
+      "fatal-contact fixture completes both native entrances");
+  rush_death_sounds=0;
+  g_ram[0xbcf]=129;g_ram[0xc30]=g_ram[0xc32]=g_ram[0xbd8]=0;
+  for(unsigned t=0;t<120 && (g_ram[0xbcf]&127);++t) {
+    memcpy(g_ram+0xbad,g_ram+s.bosses[0].object+5,2);
+    memcpy(g_ram+0xbb0,g_ram+s.bosses[0].object+8,2);
+    rush_death_frame();
+  }
+  check(!(g_ram[0xbcf]&127),"native boss contact delivers the fatal hit");
+  for(unsigned t=0;t<360 && MmxBossRushGetState().mode==MMX_RUSH_PLAYING;++t) {
+    rush_death_frame();
+    if(t%30==0) fprintf(stderr,"native rush death t=%u mode=%u hp=%u action=%u:%u sounds=%u flags=%u/%u/%u\n",
+        t,MmxBossRushGetState().mode,g_ram[0xbcf],g_ram[0xbaa],g_ram[0xbab],rush_death_sounds,
+        g_ram[0x1f13],g_ram[0x1f19],g_ram[0xc32]);
+  }
+  check(MmxBossRushGetState().mode==MMX_RUSH_FINISHED,"native fatal contact reaches Game Over without looping");
+  check(rush_death_sounds==1,"native fatal contact plays X's death sound once");
+  puts("MMX BOSS RUSH NATIVE FATAL CONTACT CHECKS PASSED");
+}
+
+static void rush_audio_checks(uint8_t *snapshot,size_t cap) {
+  Apu *a=apu_init();apu_reset(a);unsigned entry=0;
+  const uint8_t *rom=g_snes->cart->rom;
+  static const uint8_t banks[]={0,1,2,0x42,0x47};
+  for(unsigned bank=0;bank<sizeof(banks);++bank) {
+    const uint8_t *ptr=rom+0x48000+banks[bank]*3;
+    unsigned p=(9+ptr[2])*0x8000+((ptr[0]|ptr[1]<<8)&0x7fff);
+    for(;;) {
+      unsigned n=rom[p]|rom[p+1]<<8,d=rom[p+2]|rom[p+3]<<8;p+=4;
+      if(!n) {if(!bank) entry=d;break;}
+      memcpy(a->ram+d,rom+p,n);p+=n;
+    }
+  }
+  a->romReadable=false;a->spc->pc=entry;
+  for(unsigned i=0;i<32768;++i) apu_cycle(a);
+  check(a->outPorts[2]==1,"ROM-derived private SPC driver initializes");
+  a->dsp->sampleRead=a->dsp->sampleWrite=0;
+  uint32_t count,boomerang_count;const int16_t *effect=MmxBossRushAudioClip(0x51,&count);
+  const int16_t *boomerang=MmxBossRushAudioClip(0x5a,&boomerang_count);
+  check(effect && count>8000 && boomerang && boomerang_count>64000,
+      "native boss and sustained boomerang clips are available");
+  check(!MmxBossRushAudioClip(0x0c,NULL),"meter-fill sound retains its native driver");
+  a->inPorts[1]=0;a->inPorts[0]=0x51;int peak=0;
+  for(unsigned sample=0;sample<count;++sample) {
+    for(unsigned i=0;i<32;++i) apu_cycle(a);
+    int16_t pcm[2];if(dsp_getSamples(a->dsp,pcm,1)!=1) check(false,"private native SPC sample arrives");
+    if(pcm[0]!=effect[sample*2] || pcm[1]!=effect[sample*2+1])
+      check(false,"cached effect matches independent native SPC output");
+    for(unsigned ch=0;ch<2;++ch) {int v=abs(pcm[ch]);if(v>peak) peak=v;}
+  }
+  check(peak>0 && a->outPorts[2]==2,"native boss effect renders audibly");
+  puts("ok: cached effect matches the complete independent native SPC output");
+  const uint8_t *scripts=a->ram+0x1c02;
+  unsigned current=scripts[0x51*2]<<8|scripts[0x51*2+1];
+  unsigned incoming=scripts[0x5a*2]<<8|scripts[0x5a*2+1];
+  check(a->ram[current]>a->ram[incoming],"native boss sound outranks the boomerang effect");
+  a->inPorts[0]=0x51;
+  for(unsigned i=0;i<8000*32;++i) apu_cycle(a);
+  a->inPorts[0]=0x5a;
+  for(unsigned i=0;i<32768;++i) apu_cycle(a);
+  check(a->outPorts[2]==4 && a->ram[0x2a2]==a->ram[current] && (a->ram[0xc3]&4),
+      "lower-priority native request acknowledges without replacing the boss sound");
+  /* The substituted command acknowledges without stopping that active voice. */
+  a->inPorts[0]=0xb1;
+  for(unsigned i=0;i<32768;++i) apu_cycle(a);
+  check(a->outPorts[2]==5 && a->ram[0x2a2]==a->ram[current] && (a->ram[0xc3]&4),
+      "null native effect preserves acknowledgements and the existing voice");
+  apu_free(a);
+  snes_mod_audio_stop_all();
+  SNESModAudioClip first=snes_mod_audio_register_pcm_s16(effect,count,32040,2);
+  SNESModAudioClip second=snes_mod_audio_register_pcm_s16(boomerang,boomerang_count,32040,2);
+  SNESModAudioVoice one=snes_mod_audio_play_voice(first,100),two=snes_mod_audio_play_voice(second,100);
+  check(one && two,"native boss and boomerang effects can play concurrently");
+  int16_t mixed[1024]={0};
+  RtlApuLock();snes_mod_audio_mix(mixed,512,32040,2);RtlApuUnlock();
+  for(unsigned i=0;i<1024;++i) {
+    int v=(int)effect[i]+boomerang[i];if(v>32767) v=32767;if(v< -32768) v=-32768;
+    if(mixed[i]!=v) check(false,"independent effects mix without channel preemption");
+  }
+  size_t rb_cap=RtlRollbackSnapshotBound();uint8_t *rollback=malloc(rb_cap);
+  check(rollback!=NULL,"local rollback fixture allocates");
+  size_t n=RtlRollbackSaveToMemory(rollback,rb_cap);check(n!=0,"local rollback audio snapshot saves");
+  uint32_t generation=snes_mod_audio_reset_generation();
+  check(RtlRollbackLoadFromMemory(rollback,n),"local rollback audio snapshot restores");free(rollback);
+  check(snes_mod_audio_reset_generation()==generation && snes_mod_audio_voice_active(one) &&
+      snes_mod_audio_voice_active(two),"local rollback preserves active mod-audio voices");
+  memset(mixed,0,sizeof(mixed));
+  RtlApuLock();snes_mod_audio_mix(mixed,512,32040,2);RtlApuUnlock();
+  for(unsigned i=0;i<1024;++i) {
+    int v=(int)effect[1024+i]+boomerang[1024+i];if(v>32767) v=32767;if(v< -32768) v=-32768;
+    if(mixed[i]!=v) check(false,"rollback preserves the audio playback position");
+  }
+  puts("ok: independent native effects and playback positions survive local rollback");
+  n=RtlSaveSnapshotToMemory(snapshot,cap);check(n!=0,"ordinary audio snapshot saves");
+  check(RtlLoadSnapshotFromMemory(snapshot,n),"ordinary audio snapshot restores");
+  check(!snes_mod_audio_voice_active(one) && !snes_mod_audio_voice_active(two) &&
+      snes_mod_audio_reset_generation()!=generation,"ordinary save-state load stops previous audio voices");
+  snes_mod_audio_unregister(first);snes_mod_audio_unregister(second);
+  MmxBossRushAudioState bad=MmxBossRushAudioGetState();bad.cues[0].command=0xfa;
+  check(!MmxBossRushAudioSetState(&bad),"invalid audio control requests are rejected");
+  puts("MMX BOSS RUSH NATIVE AUDIO CHECKS PASSED");
+}
+
 static void rush_projectile_defeat(unsigned seat,unsigned weapon) {
   MmxBossRushState s=MmxBossRushGetState();unsigned object=s.bosses[seat].object;
   unsigned count=s.defeated;g_ram[object+0x27]=1;
@@ -129,6 +256,8 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(g_ram[0xfffd]==boss_bank && g_ram[0xfffd]!=stage_bank,
       "native boss music bank replaces the stage bank");
   check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");
+  if(getenv("MMX_BOSS_RUSH_AUDIO_TEST")) {rush_audio_checks(start,cap);return;}
+  if(getenv("MMX_BOSS_RUSH_DEATH_TEST")) {rush_natural_death_checks();return;}
   size_t baseline=RtlSaveSnapshotToMemory(start,cap);check(baseline!=0,"arena snapshot saves");
   unsigned before=g_ram[0xbad]|g_ram[0xbae]<<8;
   MmxCoopState before_coop=MmxCoopGetState();
@@ -165,6 +294,9 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
     check(MmxRendererSaveCapture(capture),"native boss pair capture saves");
     if(a==0 && b==4) {
       size_t pair_snapshot=RtlSaveSnapshotToMemory(expected,cap);
+      frame(SNES_PAD_START);zero_replay(90);
+      check(MmxRendererSaveCapture("rush-weapon-pause.cap"),"native weapon pause capture saves");
+      check(RtlLoadSnapshotFromMemory(expected,pair_snapshot),"restore combat after pause capture");
       for(unsigned seat=0;seat<2;++seat) {
         check(RtlLoadSnapshotFromMemory(expected,pair_snapshot),"restore weakness finishing-hit fixture");
         uint32_t generation=MmxBossRushGetState().bosses[seat].generation;
@@ -196,7 +328,22 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
       s=MmxBossRushGetState();
       check(s.bosses[0].health<32 || s.bosses[1].health<32,"native buster damages a fighting boss");
     }
-    for(unsigned t=0;t<600;++t) {frame(0);rush_keep_players_alive();}
+    int audio_peak=0;
+    for(unsigned t=0;t<600;++t) {
+      frame(0);rush_keep_players_alive();
+      if(a==0 && b==4) {
+        /* Consume an audio callback's worth each frame. The last gameplay
+         * frame need not contain an active effect, especially after a
+         * boomerang's owning object has retired. */
+        int16_t pcm[1068]={0};
+        RtlApuLock();snes_mod_audio_mix(pcm,534,32040,2);RtlApuUnlock();
+        for(unsigned i=0;i<1068;++i) if(abs(pcm[i])>audio_peak) audio_peak=abs(pcm[i]);
+      }
+    }
+    if(a==0 && b==4) {
+      check(MmxBossRushAudioGetState().sequence>0,"native boss updates emit snapshot-owned sound cues");
+      check(audio_peak>0,"committed native boss cues reach the independent audio mixer");
+    }
     size_t n=RtlSaveSnapshotToMemory(expected,cap);
     check(RtlLoadSnapshotFromMemory(expected,n),"two-boss combat restores");
     frame(0);size_t en=RtlSaveSnapshotToMemory(actual,cap);

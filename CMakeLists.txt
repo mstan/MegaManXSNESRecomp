@@ -45,7 +45,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
         src/mods/mmx_hadouken_plugin.c src/mods/mmx_password_plugin.c src/mmx_password_save.cpp
         src/mods/mmx_zero_plugin.c src/mmx_zero.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
-        src/mmx_boss_rush.c src/mmx_boss_rush_runtime.c src/mmx_boss_rush_draw.c src/mmx_boss_rush_score.cpp
+        src/mmx_boss_rush.c src/mmx_boss_rush_audio.c src/mmx_boss_rush_runtime.c src/mmx_boss_rush_draw.c src/mmx_boss_rush_score.cpp
         src/mmx_source_assets.cpp "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h")
     target_compile_features(${TARGET} PRIVATE cxx_std_17)
     target_include_directories(${TARGET} PRIVATE

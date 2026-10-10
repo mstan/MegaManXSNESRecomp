@@ -5,6 +5,7 @@
 #include "mmx_rtl.h"
 #include "mmx_wide_policy.h"
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_audio.h"
 _Static_assert(sizeof(MmxCoopState) == MMX_COOP_LEGACY_STATE_SIZE + 2 * sizeof(MmxZeroModernState),
                "Update the legacy co-op importer when its layout changes");
 #include "cpu_state.h"
@@ -1503,6 +1504,7 @@ static struct {
   MmxWeaponCombatState combat;MmxZeroState zero;MmxRendererPieceMark pieces;
   MmxCoopViewWorldState world;
 } shot_ghost;
+static MmxBossRushAudioState shot_ghost_audio;
 static MmxCoopState shot_ghost_state;
 static uint8_t shot_ghost_lift[sizeof(lift)],shot_ghost_cart[sizeof(cart)];
 static uint8_t shot_ghost_ram[0x20000];
@@ -1568,7 +1570,7 @@ static void shot_ghost_begin(CpuState *cpu,unsigned kind,uint32_t resume) {
   memcpy(shot_ghost_ram,g_ram,sizeof(shot_ghost_ram));
   shot_ghost.combat=MmxWeaponsGetCombatState();shot_ghost.zero=MmxZeroGetState();
   shot_ghost.pieces=MmxRendererMarkPieces();shot_ghost.world=MmxCoopViewsGetWorldState();
-  shot_ghost_state=state;
+  shot_ghost_state=state;shot_ghost_audio=MmxBossRushAudioGetState();
   memcpy(shot_ghost_lift,&lift,sizeof(lift));memcpy(shot_ghost_cart,&cart,sizeof(cart));
   memcpy(shot_ghost.body,state.players[state.current^1].body,sizeof(shot_ghost.body));
   memcpy(g_ram+0xba8,shot_ghost.body,sizeof(shot_ghost.body));
@@ -1587,7 +1589,7 @@ static void shot_ghost_end(CpuState *cpu,uint32_t pc) {
   memcpy(g_ram+GHOST_SPC_MIRROR,spc,sizeof(spc));
   MmxWeaponsSetCombatState(shot_ghost.combat);MmxZeroSetState(shot_ghost.zero);
   MmxRendererRewindPieces(shot_ghost.pieces);MmxCoopViewsSetWorldState(&shot_ghost.world);
-  state=shot_ghost_state;
+  state=shot_ghost_state;MmxBossRushAudioSetState(&shot_ghost_audio);
   memcpy(&lift,shot_ghost_lift,sizeof(lift));memcpy(&cart,shot_ghost_cart,sizeof(cart));
   uint8_t *body=state.players[state.current^1].body;
   bool moved=false;

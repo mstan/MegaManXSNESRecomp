@@ -9,6 +9,7 @@
 #include "mmx_coop_trace.h"
 #include "mmx_coop_view.h"
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_audio.h"
 #include "variables.h"
 #include "common_cpu_infra.h"
 #include "snes/snes.h"
@@ -365,7 +366,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 18u /* deterministic Boss Rush */
+#define MMX_SAV_CHUNK_VERSION 19u /* Boss Rush native effect requests */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -402,6 +403,7 @@ static MmxCoopState g_load_coop;
 static MmxKncBugfixState g_load_knc_bugfix;
 static MmxCoopViewWorldState g_load_views;
 static MmxBossRushState g_load_rush;
+static MmxBossRushAudioState g_load_rush_audio;
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -451,6 +453,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&knc_bugfix,sizeof(knc_bugfix));
   MmxBossRushState rush=MmxBossRushGetState();
   sli->func(sli,&rush,sizeof(rush));
+  MmxBossRushAudioState audio=MmxBossRushAudioGetState();
+  sli->func(sli,&audio,sizeof(audio));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -464,6 +468,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_knc_bugfix,0,sizeof(g_load_knc_bugfix));
   memset(&g_load_views,0,sizeof(g_load_views));
   memset(&g_load_rush,0,sizeof(g_load_rush));
+  memset(&g_load_rush_audio,0,sizeof(g_load_rush_audio));
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
@@ -541,6 +546,12 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       if(!MmxBossRushValidState(&g_load_rush)) g_load_chunk_ok=0;
     } else g_load_chunk_ok=0;
   }
+  if(g_load_complete && g_load_chunk.version>=19) {
+    if(RtlStateBytesRemaining(sli)>=sizeof(g_load_rush_audio)) {
+      sli->func(sli,&g_load_rush_audio,sizeof(g_load_rush_audio));
+      if(!MmxBossRushAudioValidState(&g_load_rush_audio)) g_load_chunk_ok=0;
+    } else g_load_chunk_ok=0;
+  }
   if(g_load_complete && g_load_chunk.version<16)
     g_load_views.contact_player=g_load_coop.anchor;
   if (!g_load_chunk_ok)
@@ -554,6 +565,9 @@ void MmxOnStateLoaded(uint32_t version) {
   MmxRendererReset();
   if(g_load_chunk_ok && g_load_complete) MmxBossRushSetState(&g_load_rush);
   else MmxBossRushReset();
+  MmxBossRushAudioReset();
+  if(g_load_chunk_ok && g_load_complete) MmxBossRushAudioSetState(&g_load_rush_audio);
+  if(!RtlIsRollbackLoad()) MmxBossRushAudioLoaded();
   MmxKncBugfixSetState(g_load_knc_bugfix);
   s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
   if (g_mmx_custom_renderer && !g_load_native_streakers) {
@@ -1954,7 +1968,7 @@ static void MmxWideStateApply(bool loaded) {
  * recovers (GitHub #45). Runs on the main fiber, never inside a slot fiber,
  * so every slot fiber can be deleted here. */
 void MmxOnHardwareReset(void) {
-  MmxBossRushReset();
+  MmxBossRushReset();MmxBossRushAudioReset();
   MmxCoopReset();
   for (int i = 0; i < MMX_NSLOTS; i++) {
     if (g_slot_fiber[i] != NULL) {

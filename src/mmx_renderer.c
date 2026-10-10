@@ -1357,6 +1357,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   bool menu = zero_menu || weapon_menu;
   bool zero_title = zero_title_menu();
   bool stage = MmxWidePolicy_IsStageScene(frame.ram) && !menu;
+  bool rush_hud = stage && frame_rush.loaded;
   view_dx=view_dy=0;
   if(stage && peer_seat>=0 && frame_coop.initialized && MmxCoopViewsOnline()) {
     MmxCoopView camera=MmxCoopViewForPlayer(frame.ram,&frame_coop,(unsigned)peer_seat);
@@ -1690,7 +1691,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     }
     if (swapping) teleport_actor_row(frame.ram,&frame_zero,&p,r,y,view,objects,object_colors);
     if(coop_hud) coop_hud_row(&p,r,y,view,hud,objects,object_colors);
-    if(stage && frame_rush.loaded) rush_hud_row(&p,r,y,view,objects,object_colors);
+    if(rush_hud) rush_hud_row(&p,r,y,view,objects,object_colors);
     for (int sx = 0; sx < view.width; ++sx) {
       int x = sx - view.extra;
       if (menu && (x < 0 || x >= 256)) { out[y * view.width + sx] = 0; continue; }
@@ -1726,10 +1727,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
                                        dialogue_backdrop && (x < 0 || x >= 256));
     }
   }
-  MmxBossRushDraw(out,view.width,view.extra,&frame_rush);
-  if(frame_rush.mode==MMX_RUSH_PLAYING) {
+  if(stage) MmxBossRushDraw(out,view.width,view.extra,&frame_rush);
+  if(rush_hud && frame_rush.mode==MMX_RUSH_PLAYING) {
     char count[32];snprintf(count,sizeof(count),"DEFEATED %u",frame_rush.defeated);
-    rush_native_text(out,view,view.width/2-(int)strlen(count)*4,24,count,7);
+    rush_native_text(out,view,view.width/2-(int)strlen(count)*4,208,count,7);
     static const char *const labels[]={"CP","SM","AA","LO","BK","SC","SE","FM"};
     for(unsigned i=0;i<2;++i) if(frame_rush.bosses[i].phase)
       rush_native_text(out,view,view.width-40+(int)i*16,96,labels[frame_rush.bosses[i].id],7);

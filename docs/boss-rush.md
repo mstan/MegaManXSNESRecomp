@@ -12,7 +12,8 @@ The native player death animation finishes before results appear.
 Select **Boss Rush** beneath **Option Mode**. Enable the launcher's existing
 co-op mod and supply its X3 ROM to play together. Two native meters on the right
 identify each boss by initials; the shared defeat
-counter stays at the top. The black **Game Over** page uses native font tiles
+counter sits below the arena floor. Boss meters, initials and the counter
+are hidden while the weapon menu is open. The black **Game Over** page uses native font tiles
 with blue/cyan shading, shows the final defeat count and high score, and offers
 **Retry** and **Main Menu**. The best score persists locally across runs and
 launches in `mmx-boss-rush-score.dat` beside the executable. It is local results
@@ -23,8 +24,12 @@ metadata and does not affect gameplay snapshots or rollback.
 `MmxBossRushState` owns the deterministic shuffled queue, defeat counter,
 encounter phases and boss-owned child objects. Unavailable bosses carry into
 the next shuffle; a boss that survives a long time cannot block replacements
-or produce a duplicate. Snapshot chunk v18 includes all run state, including
-an interrupted actor call. Earlier saves load with Boss Rush inactive.
+or produce a duplicate. The opening shuffle mixes native RNG/NMI timing and
+the previous queue RNG,
+so confirmation timing and Retry vary the opening pair while snapshot replay
+retains the same encounter. Snapshot chunk v19 includes all run state and
+native effect requests, including an interrupted actor call. Chunk v18 retains
+Boss Rush with no pending audio cues; saves before v18 load with Rush inactive.
 Renderer captures v18/v19 preserve the solo/co-op run and its HUD.
 
 Native controllers advance once in the existing enemy loop. Entrances retain
@@ -66,6 +71,30 @@ their own stage's resource, palette and pose DMA remapping privately. Their
 native shared OBJ uploads and palette copies are suppressed so cross-stage
 actors cannot overwrite X, weapons or another boss. No decoded graphics or
 ROM-derived cache files are distributed with the build.
+
+Boss attack sounds are rendered ahead of play using an isolated copy of the
+native SPC/DSP, loaded from the owner ROM's common banks `$00/$01/$02` and the
+battle instrument overlays `$42/$47`. All 31 observed boss/child attack effects
+are cached in process memory. The original driver assigns these effects to
+three fixed voices with priorities: Kuwanger's boomerang `$5A` has lower
+priority than `$51`, so an overlapping request can be acknowledged and remain
+silent. Cached effects use the existing trusted-mod PCM mixer to overlap
+independently. Native signed request positions determine left/right balance.
+The boomerang cache retains its full native sustain, with a five-second
+render bound; playback stops when its emitting object retires. Music, player
+sounds, meter fill, charge/stop and transfer commands retain their native path.
+Attack requests substitute acknowledged null effect `$B1` in the existing ring
+so producer/consumer timing and the SPC handshake remain intact. Snapshot-owned
+cues are delivered only for the committed frame. Co-op ghost passes discard
+their speculative cues; rollback preserves existing mixer voices and their
+playback positions. Ordinary save-state loads and reset stop old voices.
+An unavailable cached effect keeps its original native sound request.
+No PCM, BRR data or other ROM-derived audio files are distributed.
+
+After a fatal hit, owned bosses cannot deliver further contact damage to the
+projected player at zero HP. Native grab, throw-damage and grab-release helpers
+also preserve the death pose at zero HP. This prevents a surviving boss from
+repeatedly resetting the native death controller and replaying its sound.
 
 ## Disassembly references
 
@@ -120,7 +149,14 @@ persistence, monotonic records and rejection of malformed files. The compatibili
 player HP full to isolate boss behavior. Each pair must create a new boss
 generation after cleanup. Additional checks use native Fire Wave and Homing
 Torpedo finishing hits against Penguin and Kuwanger (fixtures start at 1 HP),
-and cover entrance-to-hurt/death transitions. These checks do not establish
+and cover entrance-to-hurt/death transitions.
+Set `MMX_BOSS_RUSH_DEATH_TEST=1` for a fatal native-contact regression;
+`MMX_BOSS_RUSH_DEATH_BOSS=4` selects Kuwanger instead of Penguin. It requires
+the actual death animation to reach Game Over and emit exactly one `$0A`
+request. Set `MMX_BOSS_RUSH_AUDIO_TEST=1` to compare cached PCM with independent
+native SPC output, reproduce priority rejection, verify concurrent mixing,
+confirm local rollback retains voices and playback positions, and verify that
+an ordinary save-state load stops them. These checks do not establish
 gameplay balance or long-session stability.
 
 Online uses the existing co-op transport and serialized game state. Per the

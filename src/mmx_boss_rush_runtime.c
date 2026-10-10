@@ -1,4 +1,5 @@
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_audio.h"
 #include "mmx_boss_rush_score.h"
 #include "host_paths.h"
 #include "mmx_coop.h"
@@ -14,6 +15,7 @@
 #include "snes/interp_bridge.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 extern uint8_t g_ram[0x20000];
 static unsigned word(const uint8_t *p) {return p[0]|p[1]<<8;}
@@ -132,11 +134,25 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     g_ram[0x1f7a]=8;g_ram[0x1f81]=2;g_ram[0x1f82]=0;
     equipment(g_ram);s.stage_started=1;MmxBossRushSetState(&s);
   }
+  if(at==0x0088d6 && playing() && getenv("MMX_BOSS_RUSH_AUDIO_TRACE")) {
+    fprintf(stderr,"rush-sfx frame=%d actor=%u object=%04x command=%02x pan=%02x\n",snes_frame_counter,s.actor,cpu->D,cpu->A&255,cpu->Y&255);
+  }
+  unsigned emitter=owner==(int)s.actor-1 ? cpu->D : s.actor_object;
+  if(at==0x0088d6 && playing() && s.actor &&
+      MmxBossRushAudioQueue(s.actor-1,emitter,cpu->A&255,cpu->Y&255,s.bosses[s.actor-1].generation))
+    cpu->A=(cpu->A&0xff00)|0xb1; /* Acknowledged null effect; preserve the native ring protocol. */
   if(at==0x00dc36 && playing()) {
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xdcda);return;
   }
   if(!playing()) return;
   if(at==0x009ac7) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x9ad9);return;}
+  /* Native grab, throw damage and release helpers also write player poses
+   * directly. A grab after a fatal contact must not replace the death pose. */
+  if(s.actor && !(g_ram[0xbcf]&127)) {
+    unsigned end=at==0x049f19?0x9f29:
+        (at==0x049f2a || at==0x049f2f)?0x9f7d:at==0x049f7e?0x9f89:0;
+    if(end) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;}
+  }
   if(owner<0) return;
   if(at==0x048fca) {
     /* Boss art is decoded privately per pose. Its native DMA would read the
@@ -175,7 +191,11 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
      * Rush owns its explosion interval; the boss's eventual removal is local. */
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0xa6d2);return;
   }
-  if((at==0x049b03 || at==0x049b43) && s.bosses[owner].phase!=MMX_RUSH_FIGHTING)
+  /* Another boss can remain in contact during the native death countdown.
+   * Never deliver another hit to an actor whose health is already empty:
+   * the damage routine otherwise resets the death substate every frame. */
+  if((at==0x049b03 || at==0x049b43) &&
+      (s.bosses[owner].phase!=MMX_RUSH_FIGHTING || !(g_ram[0xbcf]&127)))
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x9b79);
 }
 void MmxBossRushHostFrame(void) {
@@ -190,6 +210,8 @@ void MmxBossRushHostFrame(void) {
   if(result.mode==MMX_RUSH_FINISHED && !MmxBossRushScoreRecord(result.defeated) && !score_warned) {
     score_warned=true;fprintf(stderr,"[mmx-rush] high score retained for this session but could not be saved\n");
   }
+  if(result.mode==MMX_RUSH_LOADING || result.mode==MMX_RUSH_PREPARING || result.mode==MMX_RUSH_PLAYING)
+    MmxBossRushAudioPrepare(g_snes->cart->rom,g_snes->cart->romSize);
   bool registered=true;
   /* Idempotent registration: mod activation can replace shared hooks. Add
    * ours after its setup so co-op contact replay stays authoritative. */
@@ -197,7 +219,7 @@ void MmxBossRushHostFrame(void) {
   for(unsigned i=0;i<sizeof(actors)/sizeof(*actors);++i)
     registered&=interp_bridge_add_pre_opcode_hook(actors[i],actor_hook);
   const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,
-    0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276};
+    0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276,0x8088d6,0x849f19,0x849f2a,0x849f2f,0x849f7e};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
   static bool warned;
@@ -217,8 +239,12 @@ static void equipment(uint8_t *r) {
   r[0x1f80]=0; /* No spare-life re-entry. */
 }
 static void load(uint8_t *r,bool coop) {
-  uint16_t held=MmxBossRushGetState().input;
-  MmxBossRushStart(coop,0x4d4d5852u);MmxCoopReset();
+  MmxBossRushState previous=MmxBossRushGetState();uint16_t held=previous.input;
+  /* Native RNG and NMI counters vary with the player's confirmation timing.
+   * Mixing the previous queue RNG also gives Retry a fresh opening. These
+   * inputs belong to guest/snapshot state, so replay uses the same shuffle. */
+  uint32_t seed=((uint32_t)word(r+0xba6)<<16)^word(r+0xb9b)^previous.random^0x9e3779b9u;
+  MmxBossRushStart(coop,seed);MmxBossRushAudioReset();MmxCoopReset();
   MmxBossRushState s=MmxBossRushGetState();s.input=held;
   s.menu_input=held&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y);
   MmxBossRushSetState(&s);
@@ -280,6 +306,7 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
   (void)r;(void)input;return;
 #else
   MmxBossRushState s=MmxBossRushGetState();unsigned pressed=input&~s.input;s.input=input;
+  if(s.mode!=MMX_RUSH_OFF) MmxBossRushAudioTick();
   if(s.mode==MMX_RUSH_OFF) {
     if(!title(r)) {s.menu=0;s.menu_input=input;MmxBossRushSetState(&s);return;}
     /* Old playtest snapshots may contain the removed mode submenu. */

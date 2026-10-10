@@ -23,6 +23,7 @@
 #include "mmx_coop_trace.h"
 #include "mmx_coop_view.h"
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_audio.h"
 #include "netplay/snes_netplay.h"
 #include "host_paths.h"
 #include <ctype.h>
@@ -176,6 +177,7 @@ static void MmxAfterConfig(void) {
   }
 }
 static void MmxAfterFrame(const SnesDesktopHostFrameStats *stats) {
+  MmxBossRushAudioPresent();
   /* Netplay resimulates frames and must never pause for disk writes. */
   MmxCoopTraceAfterFrame(!MmxNetplayActive());
   if (s_benchmark_frames && stats->frame == (unsigned)s_benchmark_frames) {

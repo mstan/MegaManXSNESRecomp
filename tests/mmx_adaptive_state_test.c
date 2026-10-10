@@ -16,6 +16,7 @@ static void frame(unsigned input) {
   if(getenv("MMX_COOP_VIEWS_TEST") || getenv("MMX_COOP_VIEWS_BOOT_TEST") ||
       getenv("MMX_COOP_ONLINE_FIXTURE")) MmxCoopViewsSetOnline(true);
   RtlRunFrame(input | (1u << 30));
+  MmxBossRushAudioPresent();
   CaptureSimulationFrame(1);
 }
 static void replay(int count) {
