@@ -19,6 +19,33 @@ with blue/cyan shading, shows the final defeat count and high score, and offers
 launches in `mmx-boss-rush-score.dat` beside the executable. It is local results
 metadata and does not affect gameplay snapshots or rollback.
 
+## Screenshots
+
+These images come from playtest9 native ROM-backed runs. Full frames are
+enlarged with nearest-neighbor scaling; the hit and cut comparisons use labeled
+crops. The fixtures select pairs and position projectiles for repeatable checks.
+The Game Over score is an example from the results fixture.
+
+Native title entry:
+
+![Boss Rush selected on the native title menu](screenshots/boss-rush-title.png)
+
+Penguin and Kuwanger in the enclosed arena with two native boss meters:
+
+![Two bosses, native health meters and the defeat counter](screenshots/boss-rush-arena.png)
+
+Native font, final count, persistent high score and retry choices:
+
+![Boss Rush Game Over page](screenshots/boss-rush-game-over.png)
+
+Weakness-hit flashes in both boss slots, including Mammoth's trunk:
+
+![Octopus and Mammoth normal and flashing in each boss slot](screenshots/boss-rush-native-hit-flashes.png)
+
+Octopus before and after his native tentacle cut; the small walking limbs remain:
+
+![Octopus before and after tentacle severing](screenshots/boss-rush-octopus-cut.png)
+
 ## Runtime ownership
 
 `MmxBossRushState` owns the deterministic shuffled queue, defeat counter,
@@ -236,8 +263,9 @@ binding rather than a complete gameplay or pixel-reference comparison.
 
 The forced runs, native air/fade checks, seven portable checks, all 28 boss
 pairs in Add Zero solo and local co-op, and ordinary save/load, replay, rewind,
-legacy-v2 and fresh-process replay pass on playtest9. ROMs, decoded art,
-captures and save data remain private. Owner gameplay review remains pending.
+legacy-v2 and fresh-process replay pass on playtest9. ROMs, decoded asset caches,
+raw render captures and save data remain private. Selected PNG screenshots
+are published above. Owner gameplay review remains pending.
 
 ## Native damage flashes and severed limbs
 
