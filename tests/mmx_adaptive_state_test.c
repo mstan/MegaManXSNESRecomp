@@ -16,6 +16,7 @@ static void frame(unsigned input) {
   if(getenv("MMX_COOP_VIEWS_TEST") || getenv("MMX_COOP_VIEWS_BOOT_TEST") ||
       getenv("MMX_COOP_ONLINE_FIXTURE")) MmxCoopViewsSetOnline(true);
   RtlRunFrame(input | (1u << 30));
+  MmxBossRushAudioPresent();
   CaptureSimulationFrame(1);
 }
 static void replay(int count) {
@@ -50,6 +51,7 @@ static void zero_capture(const char *base, const char *suffix) {
 #include "mmx_netplay_test.inc"
 #include "mmx_zero_modern_test.inc"
 #include "mmx_graphics_pacing_test.inc"
+#include "mmx_boss_rush_runtime_test.inc"
 static void zero_motion_checks(const char *fixture) {
   const char *path = getenv("MMX_ZERO_MOTION_REFERENCE");
   if (!path) path = MMX_ZERO_MOTION_REFERENCE_DEFAULT;
@@ -1939,6 +1941,7 @@ int main(int argc, char **argv) {
   MkDir("saves");
   size_t cap = 2u * 1024u * 1024u;
   uint8 *start = malloc(cap), *expected = malloc(cap), *actual = malloc(cap);
+  if(getenv("MMX_BOSS_RUSH_TEST")) {rush_runtime_checks(start,expected,actual,cap);return 0;}
   const char *zero_assets = getenv("MMX_ZERO_TEST_ASSETS");
   const char *zero_title = getenv("MMX_ZERO_TITLE_FIXTURE");
   if(getenv("MMX_COOP_VIEWS_BOOT_TEST")) {

@@ -1,4 +1,5 @@
 #include "mmx_renderer.h"
+#include "mmx_boss_rush.h"
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
 #include "mmx_knc_bugfix.h"
@@ -1217,6 +1218,46 @@ static void zero_blink_submission(void) {
   MmxZeroDisable(); g_mmx_custom_renderer = false; g_mmx_render_asset_repairs = true;
   MmxRendererReset();
 }
+static void rush_private_pose_graphics(void) {
+  memset(rom_bytes,0,sizeof(rom_bytes));memset(ram,0,sizeof(ram));
+  rom_word(0x32cee,0x20);rom_word(0x32cf0,0x22);rom_word(0x32cf2,0x24);
+  rom_word(0x32d0e,0x30);rom_word(0x32d10,0x40);
+  rom_bytes[0x32d1e]=rom_bytes[0x32d2e]=1;
+  rom_word(0x32d21,2);rom_word(0x32d31,4);
+  rom_bytes[0x32d23]=rom_bytes[0x32d33]=0x40;
+  rom_bytes[0x32d24]=rom_bytes[0x32d34]=255;
+  rom_bytes[0x325e4]=7;rom_bytes[0x325e5]=1;
+  rom_word(0x376fc,32);rom_long(0x376fe,0x809000);
+  for(unsigned group=0;group<4;++group) {
+    rom_bytes[0x1000+group*10]=255;
+    memset(rom_bytes+0x1002+group*10,group<2?0x11:0x77,8);
+  }
+  rom_word(0x371b9,0x200);rom_bytes[0x373b7]=2;rom_bytes[0x373b8]=0xe0;
+  rom_word(0x30135,0xb000);rom_word(0x30137,0xb020);
+  for(unsigned i=0;i<2;++i) {
+    unsigned p=0x33000+i*32;rom_bytes[p]=16;rom_word(p+1,0xa000+i*32);rom_bytes[p+3]=128;
+    for(unsigned c=0;c<16;++c) rom_word(0x2a000+i*32+c*2,i?0x7c00:31);
+  }
+  rom_word(0x2a100,0x20);rom_word(0x2a102,0x25);
+  for(unsigned i=0;i<2;++i) {
+    unsigned p=0x2a120+i*5;rom_bytes[p]=1;rom_word(p+1,i*16);
+    rom_bytes[p+3]=0x7f;rom_bytes[p+4]=0xe0;
+  }
+  /* Deliberately unrelated live staging memory must never supply boss CHR. */
+  memset(ram+0x18000,0xff,8192);
+  for(unsigned d=0xe68;d<=0xea8;d+=64) {ram[d+0x10]=1;put_word(d+0x31,0xa100);}
+  MmxRenderAssetsSetRom(NULL,0);MmxRenderAssetsSetRom(rom_bytes,sizeof(rom_bytes));
+  const MmxSpriteAsset *first=MmxRenderAssetsRushObjectSprite(ram,0xe68,0,7);
+  assert(first && first->tiles[0]==0x11 && first->colors[1]==31);
+  ram[0xebf]=1;
+  const MmxSpriteAsset *other=MmxRenderAssetsRushObjectSprite(ram,0xea8,1,7);
+  assert(other && other->tiles[0]==0x77 && other->colors[1]==0x7c00);
+  assert(first->tiles[0]==0x11 && first->colors[1]==31);
+  ram[0xe7f]=1;
+  first=MmxRenderAssetsRushObjectSprite(ram,0xe68,0,7);
+  assert(first && first->tiles[0]==0x77 && first->colors[1]==31);
+  assert(ram[0x18000]==255); /* The private cache never changes guest staging. */
+}
 static void weapons_menu_margins(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
@@ -1237,4 +1278,21 @@ static void weapons_menu_margins(void) {
   memset(stock, 0, sizeof(stock));
 }
 
-int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); return 0; }
+static void rush_results_page(void) {
+  memset(&ppu,0,sizeof(ppu));memset(ram,0,sizeof(ram));
+  ram[0xd1]=2;ram[0xd2]=ram[0xd3]=4;
+  ppu.inidisp=15;ppu.bgmode=1;ppu.cgram[0]=0x7fff;
+  ppu.screenEnabled[0]=16;ppu.oam[0]=0x4040;
+  for(int y=0;y<8;++y) ppu.vram[y]=255;
+  /* A faded white world and a live HUD sprite must both disappear. Retain
+   * the native font bitmap, with readable cyan independent of dead CGRAM. */
+  for(unsigned ch=32;ch<128;++ch) for(unsigned y=0;y<8;++y) ppu.vram[ch*8+y]=0xff00;
+  MmxBossRushStart(false,123);MmxBossRushFinish();capture();
+  MmxRenderView view={256,0,4.0/3.0};
+  assert(MmxRendererDraw(output,view,true));
+  for(unsigned y=0;y<224;++y) for(unsigned x=0;x<256;++x)
+    if(y<48 || y>=168 || x<32 || x>=224) assert((output[y*256+x]&0xffffff)==0);
+  assert((output[48*256+92]&0xffffff)==0x00ffff);
+  MmxBossRushReset();
+}
+int main(void) { geometry(); raster_and_hud(); sprite_coordinates(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); rush_results_page(); return 0; }

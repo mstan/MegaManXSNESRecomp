@@ -73,6 +73,7 @@ Rev 1 build.
 | &#9745; | **Playable Zero** | X3 Zero with his buster/saber combo and grounded character switching. Separate health for X and Zero. |
 | &#9745; | **Modern Zero** | Direct saber attacks, double jump, air dash, and movement during airborne swings. |
 | &#9745; | **Co-op mode** | X and Zero on screen together, with independent health, weapons, and weapon energy. |
+| &#9745; | **[Boss Rush](docs/boss-rush.md)** | Endless fights against two different Mavericks, solo or co-op, from the game's title menu. |
 | &#9745; | **X2 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
 | &#9745; | **X3 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
 | &#9745; | **Netplay** | Two-player online co-op with lobbies and rollback, plus optional fixed widescreen. |

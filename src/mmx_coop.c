@@ -4,6 +4,8 @@
 #include "mmx_coop_trace.h"
 #include "mmx_rtl.h"
 #include "mmx_wide_policy.h"
+#include "mmx_boss_rush.h"
+#include "mmx_boss_rush_audio.h"
 _Static_assert(sizeof(MmxCoopState) == MMX_COOP_LEGACY_STATE_SIZE + 2 * sizeof(MmxZeroModernState),
                "Update the legacy co-op importer when its layout changes");
 #include "cpu_state.h"
@@ -31,7 +33,8 @@ extern Snes *g_snes;
 extern int snes_frame_counter;
 
 static MmxCoopState state = {.players = {{.character = MMX_COOP_X}, {.character = MMX_COOP_ZERO}}};
-static bool enabled;
+static bool configured_enabled;
+#define enabled (configured_enabled && MmxBossRushCoop())
 static unsigned starting_character;
 _Static_assert(sizeof(MmxCoopPlayer) == 2276, "Co-op player save ABI");
 _Static_assert(sizeof(MmxCoopState) == 4664, "Co-op save ABI");
@@ -333,9 +336,9 @@ void MmxCoopReset(void) {
 }
 bool MmxCoopEnable(unsigned character) {
   if (character > MMX_COOP_ZERO || !MmxZeroEnabled()) return false;
-  starting_character = character; enabled = true; MmxCoopReset(); return true;
+  starting_character = character; configured_enabled = true; MmxCoopReset(); return true;
 }
-void MmxCoopDisable(void) { enabled = false; starting_character = 0; MmxCoopReset(); }
+void MmxCoopDisable(void) { configured_enabled = false; starting_character = 0; MmxCoopReset(); }
 MmxCoopState MmxCoopGetState(void) { return state; }
 bool MmxCoopValidState(const MmxCoopState *s) {
   if (!s || s->initialized > 1 || s->current > 1 || s->controller_pass > 2 ||
@@ -1254,6 +1257,7 @@ static bool living_on_screen(const uint8_t *r,unsigned seat) {
  * request waits for both that and a spare life, so a 1-up collected while
  * none were left brings him straight back. */
 static bool respawn_tick(uint8_t *r,unsigned seat) {
+  if(MmxBossRushActive()) return false;
   MmxCoopPlayer *p=&state.players[seat];
   unsigned bit=1u<<seat;
   bool ready=living_on_screen(r,seat^1) && r[0x1f80] && !boss_fight(r);
@@ -1500,6 +1504,7 @@ static struct {
   MmxWeaponCombatState combat;MmxZeroState zero;MmxRendererPieceMark pieces;
   MmxCoopViewWorldState world;
 } shot_ghost;
+static MmxBossRushAudioState shot_ghost_audio;
 static MmxCoopState shot_ghost_state;
 static uint8_t shot_ghost_lift[sizeof(lift)],shot_ghost_cart[sizeof(cart)];
 static uint8_t shot_ghost_ram[0x20000];
@@ -1565,7 +1570,7 @@ static void shot_ghost_begin(CpuState *cpu,unsigned kind,uint32_t resume) {
   memcpy(shot_ghost_ram,g_ram,sizeof(shot_ghost_ram));
   shot_ghost.combat=MmxWeaponsGetCombatState();shot_ghost.zero=MmxZeroGetState();
   shot_ghost.pieces=MmxRendererMarkPieces();shot_ghost.world=MmxCoopViewsGetWorldState();
-  shot_ghost_state=state;
+  shot_ghost_state=state;shot_ghost_audio=MmxBossRushAudioGetState();
   memcpy(shot_ghost_lift,&lift,sizeof(lift));memcpy(shot_ghost_cart,&cart,sizeof(cart));
   memcpy(shot_ghost.body,state.players[state.current^1].body,sizeof(shot_ghost.body));
   memcpy(g_ram+0xba8,shot_ghost.body,sizeof(shot_ghost.body));
@@ -1584,7 +1589,7 @@ static void shot_ghost_end(CpuState *cpu,uint32_t pc) {
   memcpy(g_ram+GHOST_SPC_MIRROR,spc,sizeof(spc));
   MmxWeaponsSetCombatState(shot_ghost.combat);MmxZeroSetState(shot_ghost.zero);
   MmxRendererRewindPieces(shot_ghost.pieces);MmxCoopViewsSetWorldState(&shot_ghost.world);
-  state=shot_ghost_state;
+  state=shot_ghost_state;MmxBossRushAudioSetState(&shot_ghost_audio);
   memcpy(&lift,shot_ghost_lift,sizeof(lift));memcpy(&cart,shot_ghost_cart,sizeof(cart));
   uint8_t *body=state.players[state.current^1].body;
   bool moved=false;
