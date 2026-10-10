@@ -1318,6 +1318,8 @@ static void rush_static_and_streamed_graphics(void) {
   assert(a && a->colors[1]==0x7c00 && (a->attributes&14)==12);
   ram[0xe72]=0x31;ram[0xe79]=0;a=MmxRenderAssetsRushObjectSprite(ram,0xe68,6,0x91);
   assert(a && a->colors[1]==31);
+  ram[0xe79]=14;a=MmxRenderAssetsRushObjectSprite(ram,0xe68,6,0x91);
+  assert(a && a->colors[1]==0x7fff); /* Correct native palette 4 OR $06. */
   a=MmxRenderAssetsRushSprite(8,0x68);assert(a && a->id==0x62 && a->colors[1]==0x7fe0);
   ram[0xe72]=6;a=MmxRenderAssetsRushObjectSprite(ram,0xe68,8,0x67);
   assert(a && a->id==0x61 && a->colors[1]==0x7fe0 && (a->attributes&15)==11);
@@ -1325,7 +1327,30 @@ static void rush_static_and_streamed_graphics(void) {
   assert(a && a->colors[1]==0x7fe0);
   ram[0xe72]=2;a=MmxRenderAssetsRushObjectSprite(ram,0xe68,8,0x67);
   assert(a && a->colors[1]==31);
-  MmxRenderAssetsSetRom(NULL,0);
+  /* A private sheet must still show live native hit colors in either seat. */
+  rom_long(0x68000+0x89*3,0x8d9000);rom_long(0x69000,0x8d9100);
+  rom_bytes[0x69100]=1;memset(rom_bytes+0x69101,0,4);
+  memset(&ppu,0,sizeof(ppu));memset(ram,0,sizeof(ram));memset(stock,0,sizeof(stock));
+  ppu.inidisp=15;ppu.bgmode=1;ppu.screenEnabled[0]=16;
+  for(unsigned i=1;i<16;++i) ppu.cgram[128+i]=0x7fff;
+  for(unsigned i=0;i<128;++i) ppu.oam[i*2]=0xe000;
+  ram[0xd1]=2;ram[0xd2]=ram[0xd3]=4;
+  ram[0xe7]=1;put_word(0x920,0xe68);ram[0xe68]=1;ram[0xe76]=1;
+  ram[0xe7e]=0x89;put_word(0xe6d,60);put_word(0xe70,40);
+  MmxRendererSetRom(NULL,0);MmxRendererSetRom(rom_bytes,sizeof(rom_bytes));
+  g_mmx_custom_renderer=true;
+  for(unsigned seat=0;seat<2;++seat) {
+    MmxBossRushStart(false,1);assert(MmxBossRushAssign(seat,6,0xe68));
+    MmxBossRushState rush=MmxBossRushGetState();rush.mode=MMX_RUSH_PLAYING;
+    assert(MmxBossRushSetState(&rush));
+    for(unsigned flash=0;flash<2;++flash) {
+      ram[0xe79]=flash?0x21:0x29;
+      MmxRendererReset();MmxRendererObserveObject(ram,0xe68);MmxRendererLatchSprites();capture();
+      assert(MmxRendererDraw(output,(MmxRenderView){256,0,4.0/3.0},false));
+      assert(output[40*256+61]==(flash?0xffffffu:0xff0000u));
+    }
+  }
+  MmxBossRushReset();g_mmx_custom_renderer=false;MmxRendererSetRom(NULL,0);
 }
 static void weapons_menu_margins(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));

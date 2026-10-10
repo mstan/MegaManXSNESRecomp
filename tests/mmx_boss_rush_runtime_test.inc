@@ -208,6 +208,109 @@ static void rush_forced_visual_checks(uint8_t *snapshot,size_t cap) {
   }
   fclose(log);puts("MMX BOSS RUSH FORCED VISUAL CONTROLLERS COMPLETE");
 }
+static void rush_hit_visual_checks(uint8_t *arena,uint8_t *pair,size_t cap) {
+  size_t baseline=RtlSaveSnapshotToMemory(arena,cap);
+  check(baseline!=0,"hit fixture saves empty arena");
+  FILE *log=fopen("rush-hits.csv","w");check(log!=NULL,"hit trace opens");
+  fputs("order,seat,boss,weapon,frame,hp,timer,palette,saved_palette,cut,cut_hits,animation,pose,resource,data,table,xstate,ystate,weapon_selected,shot_state,shot_kind,shot_x,shot_y\n",log);
+  for(unsigned order=0;order<2;++order) {
+    check(RtlLoadSnapshotFromMemory(arena,baseline),"hit fixture restores empty arena");
+    MmxBossRushState s=MmxBossRushGetState();s.queue[0]=order?7:3;s.queue[1]=order?3:7;
+    unsigned q=2;for(unsigned i=0;i<8;++i) if(i!=3 && i!=7) s.queue[q++]=(uint8_t)i;
+    s.queued=8;check(MmxBossRushSetState(&s),"hit fixture swaps Octopus and Mammoth seats");
+    for(unsigned t=0;t<1500;++t) {
+      frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+      if(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING) break;
+    }
+    check(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING,
+        "hit fixture completes both introductions");
+    size_t saved=RtlSaveSnapshotToMemory(pair,cap);check(saved!=0,"hit fixture saves combat");
+    for(unsigned seat=0;seat<2;++seat) for(unsigned cut=0;cut<2;++cut) {
+      unsigned boss=seat==order?3:7,weapon=cut?7:boss==3?3:5;
+      check(RtlLoadSnapshotFromMemory(pair,saved),"each weapon restores undamaged bosses");
+      s=MmxBossRushGetState();unsigned body=s.bosses[seat].object;
+      const MmxSpriteAsset *base=MmxRenderAssetsRushSprite(kMmxBossRushBosses[boss].stage,g_ram[body+22]);
+      check(base && g_ram[body+0x33]==(base->attributes&14),
+          "native damage controller saves its own resource's normal palette");
+      g_ram[body+2]=g_ram[body+3]=0;g_ram[0xbdb]=(uint8_t)(weapon*2);
+      g_ram[0xbad]=(uint8_t)(s.camera_x+100);g_ram[0xbae]=(uint8_t)((s.camera_x+100)>>8);
+      g_ram[0xbb0]=(uint8_t)(s.camera_y+164);g_ram[0xbb1]=(uint8_t)((s.camera_y+164)>>8);
+      g_ram[0xbb9]&=~64u;
+      bool hit=false,flashing=false,normal=false,poses[128]={0};unsigned hits=0,previous=32,last_hit=0;
+      for(unsigned t=0;t<(cut?1200:180);++t) {
+        /* Real native projectiles make the collision. Hold the target and
+         * center active shots on it, as in the finishing-hit regression. */
+        g_ram[body+5]=(uint8_t)(s.camera_x+160);g_ram[body+6]=(uint8_t)((s.camera_x+160)>>8);
+        g_ram[body+8]=(uint8_t)(s.camera_y+164);g_ram[body+9]=(uint8_t)((s.camera_y+164)>>8);
+        unsigned other=s.bosses[seat^1].object;
+        g_ram[other+5]=(uint8_t)(s.camera_x-128);g_ram[other+6]=(uint8_t)((s.camera_x-128)>>8);
+        g_ram[other+2]=g_ram[other+3]=0;
+        /* Contact knockback otherwise prevents X from firing repeated cuts.
+         * Disable only boss contact damage; projectile collision stays native. */
+        for(unsigned d=0xe68;d<0x1e28;) {
+          if(d==0x1228) {d=0x1428;continue;}
+          unsigned step=d<0x1628?64:d<0x1928?48:32;
+          int owner=MmxBossRushOwner(d);
+          if(owner>=0 && g_ram[d]) g_ram[d+0x26]=0;
+          /* The off-screen partner must not grab X through a vortex child. */
+          if(owner==(int)(seat^1) && d!=other) g_ram[d]=0;
+          d+=step;
+        }
+        g_ram[0xbad]=(uint8_t)(s.camera_x+100);g_ram[0xbae]=(uint8_t)((s.camera_x+100)>>8);
+        if(cut && t%90==0 && !g_ram[body+(boss==3?0x3c:0x39)]) {
+          g_ram[body+2]=g_ram[body+3]=0;
+          if(boss==3) g_ram[body+0x3a]=0; /* Select a hittable native behavior. */
+          /* Mammoth's original stomp stuns X, preventing the next shot.
+           * Reset only the fixture's shooter before each forced collision. */
+          g_ram[0xbaa]=g_ram[0xbab]=g_ram[0xc2d]=0;g_ram[0xbb9]&=~64u;
+        }
+        for(unsigned d=0x1228;d<0x1428;d+=64) if(g_ram[d]) {
+          memcpy(g_ram+d+5,g_ram+body+5,2);memcpy(g_ram+d+8,g_ram+body+8,2);
+          g_ram[d+4]=g_ram[d+7]=0;
+        }
+        unsigned prior_timer=g_ram[body+(boss==3?0x3c:0x39)];
+        bool prior_flash=prior_timer && !(g_ram[body+17]&14);
+        frame((!hit || cut) && t%90==0?SNES_PAD_Y:0);rush_keep_players_alive();
+        unsigned hp=g_ram[body+0x27]&127,timer=g_ram[body+(boss==3?0x3c:0x39)];
+        if(hp<previous) {
+          check(!hits || t-last_hit>=60,"native damage immunity prevents early repeat hits");
+          hit=true;++hits;last_hit=t;
+        }
+        fprintf(log,"%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%04x,%u,%u,%u,%u,%u,%u,%u\n",
+            order,seat,boss,weapon,t,hp,timer,g_ram[body+17]&14,g_ram[body+0x33],
+            g_ram[body+0x36],g_ram[body+0x0c],g_ram[body+22],g_ram[body+23]&127,
+            MmxRenderAssetsRushSprite(kMmxBossRushBosses[boss].stage,g_ram[body+22])->id,
+            g_ram[body+16],g_ram[body+49]|g_ram[body+50]<<8,g_ram[0xbaa],g_ram[0xbb0]|g_ram[0xbb1]<<8,
+            g_ram[0xbdb],g_ram[0x1228],g_ram[0x1232],g_ram[0x122d]|g_ram[0x122e]<<8,g_ram[0x1230]|g_ram[0x1231]<<8);
+        if(hit && prior_flash && !flashing) {
+          flashing=true;char name[80];snprintf(name,sizeof(name),"rush-hit-%u-%u-%u.bmp",boss,seat,weapon);
+          rush_visual_bmp(name);
+        }
+        if(hit && prior_timer && !prior_flash && !normal) {
+          normal=true;char name[80];snprintf(name,sizeof(name),"rush-hit-normal-%u-%u-%u.bmp",boss,seat,weapon);
+          rush_visual_bmp(name);
+        }
+        unsigned pose=g_ram[body+23]&127;
+        if(cut && !poses[pose] && g_ram[body+14]) {
+          poses[pose]=true;char name[80];snprintf(name,sizeof(name),"rush-art-%u-%02x-%u.bin",boss,g_ram[body+22],pose);
+          const MmxSpriteAsset *art=MmxRenderAssetsRushObjectSprite(g_ram,body,kMmxBossRushBosses[boss].stage,g_ram[body+22]);
+          FILE *out=fopen(name,"wb");check(art && out!=NULL,"damaged boss art resolves");
+          check(fwrite(art->tiles,sizeof(art->tiles),1,out)==1 && fwrite(art->colors,sizeof(art->colors),1,out)==1 &&
+              fwrite(&art->id,3,1,out)==1 && !fclose(out),"damaged boss art saves");
+          snprintf(name,sizeof(name),"rush-pose-%u-%02x-%u.bmp",boss,g_ram[body+22],pose);rush_visual_bmp(name);
+        }
+        /* Keep attacks nonfatal so the native cut counter can reach zero. */
+        g_ram[body+0x27]=(uint8_t)((g_ram[body+0x27]&128)|32);previous=32;
+      }
+      fprintf(stderr,"hit fixture boss=%u seat=%u weapon=%u hits=%u palette=%u saved=%u cut=%u remaining=%u\n",
+          boss,seat,weapon,hits,g_ram[body+17]&14,g_ram[body+0x33],g_ram[body+0x36],g_ram[body+0x0c]);
+      check(hit && flashing && normal,"real weapon hits advance native flashing and normal damage phases");
+      if(cut) check(boss==3?g_ram[body+0x36]!=0:g_ram[body+0x36]==0,
+          "native Boomerang Cutter severs Octopus tentacles or Mammoth trunk");
+    }
+  }
+  fclose(log);puts("MMX BOSS RUSH NATIVE HIT VISUAL CHECKS PASSED");
+}
 static void rush_death_frame(void) {
   unsigned head=g_ram[0xba3]&30;frame(0);
   for(unsigned end=g_ram[0xba3]&30;head!=end;head=(head+2)&30)
@@ -455,6 +558,7 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");
   if(getenv("MMX_BOSS_RUSH_AUDIO_TEST")) {rush_audio_checks(start,cap);return;}
   if(getenv("MMX_BOSS_RUSH_DEATH_TEST")) {rush_natural_death_checks();return;}
+  if(getenv("MMX_BOSS_RUSH_HIT_VISUAL_TEST")) {rush_hit_visual_checks(start,expected,cap);return;}
   if(getenv("MMX_BOSS_RUSH_FORCE_VISUAL")) {rush_forced_visual_checks(start,cap);return;}
   if(getenv("MMX_BOSS_RUSH_AIR_VISUAL_TEST")) {rush_air_visual_trace();return;}
   if(getenv("MMX_BOSS_RUSH_VISUAL_TEST")) {rush_visual_checks(start,cap);return;}

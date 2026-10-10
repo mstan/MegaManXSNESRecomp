@@ -236,5 +236,40 @@ binding rather than a complete gameplay or pixel-reference comparison.
 
 The forced runs, native air/fade checks, seven portable checks, all 28 boss
 pairs in Add Zero solo and local co-op, and ordinary save/load, replay, rewind,
-legacy-v2 and fresh-process replay pass on playtest8. ROMs, decoded art,
+legacy-v2 and fresh-process replay pass on playtest9. ROMs, decoded art,
 captures and save data remain private. Owner gameplay review remains pending.
+
+## Native damage flashes and severed limbs
+
+The native `$82:827D` setup reads OBJ tile/palette allocations from the current
+room. Penguin's room has no allocation for most other Mavericks; Octopus and
+Mammoth therefore saved palette zero as their normal damage palette in `$33`.
+Rush supplies each owned object's original resource allocation at the two
+stores, after the original loads execute. Native bus reads, cycle timing,
+damage counters and collision boxes are preserved. Mandrill's dash palette
+selection also accepts the resulting original palette-4 OR `$06` value.
+
+Private boss graphics now respect the native palette-zero damage flash using
+live CGRAM, while retaining their own decoded tiles. Mammoth's trunk copies
+his palette natively and flashes with his body. This applies to either seat.
+
+Octopus's third accepted Boomerang Cutter hit sets the native severed flag at
+`+$36`, selects the cut animation sequences and disables vortex choices. The
+original cut arrangements retain his two small walking limbs; the large arms
+and tentacles are removed. Rush keeps those original arrangements.
+
+Set `MMX_BOSS_RUSH_HIT_VISUAL_TEST=1` alongside `MMX_BOSS_RUSH_TEST=1` to swap
+Octopus and Mammoth between both seats and hit them with real native Rolling
+Shield, Storm Tornado and Boomerang Cutter projectiles. The fixture isolates
+contact/grabs and positions shots to guarantee collisions; damage acceptance,
+native immunity, palette phases and severing execute in the original code.
+It saves private normal/flash images, observed animation sheets and a damage
+trace. The spacing assertion checks that accepted repeat hits cannot bypass
+the native 60-frame immunity; it does not establish whether every moving
+attack's visible pixels match its original collision box.
+
+The playtest9 hit run passes all eight boss/seat/weapon combinations. Private
+gameplay captures show Octopus's normal and flashing palettes in both seats
+and Mammoth's body/trunk flashing together in both seats. Cut traces reach
+Octopus's severed flag and Mammoth's zero trunk counter after three accepted
+Boomerang Cutter hits. Reviewed cut arrangements match the original ROM art.

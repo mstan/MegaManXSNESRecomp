@@ -1453,6 +1453,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   const MmxSpriteAsset *waiting_zero = waiting_count ? MmxRenderAssetsCaptiveZero() : NULL;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
   MmxSpriteAsset camouflage_art;
+  MmxSpriteAsset rush_flash_art[2];
+  bool rush_flash_ready[2]={false,false};
   bool camouflage_ready=false;
   if (stage && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
@@ -1477,6 +1479,18 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
             camouflage_ready=true;
           }
           a=&camouflage_art;
+        }
+        /* Keep private CHR, but let the native palette-zero hit flash use
+         * live CGRAM. Mammoth's trunk copies its parent's $11 at $82:9665. */
+        bool body=s->object==frame_rush.bosses[seat].object ||
+            (frame_rush.bosses[seat].id==7 && frame.ram[s->object+10]==0x0e &&
+             word(frame.ram,s->object+12)==frame_rush.bosses[seat].object);
+        if(private && body && !(s->attr&0x0e00) && (private->attributes&14)) {
+          if(!rush_flash_ready[seat]) {
+            rush_flash_art[seat]=*a;rush_flash_art[seat].live_colors=true;
+            rush_flash_ready[seat]=true;
+          }
+          a=&rush_flash_art[seat];
         }
       }
     }

@@ -404,7 +404,7 @@ const MmxSpriteAsset *MmxRenderAssetsRushObjectSprite(const uint8_t ram[0x20000]
      * $06 onto Mandrill's palette-4 body (palette 7); $88:A25E selects
      * palette 5 for the charged attack. All four live in list $01D2. */
     unsigned bits=ram[object+17]&14;
-    palette_offset=kind==0x28?2:kind==0x31 && bits==6?3:
+    palette_offset=kind==0x28?2:kind==0x31 && (bits==14 || bits==6)?3:
         kind==0x31 && bits==10?1:0;
   }
   if(!streamed && !palette_offset && !ice) return base;

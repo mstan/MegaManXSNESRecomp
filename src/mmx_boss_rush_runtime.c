@@ -154,6 +154,21 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     if(end) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;}
   }
   if(owner<0) return;
+  if(at==0x028297 || at==0x02829d) {
+    /* $82:827D initializes OBJ metadata from the current stage's $7F
+     * allocation tables. Cross-stage bodies otherwise save palette zero
+     * as their normal palette ($33), so their native hit flash cannot toggle.
+     * Supply their own ROM allocation before the original STA. Both native
+     * loads still execute, preserving their bus reads and cycle timing. */
+    const MmxSpriteAsset *art=MmxRenderAssetsRushSprite(
+        kMmxBossRushBosses[s.bosses[owner].id].stage,g_ram[cpu->D+0x16]);
+    if(art) {
+      unsigned value=at==0x028297?art->tile_base:art->attributes;
+      cpu->A=(cpu->A&0xff00)|value;cpu->_flag_Z=!value;cpu->_flag_N=(value>>7)&1;
+      cpu->P=(cpu->P&~0x82u)|(cpu->_flag_Z?2:0)|(cpu->_flag_N?128:0);
+      return;
+    }
+  }
   if(s.bosses[owner].id==5 && s.bosses[owner].object==cpu->D) {
     /* Native $88:8DAB/$8E0F increment/decrement each RGB5 channel. Their
      * shared $0480/$04A0 buffers belong to the arena; update private colors
@@ -236,7 +251,7 @@ void MmxBossRushHostFrame(void) {
     registered&=interp_bridge_add_pre_opcode_hook(actors[i],actor_hook);
   const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,
     0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276,0x8088d6,0x849f19,0x849f2a,0x849f2f,0x849f7e,
-    0x8885b5,0x888dab,0x888e0f,0x888d79,0x888d2f,0x888d5e,0x88876a};
+    0x8885b5,0x888dab,0x888e0f,0x888d79,0x888d2f,0x888d5e,0x88876a,0x828297,0x82829d};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
   static bool warned;
