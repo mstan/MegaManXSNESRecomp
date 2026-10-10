@@ -845,7 +845,13 @@ void MmxZeroPlayerTick(uint8_t r[0x20000]) {
      * to its airborne counterpart. Native air control/gravity/collision run. */
     if (!state.air) {
       r[0xbde] = r[0xbe2] = 0;
-      if (action != 0) { r[0xbaa] = 0; r[0xbab] = 0; }
+      /* Plant Zero's feet, but let a landing finish through X1's own landing
+       * ($08 touching down, then recovery $0A): it settles the body onto a
+       * slope. Forcing idle straight from the fall left the body off a slope
+       * (Chill Penguin's), so it fell again a few frames later -- air,
+       * ground, air, each flip restarting the burst phase, so the shot never
+       * finished and Zero twitched in place. */
+      if (action != 0 && action != 0x08 && action != 0x0a) { r[0xbaa] = 0; r[0xbab] = 0; }
     } else {
       /* X3's firing action keeps integrating through the apex, instead of
        * entering X1's ordinary fall initializer (which resets VY to zero). */

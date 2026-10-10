@@ -221,3 +221,35 @@ static void coop_armor_pilot_checks(const char *assets, const char *fixture) {
   }
   puts("MMX CO-OP RIDE ARMOR PILOT CHECKS PASSED");
 }
+
+/* X3 Zero's charged shots, landing mid-burst on a slope. The ground phase
+ * forced idle straight from the fall, which skipped X1's landing and left
+ * the body off the slope; Zero fell again, the burst restarted its phase on
+ * every air/ground flip, and he twitched in place for as long as you let him
+ * (playtest 2026-10-09, Chill Penguin's stage). From a private co-op
+ * checkpoint with Zero as P2 left of a slope (MMX_COOP_ZERO_SLOPE_FIXTURE):
+ * walk onto it, charge, jump, release in the air, keep tapping fire. */
+static void coop_zero_slope_burst_checks(const char *assets, const char *fixture) {
+  coop_replay_start(assets);
+  for (int rel = 0; rel < 20; rel += 4) {
+    check(RtlLoadSnapshot(fixture), "slope fixture loads");
+    for (unsigned t = 0; t < 40; ++t) coop_frames(1, 0, SNES_PAD_RIGHT);
+    for (unsigned t = 0; t < 10; ++t) coop_frames(1, 0, 0);
+    bool was_ground = true; unsigned flips = 0, release = 150 + (unsigned)rel;
+    for (unsigned t = 0; t < 360; ++t) {
+      unsigned p2 = 0;
+      if (t < release) p2 |= SNES_PAD_Y;
+      if (t >= 150 && t < 162) p2 |= SNES_PAD_B;
+      if (t > release + 2 && t < release + 90 && ((t - release) % 7) < 2) p2 |= SNES_PAD_Y;
+      coop_frames(1, 0, p2);
+      bool ground = (coop_replay_body(1)[0x2b] & 4) != 0;
+      if (t > 260 && was_ground && !ground) ++flips;
+      was_ground = ground;
+    }
+    MmxZeroState z = MmxCoopGetState().players[1].zero;
+    fprintf(stderr, "slope burst +%d: flips %u, burst %u, action %02x\n", rel, flips, z.burst, coop_replay_body(1)[2]);
+    check(flips == 0 && !z.burst && coop_replay_body(1)[2] == 0,
+          "a burst that lands on a slope finishes and Zero stands");
+  }
+  puts("MMX CO-OP ZERO SLOPE BURST CHECKS PASSED");
+}

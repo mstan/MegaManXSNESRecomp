@@ -1948,6 +1948,7 @@ int main(int argc, char **argv) {
     coop_view_boot_checks(zero_assets,start,expected,actual,cap);return 0;
   }
   if(getenv("MMX_COOP_REPLAY")) { coop_replay_probe(zero_assets,getenv("MMX_COOP_REPLAY")); return 0; }
+  if(getenv("MMX_COOP_ZERO_SLOPE_FIXTURE")) { coop_zero_slope_burst_checks(zero_assets,getenv("MMX_COOP_ZERO_SLOPE_FIXTURE")); return 0; }
   if(getenv("MMX_COOP_ARMOR_PILOT_FIXTURE")) { coop_armor_pilot_checks(zero_assets,getenv("MMX_COOP_ARMOR_PILOT_FIXTURE")); return 0; }
   if(getenv("MMX_COOP_ARMOR_FIXTURE")) { coop_armor_checks(zero_assets,getenv("MMX_COOP_ARMOR_FIXTURE")); return 0; }
   if(getenv("MMX_COOP_CANISTER_FIXTURE")) { coop_canister_checks(zero_assets,getenv("MMX_COOP_CANISTER_FIXTURE")); return 0; }
