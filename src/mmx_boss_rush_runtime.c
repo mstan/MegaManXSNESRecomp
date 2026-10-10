@@ -5,6 +5,7 @@
 #include "mmx_coop.h"
 #include "mmx_renderer.h"
 #include "mmx_render_assets.h"
+#include "mmx_wide_policy.h"
 #include "mmx_rtl.h"
 #include "mmx_zero.h"
 #include "mmx_weapons.h"
@@ -154,16 +155,19 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
     if(end) {interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;}
   }
   if(owner<0) return;
-  if(at==0x028297 || at==0x02829d) {
+  if(at==0x028297 || at==0x02829d || at==0x03b192) {
     /* $82:827D initializes OBJ metadata from the current stage's $7F
      * allocation tables. Cross-stage bodies otherwise save palette zero
      * as their normal palette ($33), so their native hit flash cannot toggle.
      * Supply their own ROM allocation before the original STA. Both native
-     * loads still execute, preserving their bus reads and cycle timing. */
+     * loads still execute, preserving their bus reads and cycle timing.
+     * Armadillo then overwrites $11 directly from $7F:835D at $83:B18C.
+     * Supply that allocation after his native AND #$FE as well; he saves
+     * its palette in $35 rather than the generic damage helper's $33. */
     const MmxSpriteAsset *art=MmxRenderAssetsRushSprite(
-        kMmxBossRushBosses[s.bosses[owner].id].stage,g_ram[cpu->D+0x16]);
+        kMmxBossRushBosses[s.bosses[owner].id].stage,at==0x03b192?0x62:g_ram[cpu->D+0x16]);
     if(art) {
-      unsigned value=at==0x028297?art->tile_base:art->attributes;
+      unsigned value=at==0x028297?art->tile_base:art->attributes&(at==0x03b192?0xfe:0xff);
       cpu->A=(cpu->A&0xff00)|value;cpu->_flag_Z=!value;cpu->_flag_N=(value>>7)&1;
       cpu->P=(cpu->P&~0x82u)|(cpu->_flag_Z?2:0)|(cpu->_flag_N?128:0);
       return;
@@ -251,7 +255,7 @@ void MmxBossRushHostFrame(void) {
     registered&=interp_bridge_add_pre_opcode_hook(actors[i],actor_hook);
   const unsigned bosses[]={0x849feb,0x84a003,0x84aadd,0x84a677,0x849b03,0x849b43,
     0x848fca,0x848fad,0x9ac7,0xdc36,0xdd47,0xd1ed,0x94d9,0xe68e,0x879258,0x879276,0x8088d6,0x849f19,0x849f2a,0x849f2f,0x849f7e,
-    0x8885b5,0x888dab,0x888e0f,0x888d79,0x888d2f,0x888d5e,0x88876a,0x828297,0x82829d};
+    0x8885b5,0x888dab,0x888e0f,0x888d79,0x888d2f,0x888d5e,0x88876a,0x828297,0x82829d,0x83b192};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
   static bool warned;
@@ -327,6 +331,10 @@ static bool prepare(uint8_t *r) {
   return true;
 }
 static void camera(uint8_t *r) {
+  /* $80:C466 clears the menu camera before installing its HUD/HDMA flags.
+   * The coroutine can yield between those steps. This arena's X is $1E00;
+   * preserve the native zero origin from the first clear through its fades. */
+  if(!word(r+0x1e4d) || !MmxWidePolicy_IsStageScene(r)) return;
   MmxBossRushState s=MmxBossRushGetState();
   put(r+0x1e4d,s.camera_x);put(r+0x1e50,s.camera_y);
   put(r+0x1e56,s.camera_x);put(r+0x1e58,s.camera_x);

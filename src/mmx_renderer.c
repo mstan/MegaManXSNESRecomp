@@ -357,7 +357,12 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
       unsigned d = actors[j]; bool found = false;
       if (d >= 0x1928 && !zero_weapons_menu()) continue;
       for (unsigned i = 0; i < frame.piece_count; ++i) found |= frame.pieces[i].object == d;
-      if (found || !ram[d + 14]) continue;
+      /* $81:8AAA disables armor at death but leaves +$0E set. Unlike the
+       * body, D56F submits these parts only while their active byte is set.
+       * Reconstructing dormant parts makes expanded lists retain white
+       * armor after the native body burst. Recorded OAM keeps its epoch. */
+      bool inactive_armor=d>=0xc38 && d<=0xc78 && !ram[d];
+      if (found || !ram[d + 14] || inactive_armor) continue;
       const uint8_t *a = sprite_arrangement(ram[d + 22],ram[d + 23] & 127);
       if (!a) continue;
       int x = (int16_t)(word(ram,d + 5) - word(ram,0x1e4d));

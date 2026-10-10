@@ -1,6 +1,7 @@
 /* Exercise the title entry and the original controllers in a real ROM.
  * Kept separate from the portable queue tests: no ROM fixtures are shipped. */
 #include "mod_audio.h"
+#include "mmx_wide_policy.h"
 
 static void rush_keep_players_alive(void) {
   g_ram[0xbcf]=0xa0;
@@ -11,6 +12,71 @@ static void rush_keep_players_alive(void) {
   }
 }
 static unsigned rush_death_sounds;
+static void rush_replacement_menu_checks(uint8_t *start,uint8_t *expected,size_t cap) {
+  MmxBossRushState s=MmxBossRushGetState();
+  static const uint8_t queue[]={0,4,2,5,1,3,6,7};
+  memcpy(s.queue,queue,sizeof(queue));s.queued=8;
+  check(MmxBossRushSetState(&s),"replacement fixture queues original and next boss pairs");
+  for(unsigned t=0;t<1500;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    if(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING) break;
+  }
+  check(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING,
+      "replacement fixture reaches native combat");
+  if(getenv("MMX_BOSS_RUSH_PAUSE_VISUAL_TEST")) {
+    for(unsigned t=0;t<24;++t) {frame(SNES_PAD_LEFT|SNES_PAD_Y);rush_keep_players_alive();}
+    size_t n=RtlSaveSnapshotToMemory(start,cap);check(n,"moving player pause fixture saves");
+    MmxBossRushReset();frame(SNES_PAD_START);zero_replay(90);
+    unsigned camera_x=eagle_word(g_ram+0x1e4d),camera_y=eagle_word(g_ram+0x1e50);
+    static uint32_t native[256*224],paused[256*224];
+    check(MmxRendererDraw(native,(MmxRenderView){256,0,4.0/3.0},true),"native pause reference renders");
+    check(MmxRendererSaveCapture("rush-pause-native-reference.cap"),"native pause reference saves");
+    check(RtlLoadSnapshotFromMemory(start,n),"restore combat before Rush pause");
+    frame(SNES_PAD_START);zero_replay(90);
+    fprintf(stderr,"pause camera native=%u,%u rush=%u,%u preview=%u:%u at=%u,%u visible=%u pose=%u gates=%u:%u/%u/%u/%u stage=%u\n",
+        camera_x,camera_y,eagle_word(g_ram+0x1e4d),eagle_word(g_ram+0x1e50),
+        g_ram[0x1988],g_ram[0x1989],eagle_word(g_ram+0x198d),eagle_word(g_ram+0x1990),
+        g_ram[0x1996],g_ram[0x199f]&127,g_ram[0xd3],g_ram[0xd4],g_ram[0x1f10],g_ram[0x1f19],g_ram[0xc3],MmxWidePolicy_IsStageScene(g_ram));
+    check(MmxRendererSaveCapture("rush-pause-before.cap"),"Rush pause comparison saves");
+    check(eagle_word(g_ram+0x1e4d)==camera_x && eagle_word(g_ram+0x1e50)==camera_y,
+        "Rush preserves the native menu camera for X's centered idle preview");
+    check(MmxRendererDraw(paused,(MmxRenderView){256,0,4.0/3.0},true) &&
+        !memcmp(native,paused,sizeof(native)),"Rush pause matches the native menu pixels including X's idle preview");
+    size_t en=RtlSaveSnapshotToMemory(expected,cap);frame(0);
+    check(RtlLoadSnapshotFromMemory(expected,en),"native pause camera snapshot restores");
+    frame(SNES_PAD_START);zero_replay(90);s=MmxBossRushGetState();
+    check(MmxWidePolicy_IsStageScene(g_ram) && eagle_word(g_ram+0x1e4d)==s.camera_x &&
+        eagle_word(g_ram+0x1e50)==s.camera_y,"closing pause restores the Rush arena camera");
+    puts("MMX BOSS RUSH NATIVE PAUSE CHECKS PASSED");return;
+  }
+  size_t n=RtlSaveSnapshotToMemory(start,cap);check(n,"two-boss replacement fixture saves");
+  for(unsigned seat=0;seat<2;++seat) {
+    check(RtlLoadSnapshotFromMemory(start,n),"restore both live bosses before replacement");
+    s=MmxBossRushGetState();s.queue[0]=seat?5:2;s.queue[1]=seat?2:5;
+    check(MmxBossRushSetState(&s),"next pair swaps Armadillo between both seats");
+    for(unsigned i=0;i<2;++i) g_ram[s.bosses[i].object+0x27]=0;
+    frame(0);
+    check(MmxBossRushGetState().defeated==2,"simultaneous boss deaths count independently");
+    for(unsigned t=0;t<1500;++t) {
+      frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+      if(s.bosses[seat].id==2 && s.bosses[seat].phase==MMX_RUSH_FIGHTING) break;
+    }
+    unsigned object=s.bosses[seat].object;
+    const MmxSpriteAsset *art=MmxRenderAssetsRushSprite(3,0x62);
+    check(s.bosses[seat].id==2 && s.bosses[seat].phase==MMX_RUSH_FIGHTING && art,
+        "both-dead replacement starts the original Armadillo controller");
+    char name[80];snprintf(name,sizeof(name),"rush-armadillo-replacement-%u.cap",seat);
+    check(MmxRendererSaveCapture(name),"replacement Armadillo native colors capture saves");
+    fprintf(stderr,"replacement Armadillo seat=%u object=%x palette=%u normal=%u original=%u\n",
+        seat,object,g_ram[object+0x11]&14,g_ram[object+0x35],art->attributes&14);
+    check(g_ram[object+0x35]==(art->attributes&14),
+        "replacement Armadillo retains its own native normal palette");
+    size_t en=RtlSaveSnapshotToMemory(expected,cap);frame(0);
+    check(RtlLoadSnapshotFromMemory(expected,en),"replacement native palette snapshot restores");
+    check(g_ram[object+0x35]==(art->attributes&14),"Armadillo normal palette survives snapshot restore");
+  }
+  puts("MMX BOSS RUSH REPLACEMENT PALETTE CHECKS PASSED");
+}
 static void rush_visual_checks(uint8_t *snapshot,size_t cap) {
   MmxBossRushState s=MmxBossRushGetState();
   static const uint8_t queue[]={2,5,0,1,3,4,6,7};
@@ -343,6 +409,13 @@ static void rush_natural_death_checks(void) {
   check(!(g_ram[0xbcf]&127),"native boss contact delivers the fatal hit");
   for(unsigned t=0;t<360 && MmxBossRushGetState().mode==MMX_RUSH_PLAYING;++t) {
     rush_death_frame();
+    if(t==8 || t==20 || t==40 || t==80 || t==120 || t==180) {
+      char name[64];snprintf(name,sizeof(name),"rush-death-%u.cap",t);
+      check(MmxRendererSaveCapture(name),"native death visual capture saves");
+      fprintf(stderr,"death visual t=%u player=%u/%u/%u armor=%u:%u/%u:%u/%u:%u\n",t,
+          g_ram[0xbb6],g_ram[0xbbe],g_ram[0xbbf],g_ram[0xc38],g_ram[0xc46],
+          g_ram[0xc58],g_ram[0xc66],g_ram[0xc78],g_ram[0xc86]);
+    }
     if(t%30==0) fprintf(stderr,"native rush death t=%u mode=%u hp=%u action=%u:%u sounds=%u flags=%u/%u/%u\n",
         t,MmxBossRushGetState().mode,g_ram[0xbcf],g_ram[0xbaa],g_ram[0xbab],rush_death_sounds,
         g_ram[0x1f13],g_ram[0x1f19],g_ram[0xc32]);
@@ -559,6 +632,9 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   if(getenv("MMX_BOSS_RUSH_AUDIO_TEST")) {rush_audio_checks(start,cap);return;}
   if(getenv("MMX_BOSS_RUSH_DEATH_TEST")) {rush_natural_death_checks();return;}
   if(getenv("MMX_BOSS_RUSH_HIT_VISUAL_TEST")) {rush_hit_visual_checks(start,expected,cap);return;}
+  if(getenv("MMX_BOSS_RUSH_REPLACEMENT_VISUAL_TEST") || getenv("MMX_BOSS_RUSH_PAUSE_VISUAL_TEST")) {
+    rush_replacement_menu_checks(start,expected,cap);return;
+  }
   if(getenv("MMX_BOSS_RUSH_FORCE_VISUAL")) {rush_forced_visual_checks(start,cap);return;}
   if(getenv("MMX_BOSS_RUSH_AIR_VISUAL_TEST")) {rush_air_visual_trace();return;}
   if(getenv("MMX_BOSS_RUSH_VISUAL_TEST")) {rush_visual_checks(start,cap);return;}

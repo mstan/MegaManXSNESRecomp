@@ -1221,6 +1221,36 @@ static void zero_blink_submission(void) {
   /* An actual blink hides OAM; stale attribution must preserve that gap. */
   ppu.oam[32] = 0xe000; MmxRendererLatchSprites(); capture();
   assert(MmxRendererDraw(output,view,false) && output[40 * 256 + 40] == 0);
+
+  /* Native death at $81:8AAA disables the three armor objects without
+   * clearing their visibility bytes. Add Zero is enabled while playing X;
+   * expanded queues must not reconstruct the disabled armor in white. */
+  MmxZeroState z=MmxZeroGetState();z.active_x=1;MmxZeroSetState(z);
+  memset(ram,0,sizeof(ram));
+  ram[0xd1]=2;ram[0xd2]=ram[0xd3]=4;
+  g_mmx_render_asset_repairs=true;
+  MmxBossRushState rush={0};rush.mode=MMX_RUSH_PLAYING;rush.random=1;
+  assert(MmxBossRushSetState(&rush));
+  ppu.cgram[129]=0x7fff;
+  for(unsigned j=0;j<3;++j) {
+    unsigned d=0xc38+j*32,animation=0x5d+j;
+    rom_long(0x68000+animation*3,0x8d9000);rom_long(0x69000,0x8d9100);
+    rom_bytes[0x69100]=1;rom_bytes[0x69104]=0;
+    ram[d+14]=1;ram[d+17]=0x20;ram[d+22]=(uint8_t)animation;
+    put_word(d+5,j==2?300:40+j*8);put_word(d+8,40);
+  }
+  MmxRendererSetRom(rom_bytes,sizeof(rom_bytes));
+  view=MmxRendererViewport(MMX_ASPECT_32_9,0,0,kSnesDisplayAspect_Crt4x3);
+  for(unsigned active=0;active<2;++active) {
+    for(unsigned d=0xc38;d<=0xc78;d+=32) ram[d]=(uint8_t)active;
+    MmxRendererReset();MmxRendererObserveObject(ram,0xe68);
+    MmxRendererLatchSprites();capture();assert(MmxRendererDraw(output,view,false));
+    for(unsigned j=0;j<3;++j) {
+      unsigned x=j==2?300:40+j*8;
+      assert(output[40*view.width+view.extra+x]==(active?0xffffffu:0));
+    }
+  }
+  MmxBossRushReset();
   MmxZeroDisable(); g_mmx_custom_renderer = false; g_mmx_render_asset_repairs = true;
   MmxRendererReset();
 }

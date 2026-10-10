@@ -46,6 +46,17 @@ Octopus before and after his native tentacle cut; the small walking limbs remain
 
 ![Octopus before and after tentacle severing](screenshots/boss-rush-octopus-cut.png)
 
+Playtest10 keeps Armadillo's original colors after both previous bosses die
+together, and preserves X's centered idle preview in the native pause menu:
+
+![Armadillo's original colors after replacement](screenshots/boss-rush-armadillo-palette.png)
+
+![X's centered idle preview in the native pause menu](screenshots/boss-rush-pause-preview.png)
+
+Native death orbs continue after the body burst, with the inactive armor removed:
+
+![Native death orbs without white armor remnants](screenshots/boss-rush-death-orbs.png)
+
 ## Runtime ownership
 
 `MmxBossRushState` owns the deterministic shuffled queue, defeat counter,
@@ -301,3 +312,40 @@ gameplay captures show Octopus's normal and flashing palettes in both seats
 and Mammoth's body/trunk flashing together in both seats. Cut traces reach
 Octopus's severed flag and Mammoth's zero trunk counter after three accepted
 Boomerang Cutter hits. Reviewed cut arrangements match the original ROM art.
+
+## Armadillo entrance palette and native pause preview
+
+Armadillo's entrance reads `$7F:835D` again at `$83:B18C`, after the shared
+OBJ initializer. In Penguin's room that overwrote his corrected palette with
+zero, which the private renderer interpreted as a hit flash throughout the
+fight. Rush now supplies his original allocation before `$83:B192` stores it;
+the original load, mask and saved normal palette at `+$35` still execute.
+The replacement fixture kills both bosses in one frame and checks Armadillo
+in either slot, including snapshot restoration.
+
+The native weapon menu clears its camera at `$80:C466` before installing
+its HUD/HDMA flags, and can yield during that opening transition. Rush preserves
+that zero origin through the opening, paused screen and closing transition.
+Its arena camera resumes when the native game restores the stage origin.
+The pause fixture starts after movement and shooting, compares against the
+native menu from the same combat snapshot with Rush disabled, and checks
+save/restore and returning to the arena. Run these fixtures with
+`MMX_BOSS_RUSH_REPLACEMENT_VISUAL_TEST=1` or
+`MMX_BOSS_RUSH_PAUSE_VISUAL_TEST=1`, alongside `MMX_BOSS_RUSH_TEST=1`.
+
+## White armor remnants after death
+
+The native player death burst at `$81:8AAA` disables armor objects `$0C38`,
+`$0C58` and `$0C78` without clearing their visibility bytes at `+$0E`.
+With Add Zero installed while playing X, snapshot/fade reconstruction treated
+those bytes as sufficient to rebuild nine dormant armor pieces. Rush's expanded
+sprite list drew them in the native white death palette after X disappeared.
+
+Reconstruction now requires each armor object's active byte, matching native
+submission. Already recorded pieces retain their OAM epoch, so legitimate
+death poses, blink gaps and menu fades still render correctly. The portable
+pixel fixture checks all three active/inactive armor objects in the center
+and widescreen margin. `MMX_BOSS_RUSH_DEATH_TEST=1` with
+`MMX_BOSS_RUSH_TEST=1` captures the native fatal-contact sequence before and
+after the body burst, checks one death-sound request and reaches Game Over.
+Reviewed playtest10 captures show the original death orbs with no retained armor.
