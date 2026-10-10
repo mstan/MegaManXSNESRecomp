@@ -250,7 +250,10 @@ void MmxRendererObserveObject(const uint8_t ram[0x20000], uint16_t object) {
     building_stage = ram[0x1f7a];
   }
   current_object = object;
-  if (observed_lists || (!g_mmx_expanded_sprites && !MmxCoopViewsOnline())) return;
+  /* Two bosses and their attacks exceed the retail OAM submission budget.
+   * Preserve the native queue and full arrangements in Rush too. */
+  if (observed_lists || (!g_mmx_expanded_sprites && !MmxCoopViewsOnline() &&
+      MmxBossRushGetState().mode!=MMX_RUSH_PLAYING)) return;
   observed_lists = true;
   expand_queues(ram);
 }
@@ -367,7 +370,10 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
   }
   frame.expanded_count = latched_stage == ram[0x1f7a] ? expanded_latched_count : 0;
   memcpy(frame.expanded, expanded_latched, frame.expanded_count * sizeof(Piece));
-  frame.expand = g_mmx_expanded_sprites || MmxCoopViewsOnline();
+  frame.expand = g_mmx_expanded_sprites || MmxCoopViewsOnline() ||
+      (frame_rush.mode==MMX_RUSH_PLAYING && MmxWidePolicy_IsStageScene(frame.ram) &&
+       !zero_weapons_menu() &&
+       !MmxWeaponsMenuVisible(frame.ram));
   if (MmxZeroEnabled() && frame.expand) for (unsigned i = 0; i < frame.piece_count; ++i) {
     Piece p = frame.pieces[i]; if (!zero_actor(p.object,p.animation)) continue;
     bool found = false;

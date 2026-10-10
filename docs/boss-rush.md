@@ -194,3 +194,47 @@ all four original rolling frames and a native disappear/reappear cycle, check
 bounded RGB steps and complete palette restoration, and restore a snapshot
 mid-fade. This fixture selects the original camouflage behavior directly to
 avoid depending on an RNG decision; it never substitutes host animation timing.
+
+## Boss attack graphics validation
+
+Rush binds the separate native sheets for Octopus's tornado (`$77` / `$6B`),
+Eagle's dive (`$8A` / `$83`) and Penguin's statues (`$68` / `$62`). Eagle's
+standing and extended wings stay on `$89` / `$82`; his retained dive-DMA
+metadata must not overwrite that static sheet. Native pose DMA applies only
+when its resource matches the actor's selected sheet. Reused projectile slots
+cannot apply stale DMA to a different boss's static graphics.
+
+Penguin's ice beads, breath and shatter keep their original `$61` tile sheet
+but select the separate `$62` ice palette, as their native helpers do. Eagle's
+egg/chick uses the second palette in `$016E`. Mandrill's electric orb, dash
+flash and charged body use the appropriate banks of the four-palette `$01D2`
+list. These selections are private renderer data and retain native object
+flips, arrangements and animation timing.
+
+Two bosses and their child effects can exceed the retail 112 gameplay OBJ
+slots. Rush renders complete arrangements from the existing native priority
+queues even when the general sprite-expansion option is disabled. The native
+weapon menu retains its original rendering. No guest OAM, VRAM or CGRAM is
+rewritten by this presentation path.
+
+Set `MMX_BOSS_RUSH_AIR_VISUAL_TEST=1` alongside `MMX_BOSS_RUSH_TEST=1` for a
+native Octopus/Eagle run that requires all 16 tornado expansion poses, all
+three extended-wing poses and both dive poses on screen. It saves private
+captures and a controller trace for review.
+
+Set `MMX_BOSS_RUSH_FORCE_VISUAL=7,1` for Mammoth/Mandrill or `=5,0` for
+Chameleon/Penguin. Each fixture restores a clean snapshot before selecting
+substate zero in every verified native combat controller: four Mammoth, six
+Mandrill, seven Chameleon and six Penguin behaviors. The original code then
+advances for 420 frames per behavior. Assertions require private graphics for
+every observed body/effect and explicit coverage of Mammoth's trunk/fire/oil,
+Mandrill's orb/charged body, Chameleon's tongue/spikes, and Penguin's beads,
+breath and statue growth. The current pass records 169 distinct animation/pose
+combinations across those four bosses. Private sprite sheets and gameplay
+images are reviewed visually; the assertions establish coverage and resource
+binding rather than a complete gameplay or pixel-reference comparison.
+
+The forced runs, native air/fade checks, seven portable checks, all 28 boss
+pairs in Add Zero solo and local co-op, and ordinary save/load, replay, rewind,
+legacy-v2 and fresh-process replay pass on playtest8. ROMs, decoded art,
+captures and save data remain private. Owner gameplay review remains pending.

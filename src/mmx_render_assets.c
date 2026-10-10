@@ -21,6 +21,7 @@ static bool charged_buster_ready[2][21];
 static MmxSpriteAsset player_weapons[9][2];
 static uint8_t player_weapon_ready[9];
 static uint8_t ready[256], sprite_resource[256];
+static uint16_t asset_palette[256], rush_palette[13][256];
 static unsigned cached_stage = ~0u, cached_section = ~0u;
 static MmxSpriteAsset *rush_assets[13][256];
 static uint8_t rush_ready[13][256];
@@ -285,7 +286,7 @@ const MmxSpriteAsset *MmxRenderAssetsCaptiveZero(void) {
   }
   return NULL;
 }
-static bool palette(unsigned id, uint16_t out[16]) {
+static bool palette_bank(unsigned id, unsigned bank, uint16_t out[16]) {
   size_t p = 0x30000 + (word(0x30133 + id) & 0x7fff);
   bool found = false;
   memset(out, 0, 32);
@@ -294,7 +295,7 @@ static bool palette(unsigned id, uint16_t out[16]) {
     unsigned count = rom[p];
     if (!count) return found;
     size_t source = 0x28000 + (word(p + 1) & 0x7fff);
-    int first = (int)rom[p + 3] - 128;
+    int first = (int)rom[p + 3] - 128 - (int)bank*16;
     if (!range(source, count * 2)) return false;
     for (unsigned i = 0; i < count; ++i) if ((unsigned)(first + (int)i) < 16) {
       out[first + i] = (uint16_t)word(source + i * 2); found = true;
@@ -302,6 +303,7 @@ static bool palette(unsigned id, uint16_t out[16]) {
   }
   return false;
 }
+static bool palette(unsigned id, uint16_t out[16]) {return palette_bank(id,0,out);}
 static void stage_assets(unsigned stage, unsigned section) {
   if (stage == cached_stage && section == cached_section) return;
   cached_stage = stage; cached_section = section;
@@ -323,6 +325,7 @@ static void stage_assets(unsigned stage, unsigned section) {
       if (!pass && ready[id] == 3) continue;
       palettes[id] = pal;
       MmxSpriteAsset *a = &assets[id];
+      asset_palette[id]=(uint16_t)pal;
       a->id = (uint8_t)id; a->tile_base = (uint8_t)(word(p + 1) >> 4);
       a->attributes = (uint8_t)(0x20 | ((word(p + 1) >> 12) & 1) | (rom[p + 5] >> 3));
       a->current = pass == 1;
@@ -360,10 +363,18 @@ const MmxSpriteAsset *MmxRenderAssetsRushSprite(unsigned stage,unsigned sprite) 
        * $40. Its boss-room resource $5E is absent from the enemy animation
        * table, which lists only the standing body's $62/$5D binding. */
       if(!a && stage==3 && sprite==0x63 && ready[0x5e]==1) a=&assets[0x5e];
+      /* Octopus's $87:840C tornado uses animation $77 / resource $6B.
+       * Eagle's $87:DBCB dive switches to $8A and streams resource $83;
+       * both bindings are absent from the enemy animation table. */
+      if(!a && stage==1 && sprite==0x77 && ready[0x6b]==1) a=&assets[0x6b];
+      if(!a && stage==5 && sprite==0x8a && ready[0x83]==1) a=&assets[0x83];
+      /* Penguin's $81:BCED statues switch to the separate $62 ice sheet. */
+      if(!a && stage==8 && sprite==0x68 && ready[0x62]==1) a=&assets[0x62];
       if(a) {
         MmxSpriteAsset *copy=malloc(sizeof(*copy));if(!copy) return NULL;
         *copy=*a;copy->current=copy->live_tiles=copy->live_colors=false;
-        rush_assets[stage][sprite]=copy;rush_ready[stage][sprite]=1;
+        rush_assets[stage][sprite]=copy;rush_palette[stage][sprite]=asset_palette[a->id];
+        rush_ready[stage][sprite]=1;
       }
     }
     if(!rush_ready[stage][sprite]) rush_ready[stage][sprite]=2;
@@ -374,12 +385,42 @@ const MmxSpriteAsset *MmxRenderAssetsRushObjectSprite(const uint8_t ram[0x20000]
     unsigned object,unsigned stage,unsigned sprite) {
   const MmxSpriteAsset *base=MmxRenderAssetsRushSprite(stage,sprite);
   if(!base || !ram || object<0xe68 || object>=0x1d08) return base;
+  /* $87:D8D9/$DE1F select Eagle's permanent page-one $89 body. $10/$31
+   * still describe his separate page-zero $8A stream: applying that DMA to
+   * the static body overwrites its wings. Octopus's tornado is static too;
+   * reused projectile slots can retain a previous actor's DMA metadata. */
   unsigned table=ram_word(ram,object+0x31),pose=ram[object+0x17]&127;
-  if(table<0x8000 || !ram[object+0x10]) return base;
+  bool streamed=table>=0x8000 && ram[object+0x10]==base->id;
+  unsigned kind=ram[object+10],palette_offset=0;
+  const MmxSpriteAsset *ice=NULL;
+  /* $87:89CA adds one palette for Eagle's egg/chick. Penguin's beads,
+   * breath and shatter helpers read $7F:8362 while still using sheet $61. */
+  if(stage==5 && sprite==0x8a && kind==0x24) palette_offset=1;
+  if(stage==8 && sprite==0x67 && (kind==6 || kind==8 || kind==0x1a)) {
+    ice=MmxRenderAssetsRushSprite(8,0x68);if(!ice) return base;
+  }
+  if(stage==6 && sprite==0x91) {
+    /* $88:8053 selects palette 6 for the electric orb. $88:9E7E ORs
+     * $06 onto Mandrill's palette-4 body (palette 7); $88:A25E selects
+     * palette 5 for the charged attack. All four live in list $01D2. */
+    unsigned bits=ram[object+17]&14;
+    palette_offset=kind==0x28?2:kind==0x31 && bits==6?3:
+        kind==0x31 && bits==10?1:0;
+  }
+  if(!streamed && !palette_offset && !ice) return base;
   unsigned slot=(object-0xe68)/32;
-  uint64_t key=((uint64_t)stage<<32)|((uint32_t)table<<16)|(sprite<<8)|pose;
+  uint64_t key=((uint64_t)(ice?8:palette_offset)<<40)|((uint64_t)stage<<32)|
+      ((uint32_t)table<<16)|(sprite<<8)|pose;
   if(rush_pose_key[slot]==key && rush_pose[slot].id==base->id) return rush_pose+slot;
   MmxSpriteAsset *art=rush_pose+slot;*art=*base;
+  if(ice) {
+    memcpy(art->colors,ice->colors,sizeof(art->colors));
+    art->attributes=(uint8_t)((art->attributes&~14u)|(ice->attributes&14));
+  } else if(palette_offset) {
+    if(!palette_bank(rush_palette[stage][sprite],palette_offset,art->colors)) return base;
+    art->attributes=(uint8_t)((art->attributes&~14u)|(((art->attributes&14)+palette_offset*2)&14));
+  }
+  if(!streamed) {rush_pose_key[slot]=key;return art;}
   size_t count;const uint8_t *decoded=resource_data(base->id,&count);
   if(!decoded) return base;
   /* Native $84:8FCA remaps each pose's five-byte DMA list into its OBJ

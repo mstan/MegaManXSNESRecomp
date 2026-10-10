@@ -80,6 +80,134 @@ static void rush_visual_checks(uint8_t *snapshot,size_t cap) {
   check(camouflage && black && restored && fade_frames>32,"Chameleon fades out completely and restores his native palette gradually");
   puts("MMX BOSS RUSH NATIVE VISUAL CHECKS PASSED");
 }
+/* Private diagnostic captures of native Octopus/Eagle arrangements. */
+static void rush_air_visual_trace(void) {
+  MmxBossRushState s=MmxBossRushGetState();
+  static const uint8_t queue[]={3,6,0,1,2,4,5,7};
+  memcpy(s.queue,queue,sizeof(queue));s.queued=8;
+  check(MmxBossRushSetState(&s),"visual fixture queues Octopus and Eagle");
+  FILE *log=fopen("rush-air.csv","w");check(log!=NULL,"attack trace opens");
+  fputs("frame,boss,object,kind,state,substate,step,visible,animation,pose,data,table,base,attributes,resource,x,y\n",log);
+  unsigned keys[128]={0};bool captures[2][256][128]={0};
+  for(unsigned t=0;t<3600;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    for(unsigned d=0xe68;d<0x1d08;) {
+      if(d==0x1228) {d=0x1428;continue;}
+      unsigned step=d<0x1628?64:d<0x1928?48:32;
+      int owner=MmxBossRushOwner(d);
+      if(owner>=0 && g_ram[d]) {
+        unsigned n=(d-0xe68)/32,animation=g_ram[d+22],pose=g_ram[d+23]&127;
+        unsigned key=animation<<24|pose<<16|g_ram[d+17]<<8|g_ram[d+14];
+        if(key!=keys[n]) {
+          keys[n]=key;
+          const MmxSpriteAsset *a=MmxRenderAssetsRushObjectSprite(g_ram,d,kMmxBossRushBosses[s.bosses[owner].id].stage,animation);
+          fprintf(log,"%u,%u,%04x,%u,%u,%u,%u,%u,%u,%u,%u,%04x,%u,%u,%u,%u,%u\n",t,s.bosses[owner].id,d,g_ram[d+10],g_ram[d+1],g_ram[d+2],g_ram[d+3],g_ram[d+14],animation,pose,g_ram[d+16],g_ram[d+49]|g_ram[d+50]<<8,g_ram[d+24],g_ram[d+17],a?a->id:255,g_ram[d+5]|g_ram[d+6]<<8,g_ram[d+8]|g_ram[d+9]<<8);
+          unsigned x=g_ram[d+5]|g_ram[d+6]<<8;
+          bool visible_dash=d==s.bosses[owner].object && animation==0x8a && pose>=32 &&
+              x>s.camera_x+32 && x<s.camera_x+192;
+          bool target=(s.bosses[owner].id==3 && animation==0x77 && t>1000) ||
+              (s.bosses[owner].id==6 && ((animation==0x89 && pose>=25) || visible_dash));
+          if(g_ram[d+14] && !captures[owner][animation][pose] && target) {
+            captures[owner][animation][pose]=true;
+            char name[80];snprintf(name,sizeof(name),"rush-air-%u-%02x-%u.cap",s.bosses[owner].id,animation,pose);
+            check(MmxRendererSaveCapture(name),"native attack diagnostic capture saves");
+            snprintf(name,sizeof(name),"rush-air-%u-%02x-%u.ram",s.bosses[owner].id,animation,pose);
+            FILE *dump=fopen(name,"wb");check(dump && fwrite(g_ram,sizeof(g_ram),1,dump)==1 && !fclose(dump),"native attack diagnostic RAM saves");
+          }
+        }
+      }
+      d+=step;
+    }
+  }
+  fclose(log);
+  for(unsigned p=0;p<16;++p) check(captures[0][0x77][p],"native tornado exposes every authored expansion frame");
+  for(unsigned p=25;p<=27;++p) check(captures[1][0x89][p],"native wing sequence exposes each extended wing pose");
+  check(captures[1][0x8a][32] && captures[1][0x8a][33],"native dive exposes both poses on screen");
+  puts("MMX BOSS RUSH OCTOPUS EAGLE VISUAL CHECKS PASSED");
+}
+static void rush_visual_bmp(const char *path) {
+  uint32_t pixels[256*224];
+  check(MmxRendererDraw(pixels,(MmxRenderView){256,0,4.0/3.0},true),"forced visual frame renders");
+  FILE *f=fopen(path,"wb");check(f!=NULL,"visual image opens");
+  uint32_t header[]={54+sizeof(pixels),0,54,40,256,224,0x200001,0,sizeof(pixels),0,0,0,0};
+  check(fwrite("BM",2,1,f)==1 && fwrite(header,sizeof(header),1,f)==1,"visual image header writes");
+  bool ok=true;for(int y=223;y>=0;--y) ok&=fwrite(pixels+y*256,256*4,1,f)==1;
+  check(!fclose(f) && ok,"visual image rows write and close");
+}
+static void rush_forced_visual_checks(uint8_t *snapshot,size_t cap) {
+  const char *pair=getenv("MMX_BOSS_RUSH_FORCE_VISUAL");unsigned first=7,second=1;
+  if(pair) check(sscanf(pair,"%u,%u",&first,&second)==2 && first<8 && second<8 && first!=second,
+      "forced visual pair selects distinct bosses");
+  MmxBossRushState s=MmxBossRushGetState();s.queue[0]=(uint8_t)first;s.queue[1]=(uint8_t)second;
+  unsigned q=2;for(unsigned i=0;i<8;++i) if(i!=first && i!=second) s.queue[q++]=(uint8_t)i;
+  s.queued=8;check(MmxBossRushSetState(&s),"forced visual queue installs");
+  for(unsigned t=0;t<1500;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    if(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING) break;
+  }
+  check(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING,
+      "forced visual fixture completes both native introductions");
+  for(unsigned t=0;t<120;++t) {frame(0);rush_keep_players_alive();}
+  size_t saved=RtlSaveSnapshotToMemory(snapshot,cap);check(saved!=0,"forced visual baseline saves");
+  bool seen[8][256][128]={0};unsigned samples[8]={0};
+  FILE *log=fopen("rush-forced-visual.csv","w");check(log!=NULL,"forced visual trace opens");
+  fputs("seat,boss,attack,frame,object,kind,animation,pose,resource,attributes,data,table,base\n",log);
+  for(unsigned seat=0;seat<2;++seat) {
+    unsigned boss=seat?second:first;
+    /* Native combat dispatch tables: Penguin $81:B6F3 (6), Mandrill
+     * $88:9E2C (6), Chameleon $88:87BD (7), Mammoth $87:9394 (4).
+     * Start each original controller at substate zero and let it run. */
+    unsigned attacks=boss==7?4:boss==5?7:6;
+    check(boss==0 || boss==1 || boss==5 || boss==7,"forced visual boss has a verified combat table");
+    for(unsigned attack=0;attack<attacks;++attack) {
+      check(RtlLoadSnapshotFromMemory(snapshot,saved),"forced native attack restores its clean baseline");
+      s=MmxBossRushGetState();unsigned body=s.bosses[seat].object;
+      g_ram[body+1]=4;g_ram[body+2]=(uint8_t)(attack*2);g_ram[body+3]=0;
+      for(unsigned t=0;t<420;++t) {
+        frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+        if(t==40 || t==100 || t==220) {
+          char name[96];snprintf(name,sizeof(name),"rush-forced-%u-%u-%u.bmp",boss,attack*2,t);
+          rush_visual_bmp(name);
+        }
+        for(unsigned d=0xe68;d<0x1d08;) {
+          if(d==0x1228) {d=0x1428;continue;}
+          unsigned step=d<0x1628?64:d<0x1928?48:32;
+          int owner=MmxBossRushOwner(d);
+          if(owner==(int)seat && g_ram[d] && g_ram[d+14]) {
+            unsigned animation=g_ram[d+22],pose=g_ram[d+23]&127;
+            if(!seen[boss][animation][pose]) {
+              seen[boss][animation][pose]=true;
+              const MmxSpriteAsset *art=MmxRenderAssetsRushObjectSprite(g_ram,d,kMmxBossRushBosses[boss].stage,animation);
+              check(art!=NULL,"every forced native boss and attack pose resolves private graphics");
+              fprintf(log,"%u,%u,%u,%u,%04x,%u,%u,%u,%u,%u,%u,%04x,%u\n",seat,boss,attack*2,t,d,g_ram[d+10],animation,pose,art?art->id:255,g_ram[d+17],g_ram[d+16],g_ram[d+49]|g_ram[d+50]<<8,g_ram[d+24]);
+              if(art) {
+                char name[96];snprintf(name,sizeof(name),"rush-art-%u-%02x-%u.bin",boss,animation,pose);
+                FILE *out=fopen(name,"wb");check(out!=NULL,"native pose art opens");
+                check(fwrite(art->tiles,sizeof(art->tiles),1,out)==1 &&
+                    fwrite(art->colors,sizeof(art->colors),1,out)==1 &&
+                    fwrite(&art->id,3,1,out)==1 && !fclose(out),"native pose graphics and palette save");
+                ++samples[boss];
+                snprintf(name,sizeof(name),"rush-pose-%u-%02x-%u.bmp",boss,animation,pose);
+                rush_visual_bmp(name);
+              }
+            }
+          }
+          d+=step;
+        }
+      }
+    }
+    check(samples[boss]>10,"forced native attacks expose multiple body and effect poses");
+    if(boss==0) check(seen[0][0x67][21] && seen[0][0x67][32] &&
+        seen[0][0x68][0] && seen[0][0x68][3],"forced Penguin checks include ice beads, breath, and statue growth");
+    if(boss==1) check(seen[1][0x91][25] && seen[1][0x91][26] && seen[1][0x91][9],
+        "forced Mandrill checks include electric orb and charged-body poses");
+    if(boss==7) check(seen[7][6][8] && seen[7][6][50] && seen[7][6][64],
+        "forced Mammoth checks include trunk, oil, and fireball poses");
+    if(boss==5) check(seen[5][0x23][10] && seen[5][0x23][30],
+        "forced Chameleon checks include tongue and spike poses");
+  }
+  fclose(log);puts("MMX BOSS RUSH FORCED VISUAL CONTROLLERS COMPLETE");
+}
 static void rush_death_frame(void) {
   unsigned head=g_ram[0xba3]&30;frame(0);
   for(unsigned end=g_ram[0xba3]&30;head!=end;head=(head+2)&30)
@@ -327,6 +455,8 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(MmxBossRushGetState().mode==MMX_RUSH_PLAYING,"crossing the second door starts the encounter");
   if(getenv("MMX_BOSS_RUSH_AUDIO_TEST")) {rush_audio_checks(start,cap);return;}
   if(getenv("MMX_BOSS_RUSH_DEATH_TEST")) {rush_natural_death_checks();return;}
+  if(getenv("MMX_BOSS_RUSH_FORCE_VISUAL")) {rush_forced_visual_checks(start,cap);return;}
+  if(getenv("MMX_BOSS_RUSH_AIR_VISUAL_TEST")) {rush_air_visual_trace();return;}
   if(getenv("MMX_BOSS_RUSH_VISUAL_TEST")) {rush_visual_checks(start,cap);return;}
   size_t baseline=RtlSaveSnapshotToMemory(start,cap);check(baseline!=0,"arena snapshot saves");
   unsigned before=g_ram[0xbad]|g_ram[0xbae]<<8;
