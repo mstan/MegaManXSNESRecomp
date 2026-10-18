@@ -410,6 +410,35 @@ bool MmxReplayBegin(uint32_t *inputs) {
   if(timed) snes_netplay_note_slow_operation("replay_begin",(uint32_t)SDL_GetTicks()-started);
   return true; /* Optional recording failures never stop the player's game. */
 }
+/* Developer aid for diagnosing a recorded session: during playback,
+ * MMX_REPLAY_WATCH="0bd8,0c32,0ba8-0c37" prints the WRAM bytes it names
+ * (addresses or inclusive ranges below $20000, up to 1024 bytes) whenever
+ * any of them changes, after each verified frame. */
+static void watch_frame(unsigned frame) {
+  enum { WATCH_MAX=1024 };
+  static int count=-1;static unsigned addresses[WATCH_MAX];static uint8_t previous[WATCH_MAX];
+  static bool primed;
+  if(count<0) {
+    count=0;const char *list=getenv("MMX_REPLAY_WATCH");
+    while(list && *list && count<WATCH_MAX) {
+      char *end;unsigned long a=strtoul(list,&end,16),b=a;
+      if(end==list) break;
+      if(*end=='-') {const char *from=end+1;b=strtoul(from,&end,16);if(end==from) b=a;}
+      for(unsigned long x=a;x<=b && x<0x20000 && count<WATCH_MAX;++x) addresses[count++]=(unsigned)x;
+      list=*end==','?end+1:end;
+    }
+  }
+  if(!count) return;
+  bool changed=!primed;
+  for(int i=0;i<count;++i) changed|=previous[i]!=g_ram[addresses[i]];
+  if(!changed) return;
+  fprintf(stderr,"[mmx-watch] %u",frame);
+  for(int i=0;i<count;++i)
+    if(!primed || previous[i]!=g_ram[addresses[i]]) {
+      fprintf(stderr," %04x=%02x",addresses[i],g_ram[addresses[i]]);previous[i]=g_ram[addresses[i]];
+    }
+  fputc('\n',stderr);primed=true;
+}
 void MmxReplayEnd(void) {
   if(!pending || failed || finished) return;
   bool timed=!playing && snes_netplay_active();
@@ -434,6 +463,7 @@ void MmxReplayEnd(void) {
       error("checkpoint mismatch");
     } else {
       ++playback_rows;
+      watch_frame(next_frame-1);
       int next=fgetc(stream);
       if(next==EOF) {
         if(ferror(stream)) error("input read failed");

@@ -214,7 +214,15 @@ to watch. A mismatch also saves `replay-divergence.sav` in the reproduction
 directory. `--check` inspects the log without starting the game. A final input
 without a completed checkpoint identifies an interrupted frame; it is reported
 as incomplete, never as a successful replay. Playback executes that final input
-so the original hang/crash can recur under a debugger. The format preserves actual
+so the original hang/crash can recur under a debugger.
+
+To see *why* a capture misbehaves, set `MMX_REPLAY_WATCH` during playback to
+print chosen WRAM bytes whenever they change, after each verified frame:
+addresses or inclusive ranges, comma separated, up to 1024 bytes (for example
+`MMX_REPLAY_WATCH=0baa,0bd8,0c13,0c32,0ba8-0be7`). Run one segment directly with
+`MegaManXSNESRecomp --no-launcher --replay-diagnostic <segment>.replay` and set
+`SNESRECOMP_NO_LAUNCHER=1`. Each segment starts from its own checkpoint, so a
+long session can be bisected segment by segment. The format preserves actual
 rollback executions and restored checkpoints, so do not deduplicate frame
 numbers as an input-only CSV route would.
 

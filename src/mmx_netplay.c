@@ -1,5 +1,6 @@
 /* MMX's session rules. Transport, lobby discovery and rollback stay shared. */
 #include "mmx_netplay.h"
+#include "mmx_boss_rush_foreign.h"
 #include "mod_runtime.h"
 #include "mmx_coop.h"
 #include "mmx_weapons.h"
@@ -30,6 +31,13 @@ int MmxNetplayReady(char *reason, size_t cap) {
     const char *id = page == 1 ? "megaman-x.weapons.x2" : "megaman-x.weapons.x3";
     if (snes_mod_runtime_feature_enabled_c(id, "weapons") && !MmxWeaponsPageEnabled(page)) {
       snprintf(reason, cap, "The selected X%u weapon pack could not load.", page + 1);
+      return 0;
+    }
+  }
+  for (unsigned game = 2; game <= 3; ++game) {
+    const char *id = game == 2 ? "megaman-x.boss-rush.x2-bosses" : "megaman-x.boss-rush.x3-bosses";
+    if (snes_mod_runtime_feature_enabled_c(id, "bosses") && !MmxBossRushForeignReady(game)) {
+      snprintf(reason, cap, "The selected X%u Boss Rush Mavericks could not load.", game);
       return 0;
     }
   }

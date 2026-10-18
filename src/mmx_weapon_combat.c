@@ -1,6 +1,7 @@
 #include "mmx_weapon_combat.h"
 #include "mmx_weapons.h"
 #include "mmx_zero.h"
+#include "mmx_boss_rush.h"
 #include <string.h>
 
 static MmxWeaponCombatState combat;
@@ -1435,7 +1436,11 @@ unsigned MmxWeaponsDamage(uint8_t r[0x20000], unsigned enemy, unsigned d, unsign
    * Explicit weaknesses already selected the original boss weakness column
    * before native immunity/reaction dispatch; never scale that value again. */
   unsigned charged;
-  if (r[enemy+0x28]>=6 || boss_weakness(r,enemy,d,&charged)) {
+  /* Relocated Boss Rush bodies switch rows themselves (deflect, invulnerable
+   * flinch); their native row always decides, like a Maverick's. */
+  int seat=MmxBossRushOwner(enemy);
+  bool foreign=seat>=0 && !MmxBossRushNative(MmxBossRushGetState().bosses[seat].id);
+  if (r[enemy+0x28]>=6 || foreign || boss_weakness(r,enemy,d,&charged)) {
     if (s->page==1 && s->weapon==6) chain_contact(r,s,enemy,original);
     if (s->page==2 && s->weapon==8) fang_contact(r,s,enemy);
     return original;

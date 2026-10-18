@@ -288,10 +288,10 @@ static void zero_health_swap(void) {
   check(!MmxZeroSwapping(),"HP exchange completes");
   zero_replay(3);
 }
-static void zero_health_pickup(unsigned small) {
+static void zero_health_pickup(unsigned small_item) {
   /* Retail health actor (item kind 2), collected through native collision. */
   memset(g_ram+0x1628,0,48); g_ram[0x1628]=1;
-  g_ram[0x1632]=2; g_ram[0x1633]=(uint8_t)(128|small);
+  g_ram[0x1632]=2; g_ram[0x1633]=(uint8_t)(128|small_item);
   memcpy(g_ram+0x162d,g_ram+0xbad,2);
   unsigned y=(g_ram[0xbb0] | g_ram[0xbb1]<<8)-16;
   g_ram[0x1630]=(uint8_t)y; g_ram[0x1631]=(uint8_t)(y>>8);
@@ -482,9 +482,9 @@ static void weapon_cycle_checks(const char *assets,const char *fixture,uint8 *st
   }
   puts("MMX WEAPON SHOULDER CYCLE CHECKS PASSED");
 }
-static void weapon_energy_pickup(unsigned small) {
+static void weapon_energy_pickup(unsigned small_item) {
   memset(g_ram+0x1628,0,48); g_ram[0x1628]=1;
-  g_ram[0x1632]=1; g_ram[0x1633]=(uint8_t)(128|small);
+  g_ram[0x1632]=1; g_ram[0x1633]=(uint8_t)(128|small_item);
   memcpy(g_ram+0x162d,g_ram+0xbad,2);
   unsigned y=(g_ram[0xbb0] | g_ram[0xbb1]<<8)-16;
   g_ram[0x1630]=(uint8_t)y; g_ram[0x1631]=(uint8_t)(y>>8);

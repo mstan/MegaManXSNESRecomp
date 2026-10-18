@@ -1,4 +1,4 @@
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 #include "mod_audio.h"
 #include "common_rtl.h"
 #include "host_paths.h"

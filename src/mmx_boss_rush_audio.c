@@ -26,7 +26,7 @@ typedef struct Playback {
   SNESModAudioVoice voice;
   uint32_t generation;
   uint16_t object;
-  uint8_t seat,command,kind;
+  uint8_t seat,command,kind,foreign;
 } Playback;
 static Clip clips[256];
 static Playback voices[VOICES];
@@ -50,10 +50,13 @@ static bool emitter_valid(unsigned object) {
 MmxBossRushAudioState MmxBossRushAudioGetState(void) {return state;}
 bool MmxBossRushAudioValidState(const MmxBossRushAudioState *s) {
   if(!s) return false;
-  for(unsigned i=0;i<MMX_RUSH_AUDIO_CUES;++i)
-    if(s->cues[i].seat>=2 || s->cues[i].reserved ||
-        (s->cues[i].command && (!supported(s->cues[i].command) ||
-         !emitter_valid(s->cues[i].object)))) return false;
+  for(unsigned i=0;i<MMX_RUSH_AUDIO_CUES;++i) {
+    const MmxBossRushAudioCue *c=&s->cues[i];
+    /* reserved: 0 for X1 cues, else the relocated body's roster id. */
+    bool foreign=c->reserved!=0;
+    if(c->seat>=2 || (foreign && (c->reserved<MMX_RUSH_BOSSES || c->reserved>=MMX_RUSH_ROSTER)) ||
+        (c->command && ((!foreign && !supported(c->command)) || !emitter_valid(c->object)))) return false;
+  }
   return true;
 }
 bool MmxBossRushAudioSetState(const MmxBossRushAudioState *s) {
@@ -73,13 +76,12 @@ void MmxBossRushAudioLoaded(void) {
   delivered_frame=snes_frame_counter-1;host_generation=snes_mod_audio_reset_generation();
 }
 static unsigned word(const uint8_t *p) {return p[0]|p[1]<<8;}
-static Apu *base_apu(const uint8_t *rom,size_t size) {
-  if(!rom || size<0x48000+0x48*3) return NULL;
+/* X2/X3 drivers share X1's upload table ($09:8000) and boot protocol, but
+ * not its RAM layout: skip X1's $1C00 signature and $C3 activity byte. */
+static Apu *base_apu_banks(const uint8_t *rom,size_t size,const uint8_t *banks,unsigned count,bool x1) {
+  if(!rom || size<0x48000+0x100*3) return NULL;
   Apu *a=apu_init();if(!a) return NULL;apu_reset(a);unsigned entry=0;
-  /* $89:8000 packs the driver, effect programs and BRR samples. Include the
-   * battle bank's $42/$47 instrument overlays, but no music sequences. */
-  static const uint8_t banks[]={0,1,2,0x42,0x47};
-  for(unsigned i=0;i<sizeof(banks);++i) {
+  for(unsigned i=0;i<count;++i) {
     unsigned bank=banks[i];
     const uint8_t *ptr=rom+0x48000+bank*3;
     size_t p=(size_t)(9+ptr[2])*0x8000+(word(ptr)&0x7fff);
@@ -93,13 +95,21 @@ static Apu *base_apu(const uint8_t *rom,size_t size) {
     }
     if(!ended) {apu_free(a);return NULL;}
   }
-  if(entry!=0x2c0 || a->ram[0x1c00]!=0xb1) {apu_free(a);return NULL;}
+  if(entry!=0x2c0 || (x1 && a->ram[0x1c00]!=0xb1)) {apu_free(a);return NULL;}
   a->romReadable=false;a->spc->pc=(uint16_t)entry;
   for(unsigned i=0;i<32768;++i) apu_cycle(a);
   if(a->outPorts[2]!=1 || a->outPorts[3]!=0 || a->spc->stopped) {apu_free(a);return NULL;}
   a->dsp->sampleRead=a->dsp->sampleWrite=0;return a;
 }
-static Clip render(const Apu *base,unsigned command) {
+static Apu *base_apu(const uint8_t *rom,size_t size) {
+  /* $89:8000 packs the driver, effect programs and BRR samples. Include the
+   * battle bank's $42/$47 instrument overlays, but no music sequences. */
+  static const uint8_t banks[]={0,1,2,0x42,0x47};
+  return base_apu_banks(rom,size,banks,sizeof(banks),true);
+}
+static Clip render_driver(const Apu *base,unsigned command,bool x1);
+static Clip render(const Apu *base,unsigned command) {return render_driver(base,command,true);}
+static Clip render_driver(const Apu *base,unsigned command,bool x1) {
   Clip result={0};Apu *a=apu_init();if(!a) return result;
   /* Preserve each instance's owned pointers/shadow mixer while cloning the
    * initialized native driver. Neither guest APU nor live DSP is touched. */
@@ -115,13 +125,15 @@ static Clip render(const Apu *base,unsigned command) {
     if(dsp_getSamples(a->dsp,pcm+samples*2,1)!=1) break;
     if(pcm[samples*2] || pcm[samples*2+1]) {last=samples;quiet=0;audible=true;}
     else ++quiet;
-    if(audible && !a->ram[0xc3] && quiet>=1024) {complete=true;break;}
+    /* X1's driver clears $C3 when no effect is active; other drivers end
+     * after a longer silence instead. */
+    if(audible && (x1?!a->ram[0xc3] && quiet>=1024:quiet>=4096)) {complete=true;break;}
   }
   /* $5A is Kuwanger's sustained boomerang sound. Its emitter leaves this
    * room during its round trip; stop the cached voice when that native object
    * retires rather than waiting for an unrelated SPC preemption. Retain up to
    * five seconds of native sustain if the script has not yet ended. */
-  if(audible && (complete || command==0x5a) && a->outPorts[2]==2 && !a->spc->stopped) {
+  if(audible && (complete || (x1 && command==0x5a)) && (!x1 || a->outPorts[2]==2) && !a->spc->stopped) {
     result.frames=complete?last+65:samples;
     result.pcm=realloc(pcm,result.frames*2*sizeof(*pcm));
     if(!result.pcm) result.pcm=pcm;
@@ -149,6 +161,45 @@ const int16_t *MmxBossRushAudioClip(unsigned command,uint32_t *frames) {
   if(command>=256) return NULL;
   if(frames) *frames=clips[command].frames;return clips[command].pcm;
 }
+/* Relocated X2/X3 bodies play their own effects, rendered from their source
+ * ROM's driver with the boss's sound bank loaded. Their cues name the roster
+ * id in the cue's otherwise unused `reserved` field (0 = an X1 cue). */
+static Clip foreign_clips[MMX_RUSH_ROSTER][256];
+static const uint8_t *foreign_rom[MMX_RUSH_ROSTER];
+void MmxBossRushAudioPrepareForeign(unsigned id,const uint8_t *rom,size_t size,unsigned sound_bank,
+                                    const uint8_t *effects,unsigned count) {
+  if(MmxBossRushNative(id) || id>=MMX_RUSH_ROSTER || foreign_rom[id]==rom) return;
+  for(unsigned i=0;i<256;++i) {free(foreign_clips[id][i].pcm);foreign_clips[id][i]=(Clip){0};}
+  foreign_rom[id]=rom;
+  if(!rom) return;
+  const uint8_t banks[]={0,1,2,(uint8_t)sound_bank};
+  Apu *base=base_apu_banks(rom,size,banks,sizeof(banks),false);
+  if(!base) {fprintf(stderr,"[mmx-rush] %s sound driver could not initialize\n",kMmxBossRushBosses[id].name);return;}
+  unsigned cached=0;size_t bytes=0;
+  for(unsigned i=0;i<count;++i) {
+    foreign_clips[id][effects[i]]=render_driver(base,effects[i],false);
+    if(foreign_clips[id][effects[i]].pcm) {++cached;bytes+=foreign_clips[id][effects[i]].frames*2*sizeof(int16_t);}
+    else fprintf(stderr,"[mmx-rush] %s effect $%02X could not be cached\n",kMmxBossRushBosses[id].name,effects[i]);
+  }
+  apu_free(base);
+  fprintf(stderr,"[mmx-rush] cached %u %s effects (%zu bytes) from the supplied ROM\n",
+      cached,kMmxBossRushBosses[id].name,bytes);
+}
+const int16_t *MmxBossRushAudioForeignClip(unsigned id,unsigned command,uint32_t *frames) {
+  if(id>=MMX_RUSH_ROSTER || command>=256) return NULL;
+  if(frames) *frames=foreign_clips[id][command].frames;
+  return foreign_clips[id][command].pcm;
+}
+bool MmxBossRushAudioQueueForeign(unsigned seat,unsigned object,unsigned id,unsigned command,
+                                  unsigned pan,uint32_t generation) {
+  if(seat>=2 || MmxBossRushNative(id) || id>=MMX_RUSH_ROSTER || !command || command>=256 ||
+      !foreign_clips[id][command].pcm || !emitter_valid(object)) return false;
+  state.cues[state.sequence++%MMX_RUSH_AUDIO_CUES]=(MmxBossRushAudioCue){
+    .generation=generation,.frame=state.frame,
+    .command=(uint8_t)command,.pan=(uint8_t)pan,
+    .seat=(uint8_t)seat,.object=(uint16_t)object,.kind=g_ram[object+10],.reserved=(uint16_t)id};
+  return true;
+}
 bool MmxBossRushAudioQueue(unsigned seat,unsigned object,unsigned command,unsigned pan,uint32_t generation) {
   /* Keep the original request if a private cache was unavailable. Native child
    * pools use 64-, 48- and 32-byte objects, not one uniform stride. */
@@ -164,8 +215,9 @@ static void retire(unsigned i) {
   memset(voices+i,0,sizeof(voices[i]));
 }
 static void play(const MmxBossRushAudioCue *cue) {
-  const Clip *clip=clips+cue->command;if(!clip->pcm) return;
-  if(cue->command==0x5a) for(unsigned i=0;i<VOICES;++i)
+  const Clip *clip=cue->reserved?&foreign_clips[cue->reserved][cue->command]:clips+cue->command;
+  if(!clip->pcm) return;
+  if(!cue->reserved && cue->command==0x5a) for(unsigned i=0;i<VOICES;++i)
     if(voices[i].command==0x5a && voices[i].object==cue->object) retire(i);
   unsigned slot=0;while(slot<VOICES && voices[slot].clip) ++slot;
   if(slot==VOICES) {slot=replace_voice++%VOICES;retire(slot);}
@@ -183,7 +235,8 @@ static void play(const MmxBossRushAudioCue *cue) {
   SNESModAudioVoice voice=snes_mod_audio_play_voice(handle,100);
   if(!voice) {snes_mod_audio_unregister(handle);return;}
   voices[slot]=(Playback){.clip=handle,.voice=voice,.generation=cue->generation,
-      .object=cue->object,.seat=cue->seat,.command=cue->command,.kind=cue->kind};
+      .object=cue->object,.seat=cue->seat,.command=cue->command,.kind=cue->kind,
+      .foreign=cue->reserved!=0};
 }
 void MmxBossRushAudioPresent(void) {
   MmxBossRushState rush=MmxBossRushGetState();
@@ -193,7 +246,7 @@ void MmxBossRushAudioPresent(void) {
       (!snes_mod_audio_voice_active(voices[i].voice) || rush.mode!=MMX_RUSH_PLAYING ||
        rush.bosses[voices[i].seat].generation!=voices[i].generation ||
        rush.bosses[voices[i].seat].phase==MMX_RUSH_DYING ||
-       (voices[i].command==0x5a && (!g_ram[voices[i].object] ||
+       (!voices[i].foreign && voices[i].command==0x5a && (!g_ram[voices[i].object] ||
          g_ram[voices[i].object+10]!=voices[i].kind ||
          MmxBossRushOwner(voices[i].object)!=(int)voices[i].seat)))) retire(i);
   /* Resimulation may change the number of historical requests. Deliver only
@@ -205,6 +258,6 @@ void MmxBossRushAudioPresent(void) {
     const MmxBossRushAudioCue *cue=state.cues+n%MMX_RUSH_AUDIO_CUES;
     if(cue->frame==state.frame && rush.mode==MMX_RUSH_PLAYING && cue->generation==rush.bosses[cue->seat].generation &&
         rush.bosses[cue->seat].phase!=MMX_RUSH_DYING &&
-        (cue->command!=0x5a || (g_ram[cue->object] && g_ram[cue->object+10]==cue->kind))) play(cue);
+        (cue->reserved || cue->command!=0x5a || (g_ram[cue->object] && g_ram[cue->object+10]==cue->kind))) play(cue);
   }
 }

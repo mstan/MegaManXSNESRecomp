@@ -367,7 +367,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 22u /* per-seat authored camera bounds */
+#define MMX_SAV_CHUNK_VERSION 23u /* Boss Rush 24-boss roster */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -408,6 +408,7 @@ static uint8_t g_load_zero_extension[MMX_ZERO_EXTENSION_STATE_BYTES];
 static MmxBossRushState g_load_rush;
 static MmxBossRushAudioState g_load_rush_audio;
 static MmxBossRushVisualState g_load_rush_visual;
+static MmxBossRushRosterState g_load_rush_roster;
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -466,6 +467,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&visual,sizeof(visual));
   MmxCoopViewBoundsState bounds=MmxCoopViewsGetBoundsState();
   sli->func(sli,&bounds,sizeof(bounds));
+  MmxBossRushRosterState roster=MmxBossRushRosterGetState();
+  sli->func(sli,&roster,sizeof(roster));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -483,6 +486,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_rush,0,sizeof(g_load_rush));
   memset(&g_load_rush_audio,0,sizeof(g_load_rush_audio));
   memset(&g_load_rush_visual,0,sizeof(g_load_rush_visual));
+  memset(&g_load_rush_roster,0,sizeof(g_load_rush_roster));
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
@@ -567,7 +571,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
         (g_load_chunk.version==18 && remaining==sizeof(g_load_zero_extension));
     bool rush=g_load_chunk.version>=21 || !extension;
     size_t expected=(extension?sizeof(g_load_zero_extension):0)+(rush?rush_bytes:0)+
-        (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0);
+        (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0)+
+        (g_load_chunk.version>=23?sizeof(g_load_rush_roster):0);
     if(remaining!=expected) g_load_chunk_ok=0;
     if(g_load_chunk_ok && extension)
       sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
@@ -587,6 +592,14 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       sli->func(sli,&g_load_view_bounds,sizeof(g_load_view_bounds));
       if(!MmxCoopViewsValidBoundsState(&g_load_view_bounds)) g_load_chunk_ok=0;
     }
+    /* v23 runs shuffle the 24-boss roster; earlier runs only had the
+     * legacy X1 queue inside the Rush state, which seeds an X1 roster. */
+    if(g_load_chunk_ok && g_load_chunk.version>=23) {
+      sli->func(sli,&g_load_rush_roster,sizeof(g_load_rush_roster));
+      if(!MmxBossRushRosterValidState(&g_load_rush_roster)) g_load_chunk_ok=0;
+    } else if(g_load_chunk_ok && rush) g_load_rush_roster=MmxBossRushRosterFromLegacy(&g_load_rush);
+    if(g_load_chunk_ok && rush && !MmxBossRushRosterMatches(&g_load_rush,&g_load_rush_roster))
+      g_load_chunk_ok=0;
   }
   if(g_load_complete && g_load_chunk.version<16)
     g_load_views.contact_player=g_load_coop.anchor;
@@ -600,8 +613,9 @@ static int MmxWsMargin(void);
 void MmxOnStateLoaded(uint32_t version) {
   MmxReplayStateLoaded();
   MmxRendererReset();
-  if(g_load_chunk_ok && g_load_complete) MmxBossRushSetState(&g_load_rush);
-  else MmxBossRushReset();
+  if(g_load_chunk_ok && g_load_complete) {
+    MmxBossRushSetState(&g_load_rush);MmxBossRushRosterSetState(&g_load_rush_roster);
+  } else MmxBossRushReset();
   MmxBossRushVisualState empty_visual={0};
   MmxBossRushVisualSetState(g_load_chunk_ok && g_load_complete?&g_load_rush_visual:&empty_visual);
   MmxBossRushAudioReset();

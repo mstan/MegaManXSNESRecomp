@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#if defined(_MSC_VER) && !defined(S_ISDIR)
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#endif
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN

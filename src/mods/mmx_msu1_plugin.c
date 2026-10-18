@@ -1,4 +1,4 @@
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 #include "common_rtl.h"
 #include "snes/msu1.h"
 
