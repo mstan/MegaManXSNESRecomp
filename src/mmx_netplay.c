@@ -35,8 +35,8 @@ int MmxNetplayReady(char *reason, size_t cap) {
     }
   }
   for (unsigned game = 2; game <= 3; ++game) {
-    const char *id = game == 2 ? "megaman-x.boss-rush.x2-bosses" : "megaman-x.boss-rush.x3-bosses";
-    if (snes_mod_runtime_feature_enabled_c(id, "bosses") && !MmxBossRushForeignReady(game)) {
+    const char *feature = game == 2 ? "x2_bosses" : "x3_bosses";
+    if (snes_mod_runtime_feature_enabled_c("megaman-x.mode.boss-rush", feature) && !MmxBossRushForeignReady(game)) {
       snprintf(reason, cap, "The selected X%u Boss Rush Mavericks could not load.", game);
       return 0;
     }

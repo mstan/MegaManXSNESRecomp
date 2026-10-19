@@ -61,6 +61,7 @@ static void zero_capture(const char *base, const char *suffix) {
 #include "mmx_saber_lock_test.inc"
 #include "mmx_coop_replay_test.inc"
 #include "mmx_diagnostic_replay_test.inc"
+static void rush_import_review_checks(uint8_t *,uint8_t *,uint8_t *,size_t);
 #include "mmx_boss_rush_runtime_test.inc"
 #include "mmx_magic_carpet_test.inc"
 static void zero_motion_checks(const char *fixture) {
@@ -1677,6 +1678,7 @@ static void zero_charge_visual_checks(const char *fixture,uint8 *start,uint8 *ex
 #include "mmx_weapon_parasitic_test.inc"
 #include "mmx_weapon_stage_test.inc"
 #include "mmx_weapon_weakness_test.inc"
+#include "mmx_boss_rush_import_review_test.inc"
 static void zero_state_checks(const char *assets, const char *fixture, uint8 *start,
                               uint8 *expected, uint8 *actual, size_t cap) {
   check(fixture != NULL && MmxZeroLoad(assets), "Zero local assets load");

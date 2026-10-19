@@ -29,11 +29,14 @@ with blue/cyan shading, shows the final defeat count and high score, and offers
 launches in `mmx-boss-rush-score.dat` beside the executable. It is local results
 metadata and does not affect gameplay snapshots or rollback.
 
-**X2 and X3 Mavericks** (Game Modes, off by default): **Boss Rush: X2
-Mavericks** and **Boss Rush: X3 Mavericks** add bosses from your own Mega Man X2
-and X3 USA ROMs, running their original code. So far: Wire Sponge (X2; weak to
-Sonic Slicer, and a Sonic Slicer or Zero saber kill splits him in two) and
-Tunnel Rhino (X3; weak to Acid Burst). Their weaknesses need the X2/X3 weapon
+The **Boss Rush** mod contains two optional toggles, **Boss Rush: X2 bosses**
+and **Boss Rush: X3 bosses**, both off by default. They share the existing X2
+and X3 ROM selections with the weapon and character mods. X2 is currently
+limited to **Wire Sponge (1 of 8)** and X3 to **Tunnel Rhino (1 of 8)**;
+unimplemented bosses never enter the roster. Their original code, graphics
+and sounds load from your supplied USA ROMs. Wire Sponge is weak to
+Sonic Slicer, and a Sonic Slicer or Zero saber kill splits him in two.
+Tunnel Rhino is weak to Acid Burst. Their weaknesses need the X2/X3 weapon
 mods. Details: [foundation](x3-bosses/foundation.md).
 
 ## Screenshots

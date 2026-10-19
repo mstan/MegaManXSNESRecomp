@@ -27,10 +27,13 @@ should carry over to full stages. Source traces:
 
 ## Packs and source ROMs (implemented)
 
-- Package `megaman-x.boss-rush.x3-bosses` (Game Modes, off by default) asks
-  for the X3 USA ROM using the shared `megaman-x.source.x3` selection.
-  Package `megaman-x.boss-rush.x2-bosses` does the same for the X2 USA ROM
-  (`megaman-x.source.x2`) through the same plugin.
+- The existing `megaman-x.mode.boss-rush` package owns two optional feature
+  toggles, `x2_bosses` and `x3_bosses`, both off by default. Each requires only
+  its own USA ROM, using the canonical `megaman-x.source.x2` or
+  `megaman-x.source.x3` resource shared with weapons/characters/co-op. Coverage
+  is explicitly limited to Wire Sponge (1/8 X2) and Tunnel Rhino (1/8 X3).
+- Static plugin IDs retain their original names; they identify activation
+  handlers, not separate downloadable packages.
 - `src/mods/mmx_boss_rush_foreign_plugin.c` validates the ROM with the same
   checksum rules as the other packs (`MmxSourceRomLoad`) and keeps the image
   **in memory only**.
@@ -392,5 +395,6 @@ those classes are freed.
 - Foreign sound effects: done for relocated X2 and X3 bodies. The `$86`
   shim and table area is laid out per boss and is nearly full after Wire
   Sponge; further bosses need a new home for their `$86` tables.
-- Weaknesses for relocated bodies: original weakness done for Rhino; the
-  owner's X1/X2/X3 assignments come after all 24 bosses.
+- Weakness reactions are connected, but source damage fidelity has confirmed
+  failures; see the [independent import review](import-review-2026-10-19.md).
+  The owner's additional X1/X2/X3 assignments remain deferred.

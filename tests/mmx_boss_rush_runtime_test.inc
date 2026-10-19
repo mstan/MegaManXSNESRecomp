@@ -1325,6 +1325,7 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   check(player_screen_x>=104 && player_screen_x<=160,
       "the encounter begins with the player near the middle of the view");
   if(getenv("MMX_BOSS_RUSH_FOREIGN_SPIKE_TEST")) {rush_foreign_spike_checks(start,cap);return;}
+  if(getenv("MMX_BOSS_RUSH_IMPORT_REVIEW_TEST")) {rush_import_review_checks(start,expected,actual,cap);return;}
   if(getenv("MMX_BOSS_RUSH_RHINO_TEST")) {rush_rhino_checks(start,cap,getenv("MMX_BOSS_RUSH_X3_ROM"));return;}
   if(getenv("MMX_BOSS_RUSH_SPONGE_TEST")) {rush_sponge_checks(start,cap,getenv("MMX_BOSS_RUSH_X2_ROM"));return;}
   if(getenv("MMX_BOSS_RUSH_ARENA_TEST")) {

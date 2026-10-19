@@ -22,3 +22,49 @@ default_enabled = true
 [[plugin]]
 feature = "boss_rush"
 id = "megaman-x.boss-rush"
+
+[[feature]]
+id = "x2_bosses"
+name = "Boss Rush: X2 bosses"
+description = "Include X2 bosses in Boss Rush. Currently limited to Wire Sponge (1 of 8). Requires Boss Rush and your X2 USA ROM; shares its ROM selection with X2 weapons."
+group = "Game Modes"
+default_enabled = false
+
+[[resource]]
+feature = "x2_bosses"
+id = "x2-rom"
+label = "Mega Man X2 ROM"
+description = "Shared X2 source ROM, also used by X2 weapons. Currently supplies Wire Sponge."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X2 USA ROM"
+shared_key = "megaman-x.source.x2"
+normalized_sha256 = "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed"
+required = true
+
+[[plugin]]
+feature = "x2_bosses"
+id = "megaman-x.boss-rush.x2-bosses"
+
+[[feature]]
+id = "x3_bosses"
+name = "Boss Rush: X3 bosses"
+description = "Include X3 bosses in Boss Rush. Currently limited to Tunnel Rhino (1 of 8). Requires Boss Rush and your X3 USA ROM; shares its ROM selection with Zero, co-op and X3 weapons."
+group = "Game Modes"
+default_enabled = false
+
+[[resource]]
+feature = "x3_bosses"
+id = "x3-rom"
+label = "Mega Man X3 ROM"
+description = "Shared X3 source ROM, also used by Zero, co-op and X3 weapons. Currently supplies Tunnel Rhino."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X3 USA ROM"
+shared_key = "megaman-x.source.x3"
+normalized_sha256 = "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7"
+required = true
+
+[[plugin]]
+feature = "x3_bosses"
+id = "megaman-x.boss-rush.x3-bosses"

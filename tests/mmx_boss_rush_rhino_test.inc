@@ -253,10 +253,40 @@ static void rush_rhino_launcher(void) {
   const RecompLauncherCModProvider *p=snes_mod_runtime_launcher_provider_c();
   check(p && p->feature_enable && p->feature_set_option && p->feature_resource_set_path && p->commit,
       "Rhino catalog exposes the launcher provider");
-  const char *bosses="megaman-x.boss-rush.x3-bosses";
+  if(getenv("MMX_BOSS_RUSH_SOURCE_REVIEW_TEST")) {
+    const char *package="megaman-x.mode.boss-rush",*x2=getenv("MMX_BOSS_RUSH_X2_ROM");
+    unsigned features=0;RecompLauncherCModFeature feature;
+    for(int i=0;p->feature_get(p->ctx,i,&feature);++i)
+      if(!strcmp(feature.package_id,package)) ++features;
+    check(features==3,"one Boss Rush package owns its main toggle and exactly two import toggles");
+    check(!snes_mod_runtime_feature_enabled_c(package,"x2_bosses") &&
+        !snes_mod_runtime_feature_enabled_c(package,"x3_bosses"),"both import toggles default off");
+    check(p->commit(p->ctx,x1),"ordinary Boss Rush launches without X2 or X3 sources");
+    check(p->feature_enable(p->ctx,package,"x2_bosses",1) && !p->commit(p->ctx,x1),
+        "enabling X2 bosses rejects a missing X2 ROM");
+    check(p->feature_resource_set_path(p->ctx,"megaman-x.weapons.x2","weapons","x2-rom",x2),
+        "X2 source can be selected through the reusable weapon path");
+    RecompLauncherCModResource resource={0};
+    check(p->feature_resource_get(p->ctx,package,"x2_bosses",0,&resource) && resource.verified &&
+        !strcmp(resource.path,x2) && p->commit(p->ctx,x1),"X2-only bosses reuse the X2 path and need no X3 ROM");
+    check(p->feature_enable(p->ctx,package,"x3_bosses",1) && !p->commit(p->ctx,x1),
+        "enabling X3 bosses rejects a missing X3 ROM");
+    check(p->feature_resource_set_path(p->ctx,package,"x3_bosses","x3-rom",x2) && !p->commit(p->ctx,x1),
+        "the source gate rejects an X2 ROM selected for X3 bosses");
+    check(p->feature_resource_set_path(p->ctx,"megaman-x.character.zero","zero","x3-rom",x3) &&
+        p->feature_resource_get(p->ctx,package,"x3_bosses",0,&resource) && resource.verified &&
+        !strcmp(resource.path,x3) && p->commit(p->ctx,x1),"Zero's reusable X3 path reaches Boss Rush");
+    check(p->feature_resource_set_path(p->ctx,"megaman-x.weapons.x2","weapons","x2-rom","") &&
+        !p->commit(p->ctx,x1),"clearing a shared source rejects its enabled boss import");
+    check(p->feature_enable(p->ctx,package,"x2_bosses",0) && p->commit(p->ctx,x1),
+        "X3-only bosses launch after X2 is disabled with its source cleared");
+    check(p->feature_resource_set_path(p->ctx,package,"x2_bosses","x2-rom",x2),"restore X2 source after gate checks");
+    puts("MMX BOSS RUSH SHARED SOURCE GATES PASSED");
+  }
+  const char *bosses="megaman-x.mode.boss-rush";
   bool rush=p->feature_enable(p->ctx,"megaman-x.mode.boss-rush","boss_rush",1);
-  bool mavericks=p->feature_enable(p->ctx,bosses,"bosses",1);
-  bool rom=p->feature_resource_set_path(p->ctx,bosses,"bosses","x3-rom",x3);
+  bool mavericks=p->feature_enable(p->ctx,bosses,"x3_bosses",1);
+  bool rom=p->feature_resource_set_path(p->ctx,bosses,"x3_bosses","x3-rom",x3);
   bool weapons=p->feature_enable(p->ctx,"megaman-x.weapons.x3","weapons",1);
   if(!(rush && mavericks && rom && weapons))
     fprintf(stderr,"rhino launcher: rush=%u mavericks=%u rom=%u weapons=%u error=%s\n",rush,mavericks,
@@ -265,9 +295,9 @@ static void rush_rhino_launcher(void) {
   /* With an X2 ROM, also enable the X2 Mavericks and X2 weapons. */
   const char *x2=getenv("MMX_BOSS_RUSH_X2_ROM");
   if(x2) {
-    const char *x2_bosses="megaman-x.boss-rush.x2-bosses";
-    check(p->feature_enable(p->ctx,x2_bosses,"bosses",1) &&
-        p->feature_resource_set_path(p->ctx,x2_bosses,"bosses","x2-rom",x2) &&
+    const char *x2_bosses="megaman-x.mode.boss-rush";
+    check(p->feature_enable(p->ctx,x2_bosses,"x2_bosses",1) &&
+        p->feature_resource_set_path(p->ctx,x2_bosses,"x2_bosses","x2-rom",x2) &&
         p->feature_enable(p->ctx,"megaman-x.weapons.x2","weapons",1),
         "launcher enables X2 Mavericks and X2 weapons");
   }

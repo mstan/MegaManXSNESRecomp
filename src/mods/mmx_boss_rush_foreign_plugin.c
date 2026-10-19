@@ -7,12 +7,13 @@
 /* X2/X3 Mavericks join Boss Rush only with their own source ROM. The X3 pack
  * shares the canonical X3 selection with Zero, co-op and the X3 weapons. */
 static void activate(unsigned game) {
-  const char *package=game==2?"megaman-x.boss-rush.x2-bosses":"megaman-x.boss-rush.x3-bosses";
+  const char *package="megaman-x.mode.boss-rush";
+  const char *feature=game==2?"x2_bosses":"x3_bosses";
   const RecompLauncherCModProvider *provider=snes_mod_runtime_launcher_provider_c();
   RecompLauncherCModResource resource={0};
   char error[512];
   if(!provider || !provider->feature_resource_get ||
-      !provider->feature_resource_get(provider->ctx,package,"bosses",0,&resource) || !resource.path[0]) return;
+      !provider->feature_resource_get(provider->ctx,package,feature,0,&resource) || !resource.path[0]) return;
   if(!MmxBossRushForeignLoad(game,resource.path,error,sizeof(error))) {
     fprintf(stderr,"[mmx-rush] %s\n",error);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Cannot prepare Boss Rush Mavericks",error,NULL);

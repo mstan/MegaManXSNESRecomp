@@ -38,6 +38,7 @@ static void weakness_actor_setup(unsigned boss,unsigned row,unsigned page,unsign
     static const uint8_t groups[2][9]={{0,16,68,72,70,65,71,15,37},{0,5,6,11,12,13,15,16,19}};
     unsigned group=groups[page-1][weapon];
     if(charged && page==1 && weapon==5) group=135;
+    if(charged && page==1 && weapon==7) group=19;
     if(charged && page==1 && weapon==8) group=38;
     if(charged && page==2 && weapon==3) group=51;
     g_ram[d+0x3e]=0x58;g_ram[d+0x3f]=0x57;
