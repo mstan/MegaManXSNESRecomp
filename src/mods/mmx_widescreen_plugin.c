@@ -1,4 +1,4 @@
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 #include "mmx_display.h"
 #include "mmx_renderer.h"
 #include <string.h>

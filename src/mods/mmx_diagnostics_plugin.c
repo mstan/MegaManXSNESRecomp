@@ -1,4 +1,4 @@
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 #include "mmx_replay.h"
 #include <stdlib.h>
 #include "mmx_coop.h"

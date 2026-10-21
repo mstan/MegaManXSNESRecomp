@@ -17,7 +17,10 @@ TARGETS = {0x01b516, 0x078a7e, 0x01c433, 0x03b144, 0x0791a7,
            0x0088a2, 0x0088cd, 0x049f19, 0x049f2a, 0x049f2f, 0x049f7e,
            0x088dab, 0x088e0f, 0x088d79, 0x088d2f, 0x02827d, 0x03b151,
            0x0498fa, 0x049908, 0x07efa5, 0x01b7a7, 0x01b7eb, 0x00c93c,
-           0x00c67f}
+           0x00c67f,
+           # Enemy-projectile actor ($1428 list): its class dispatch at
+           # $80:D4E7 must run in LLE for relocated X2/X3 projectiles.
+           0x00d4d3, 0x00d4dd}
 # The USA dispatch has no compiled body for these entries. They already
 # execute in LLE; every other boundary must be routed by this pass.
 INTERPRETED = {0x0094d1, 0x00d345, 0x00d4ea, 0x00d507, 0x00d1ed}

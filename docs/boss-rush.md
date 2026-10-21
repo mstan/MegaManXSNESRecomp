@@ -29,6 +29,13 @@ with blue/cyan shading, shows the final defeat count and high score, and offers
 launches in `mmx-boss-rush-score.dat` beside the executable. It is local results
 metadata and does not affect gameplay snapshots or rollback.
 
+**X2 and X3 Mavericks** (Game Modes, off by default): **Boss Rush: X2
+Mavericks** and **Boss Rush: X3 Mavericks** add bosses from your own Mega Man X2
+and X3 USA ROMs, running their original code. So far: Wire Sponge (X2; weak to
+Sonic Slicer, and a Sonic Slicer or Zero saber kill splits him in two) and
+Tunnel Rhino (X3; weak to Acid Burst). Their weaknesses need the X2/X3 weapon
+mods. Details: [foundation](x3-bosses/foundation.md).
+
 ## Screenshots
 
 The Mammoth-room images show the current arena; the remaining images document
@@ -272,6 +279,18 @@ player HP full to isolate boss behavior. Each pair must create a new boss
 generation after cleanup. Additional checks use native Fire Wave and Homing
 Torpedo finishing hits against Penguin and Kuwanger (fixtures start at 1 HP),
 and cover entrance-to-hurt/death transitions.
+`MMX_BOSS_RUSH_DEATH_LATCH_TEST=1` kills Penguin with a real shot, collects
+his drop and requires that Chameleon can still hurt the player. A native
+boss's death scene sets the player's hurt latches (`$0BD8`, then `$0C32`)
+so nothing can hurt X until the stage ends; X1's contact test then skips the
+player. Rush does not swap those latches per boss, so a boss killed during its
+own update now leaves them as it found them. Before this, the player became
+permanently invulnerable after the first native boss death of a run.
+`MMX_REPLAY_SCAN=<list file>` (one `.replay` segment path per line) restores
+each listed segment's opening checkpoint in the state-test binary and prints the
+player's state, HP and hurt latches beside both Rush bosses, which locates a
+fault in a long playtest capture before replaying the suspect segment with
+`MMX_REPLAY_WATCH` (see the README).
 Set `MMX_BOSS_RUSH_DEATH_TEST=1` for a fatal native-contact regression;
 `MMX_BOSS_RUSH_DEATH_BOSS=4` selects Kuwanger instead of Penguin. It requires
 the actual death animation to reach Game Over and emit exactly one `$0A`

@@ -1,3 +1,4 @@
+#include "mmx_boss_rush_foreign_art.h"
 #include "mmx_renderer.h"
 #include "mmx_weapon_combat.h"
 #include "mmx_weapons.h"
@@ -12,6 +13,17 @@
 
 bool MmxKncBugfixActive(unsigned seat) { (void)seat;return false; }
 unsigned MmxKncBugfixPhase(void) { return 0; }
+/* No relocated Boss Rush art in this test. */
+const MmxForeignPose *MmxBossRushForeignPose(unsigned id,unsigned set,unsigned pose) {
+  (void)id;(void)set;(void)pose;return NULL;
+}
+const uint16_t *MmxBossRushForeignColors(unsigned id) { (void)id;return NULL; }
+const MmxForeignPose *MmxBossRushForeignObjectPose(unsigned id,unsigned set,unsigned pose,unsigned base) {
+  (void)id;(void)set;(void)pose;(void)base;return NULL;
+}
+unsigned MmxBossRushForeignPalettes(unsigned id) { (void)id;return 0; }
+bool MmxBossRushForeignArtEffectClass(unsigned id,uint8_t kind) { (void)id;(void)kind;return false; }
+bool MmxBossRushForeignOwnEffect(unsigned id,const uint8_t *object) { (void)id;(void)object;return false; }
 
 #ifndef MMX_SABER_RENDER_CACHE_DIR
 #define MMX_SABER_RENDER_CACHE_DIR ""

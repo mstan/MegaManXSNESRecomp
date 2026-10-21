@@ -1,7 +1,7 @@
 #include "mmx_hadouken.h"
 #include "mmx_zero.h"
 #include "mmx_weapons.h"
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 #include "snes/interp_bridge.h"
 #include "common_rtl.h"
 

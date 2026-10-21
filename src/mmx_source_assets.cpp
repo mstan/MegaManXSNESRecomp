@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -11,6 +13,9 @@
 #include <vector>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -260,4 +265,16 @@ int MmxSourceAssetsBuild(const char *rom,unsigned game,int zero,const char *outp
     Rom r(rom,game);publish(output,zero?zero_assets(r):weapon_assets(r,game));
     if (error && size) error[0]=0;return 1;
   } catch (const std::exception& e) { if (error && size) std::snprintf(error,size,"%s",e.what());return 0; }
+}
+int MmxSourceRomLoad(const char *rom,unsigned game,unsigned char **image,size_t *size,char *error,size_t error_size) {
+  if (image) *image=nullptr;
+  if (size) *size=0;
+  try {
+    require((game==2 || game==3) && image && size,"Invalid source ROM request.");
+    Rom r(rom,game);
+    auto *copy=static_cast<unsigned char*>(std::malloc(r.data.size()));
+    require(copy!=nullptr,"Out of memory reading the source ROM.");
+    std::memcpy(copy,r.data.data(),r.data.size());*image=copy;*size=r.data.size();
+    if (error && error_size) error[0]=0;return 1;
+  } catch (const std::exception& e) { if (error && error_size) std::snprintf(error,error_size,"%s",e.what());return 0; }
 }

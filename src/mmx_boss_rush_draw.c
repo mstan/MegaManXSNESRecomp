@@ -6,7 +6,9 @@ static void box(uint32_t *p,int width,int x,int y,int w,int h,uint32_t color) {
 }
 static void explosion(uint32_t *p,int width,int extra,const MmxBossRushBoss *b) {
   static const int directions[8][2]={{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
-  unsigned tick=b->ticks;int radius=3+(int)(tick%8),travel=(int)tick*2;
+  /* A relocated boss that plays its own death sequence explodes after it. */
+  if(b->ticks<b->reserved) return;
+  unsigned tick=b->ticks-b->reserved;int radius=3+(int)(tick%8),travel=(int)tick*2;
   for(unsigned n=0;n<8;++n) {
     int x=extra+b->death_x+directions[n][0]*travel,y=b->death_y+directions[n][1]*travel;
     for(int dy=-radius;dy<=radius;++dy) for(int dx=-radius;dx<=radius;++dx)

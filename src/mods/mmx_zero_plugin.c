@@ -1,4 +1,4 @@
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 #include "host_paths.h"
 #include "recomp_launcher.h"
 #include "snes/interp_bridge.h"

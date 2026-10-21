@@ -1,4 +1,7 @@
 #include "mmx_boss_rush.h"
+#include "mmx_boss_rush_foreign.h"
+#include "mmx_cart_extension.h"
+#include "mmx_boss_rush_foreign_art.h"
 #include "mmx_boss_rush_audio.h"
 #include "mmx_boss_rush_score.h"
 #include "host_paths.h"
@@ -8,7 +11,10 @@
 #include "mmx_wide_policy.h"
 #include "mmx_rtl.h"
 #include "mmx_zero.h"
+#include "saber/mmx_saber_attack.h"
+#include "saber/mmx_saber_wave_runtime.h"
 #include "mmx_weapons.h"
+#include "mmx_weapon_combat.h"
 #include "snes_overlay_draw.h"
 #include "cpu_state.h"
 #include "snes/snes.h"
@@ -42,11 +48,18 @@ static const uint16_t globals[]={0x1f0c,0x1f0e,0x1f0f,0x1f13,0x1f14,0x1f15,
   0x1f16,0x1f17,0x1f18,0x1f1a,0x1f23,0x1f26,0x1f31,0x1f3b,0xc16,
   0x1e5c,0x1e5d,0x1e5e,0x1e5f,0x1e60,0x1e61,0x1e62,0x1e63,
   0xc0,0xc1,0xc9,0xca,0xcb,0xcc,0xcd,
-  0xc0c,0xbd8,0x1e54,0x1e55,0x1e74,0x1e75,0x1e76,0x1e77};
+  0xc0c,0xbd8,0x1e54,0x1e55,0x1e74,0x1e75,0x1e76,0x1e77,
+  0x1fd5, /* unused by X1: a relocated boss's restored profile (X3 $1F57) */
+  0xc32};
 /* Retain the array slots for existing snapshots. These bytes belong to the
- * projected player: swapping them clears hurt protection or an ice/grab lock
- * when the boss's update returns. Entrance locks are suppressed separately. */
-static bool private_global(unsigned i) {return globals[i]!=0xbd8 && globals[i]!=0xc16;}
+ * projected player: swapping them clears hurt protection ($0BD8/$0C32) or an
+ * ice/grab lock ($0C16) when the boss's update returns. The hurt latches'
+ * slots in the world array record them at actor entry instead (below);
+ * entrance locks are suppressed separately. */
+static bool private_global(unsigned i) {
+  return globals[i]!=0xbd8 && globals[i]!=0xc32 && globals[i]!=0xc16;
+}
+enum { LATCH_BD8=31, LATCH_C32=39 };
 static bool playing(void) {return MmxBossRushGetState().mode==MMX_RUSH_PLAYING;}
 static void equipment(uint8_t *r);
 static unsigned object_step(unsigned d) {return d<0x1628?64:d<0x1928?48:32;}
@@ -55,6 +68,22 @@ static void remember_objects(MmxBossRushState *s) {
     if(d==0x1228) {d=0x1428;continue;}
     s->occupied[(d-0xe68)/32]=g_ram[d]!=0;d+=object_step(d);
   }
+}
+/* A relocated boss's scratch window (work RAM its objects share). */
+static unsigned scratch_window(const MmxBossRushState *s,unsigned owner,uint8_t **ram) {
+  const MmxBossRushBoss *b=&s->bosses[owner];
+  uint32_t address;unsigned size;
+  if(!b->phase || MmxBossRushNative(b->id) || !(size=MmxBossRushForeignScratch(b->id,&address))) return 0;
+  *ram=g_ram+((address-0x7e0000)&0x1ffff);
+  return size;
+}
+/* Is a dying relocated boss still playing its own death sequence? */
+static bool own_death(const MmxBossRushBoss *b) {
+  uint8_t field,value,frames;
+  if(b->phase!=MMX_RUSH_DYING || MmxBossRushNative(b->id) ||
+      !MmxBossRushForeignOwnDeath(b->id,&field,&value,&frames) || b->ticks>=frames) return false;
+  uint8_t now=g_ram[b->object+field];
+  return now==value || (!now && !b->reserved && b->ticks<2);
 }
 static void actor_hook(CpuState *cpu,uint32_t pc) {
   if(!playing()) return;
@@ -74,22 +103,54 @@ static void actor_hook(CpuState *cpu,uint32_t pc) {
       if(!private_global(i)) continue;
       s.bosses[owner].globals[i]=g_ram[globals[i]];g_ram[globals[i]]=s.globals[i];
     }
+    uint8_t *window;unsigned window_size=scratch_window(&s,owner,&window);
+    MmxBossRushScratchState scratch=MmxBossRushScratchGetState();
+    if(window_size && scratch.active==owner+1) {
+      memcpy(scratch.seat[owner],window,window_size);memcpy(window,scratch.world,window_size);
+      scratch.active=0;MmxBossRushScratchSetState(&scratch);
+    }
+    /* A native boss's death scene makes the player invulnerable ($0BD8,
+     * and through it $0C32) until the stage ends. Rush keeps playing, so a
+     * boss killed during its own update leaves those latches as it found
+     * them; otherwise nothing could hurt the player for the rest of the run. */
+    const MmxBossRushBoss *b=&s.bosses[owner];
+    if(b->object==s.actor_object && b->phase==MMX_RUSH_FIGHTING && MmxBossRushNative(b->id) &&
+        !(g_ram[b->object+0x27]&127)) {
+      g_ram[0xbd8]=s.globals[LATCH_BD8];g_ram[0xc32]=s.globals[LATCH_C32];
+    }
     s.actor=0;MmxBossRushSetState(&s);return;
   }
   int owner=MmxBossRushOwner(cpu->D);
   if(owner<0 || s.actor) return;
-  if(s.bosses[owner].phase==MMX_RUSH_DYING && s.bosses[owner].object==cpu->D) {
+  if(s.bosses[owner].phase==MMX_RUSH_DYING && s.bosses[owner].object==cpu->D && !own_death(&s.bosses[owner])) {
     unsigned end=at==0xd4f6?0xd4f9:0xd522;
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|end);return;
   }
   s.actor=(uint8_t)(owner+1);s.actor_object=cpu->D;s.actor_s=cpu->S;
   for(unsigned i=0;i<sizeof(globals)/sizeof(*globals);++i) {
-    if(!private_global(i)) continue;
+    if(!private_global(i)) {s.globals[i]=g_ram[globals[i]];continue;}
     s.globals[i]=g_ram[globals[i]];g_ram[globals[i]]=s.bosses[owner].globals[i];
   }
   remember_objects(&s);
   put(g_ram+0x1f0e,s.bosses[owner].object);g_ram[0x1f26]=0;
+  uint8_t *window;unsigned window_size=scratch_window(&s,(unsigned)owner,&window);
+  if(window_size) {
+    MmxBossRushScratchState scratch=MmxBossRushScratchGetState();
+    memcpy(scratch.world,window,window_size);memcpy(window,scratch.seat[owner],window_size);
+    scratch.active=(uint8_t)(owner+1);MmxBossRushScratchSetState(&scratch);
+  }
   MmxBossRushSetState(&s);
+}
+/* Seats whose boss queued the native boss-hurt sound ($13) this frame. */
+static bool hurt_sounded[2];
+/* Queue a native sound effect as $80:88A2 does: ring $0B72, pan from the
+ * emitter's distance to the player. */
+static void queue_native_sound(uint8_t *r,unsigned object,uint8_t command) {
+  int diff=((int)word(r+object+5)-(int)word(r+0xbad))>>1;
+  if(diff<-127) diff=-127;
+  if(diff>127) diff=127;
+  unsigned x=r[0xba3]&0x1e;
+  r[0xb72+x]=command;r[0xb73+x]=(uint8_t)diff;r[0xba3]=(uint8_t)((x+2)&0x1e);
 }
 static void boss_hook(CpuState *cpu,uint32_t pc) {
   MmxBossRushState s=MmxBossRushGetState();int owner=MmxBossRushOwner(cpu->D);
@@ -177,6 +238,10 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
   if(at==0x0088d6 && playing() && getenv("MMX_BOSS_RUSH_AUDIO_TRACE")) {
     fprintf(stderr,"rush-sfx frame=%d actor=%u object=%04x command=%02x pan=%02x\n",snes_frame_counter,s.actor,cpu->D,cpu->A&255,cpu->Y&255);
   }
+  if(at==0x0088d6 && playing() && (cpu->A&255)==0x13) {
+    int seat=owner>=0?owner:(int)s.actor-1;
+    if(seat>=0 && seat<2) hurt_sounded[seat]=true;
+  }
   unsigned emitter=owner==(int)s.actor-1 ? cpu->D : s.actor_object;
   if(at==0x0088d6 && playing() && s.actor &&
       MmxBossRushAudioQueue(s.actor-1,emitter,cpu->A&255,cpu->Y&255,s.bosses[s.actor-1].generation))
@@ -235,7 +300,7 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
       return;
     }
   }
-  if(at==0x028297 || at==0x02829d || at==0x03b192) {
+  if((at==0x028297 || at==0x02829d || at==0x03b192) && MmxBossRushNative(s.bosses[owner].id)) {
     /* $82:827D initializes OBJ metadata from the current stage's $7F
      * allocation tables. Cross-stage bodies otherwise save palette zero
      * as their normal palette ($33), so their native hit flash cannot toggle.
@@ -322,8 +387,235 @@ static void boss_hook(CpuState *cpu,uint32_t pc) {
       (s.bosses[owner].phase!=MMX_RUSH_FIGHTING || !(g_ram[0xbcf]&127)))
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x9b79);
 }
+/* $80:F8DD's class stubs are `JSL controller; RTS`. A relocated X2/X3 body
+ * replaces that call for its own seat: enter its extension-bank controller
+ * with a JSL frame returning to an existing native RTS ($80:F8C3), so the
+ * enemy loop continues exactly as after a stock stub. */
+enum { MMX_RUSH_STUB_RTS=0xf8c3 };
+static void foreign_dispatch_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  uint32_t controller=MmxBossRushForeignController(b.id);if(!controller) return;
+  stack_push(cpu,pc>>16,1);stack_push(cpu,MMX_RUSH_STUB_RTS-1,2);
+  interp_bridge_pre_opcode_redirect(controller);
+}
+/* The enemy-projectile list ($1428, looped from $80:D48F) dispatches the
+ * same way at $80:D4E7 (JMP ($F77D,x)). A foreign seat's own projectile classes run its
+ * relocated controllers; every other projectile keeps X1's table. */
+static void foreign_projectile_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing() || cpu->D<0x1428 || cpu->D>=0x1628) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(MmxBossRushNative(b.id)) return;
+  uint32_t controller=MmxBossRushForeignChild(b.id,g_ram[cpu->D+10]);if(!controller) return;
+  stack_push(cpu,pc>>16,1);stack_push(cpu,MMX_RUSH_STUB_RTS-1,2);
+  interp_bridge_pre_opcode_redirect(controller);
+}
+/* The effect list ($1928, looped from $80:D345 and, while the scene is
+ * frozen, $80:D36A) dispatches with JSR ($F3B9,x) at $80:D359/$80:D380. A
+ * foreign seat's own effect classes run its relocated controllers: keep the
+ * JSR's return address, then the same JSL frame back to the stub RTS. */
+static void foreign_effect_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing() || cpu->D<0x1928 || cpu->D>=0x1d08) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || MmxBossRushNative(b.id)) return;
+  uint32_t controller=MmxBossRushForeignEffectChild(b.id,g_ram[cpu->D+10]);if(!controller) return;
+  if(!MmxBossRushForeignOwnEffect(b.id,g_ram+cpu->D)) {
+    /* An X1 effect of the boss's own class (e.g. ceiling rubble from X1's
+     * terrain helper): its source game shows none, and its art is not
+     * loaded. Free it and skip the update. */
+    memset(g_ram+cpu->D,0,32);
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|((pc+3)&0xffff));
+    return;
+  }
+  stack_push(cpu,(pc+2)&0xffff,2);
+  stack_push(cpu,pc>>16,1);stack_push(cpu,MMX_RUSH_STUB_RTS-1,2);
+  interp_bridge_pre_opcode_redirect(controller);
+}
+/* A relocated death test (`LDA dp`) that reads the killing hit's class:
+ * a Zero saber kill (MMX_RUSH_SABER_MARKER) reads as the body's chosen class. */
+static void foreign_saber_kill_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  uint32_t kill;uint8_t value,opcode=0,field=0;
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id) ||
+      !MmxBossRushForeignSaberKill(b.id,&kill,&value) || (kill&0x7fffff)!=(pc&0x7fffff) ||
+      !MmxCartExtensionRead(pc,&opcode,1) || opcode!=0xa5 || !MmxCartExtensionRead(pc+1,&field,1) ||
+      g_ram[cpu->D+field]!=MMX_RUSH_SABER_MARKER) return;
+  cpu->A=(uint16_t)((cpu->A&0xff00)|value);
+  cpu->_flag_Z=!value;cpu->_flag_N=(value&0x80)!=0;
+  cpu->P=(cpu->P&~0x82u)|(cpu->_flag_Z?2:0)|(cpu->_flag_N?0x80:0);
+  interp_bridge_pre_opcode_redirect((pc&0xff0000)|((pc+2)&0xffff));
+}
+/* A relocated room-origin read (`LDA camera; AND #$1F00`): the arena's own
+ * origin plus the body's offset, skipping both instructions. */
+static void foreign_room_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushState s=MmxBossRushGetState();MmxBossRushBoss b=s.bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  uint8_t code[6];
+  if(!MmxCartExtensionRead(pc,code,6) || code[0]!=0xad || code[3]!=0x29) return;
+  const MmxBossRushRoomRead *reads;unsigned count=MmxBossRushForeignRoomReads(&reads);
+  for(unsigned i=0;i<count;++i) if((reads[i].pc&0x7fffff)==(pc&0x7fffff)) {
+    unsigned value=(unsigned)((reads[i].axis?s.camera_y:s.camera_x)+reads[i].offset)&0xffff;
+    cpu->A=(uint16_t)value;cpu->_flag_Z=!value;cpu->_flag_N=(value&0x8000)!=0;
+    cpu->P=(cpu->P&~0x82u)|(cpu->_flag_Z?2:0)|(cpu->_flag_N?0x80:0);
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|((pc+6)&0xffff));
+    return;
+  }
+}
+/* A relocated body's poke (see MmxBossRushPoke). */
+static void foreign_poke_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  const MmxBossRushPoke *pokes;unsigned count=MmxBossRushForeignPokes(&pokes);
+  for(unsigned i=0;i<count;++i)
+    if((pokes[i].pc&0x7fffff)==(pc&0x7fffff) && pokes[i].address>=0x7e0000 && pokes[i].address<0x800000)
+      g_ram[pokes[i].address-0x7e0000]=pokes[i].value;
+}
+/* Relocated bodies call shims in place of their source game's sound-effect
+ * routines; A holds the effect. Queue that boss's cached clip. X3's
+ * positional variant ($01:8000) pans by half the emitter's distance from
+ * the player, clamped to the driver's signed range. */
+static void foreign_sound_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || MmxBossRushNative(b.id)) return;
+  const uint32_t *shims;const bool *positional;unsigned shim_count=MmxBossRushForeignSoundShims(&shims,&positional);
+  bool panned=false;
+  for(unsigned i=0;i<shim_count;++i) if((shims[i]&0x7fffff)==(pc&0x7fffff)) panned=positional[i];
+  int pan=0;
+  if(panned) {
+    pan=((int)word(g_ram+cpu->D+5)-(int)word(g_ram+0xbad))/2;
+    if(pan<-127) pan=-127;
+    if(pan>127) pan=127;
+  }
+  MmxBossRushAudioQueueForeign((unsigned)owner,cpu->D,b.id,cpu->A&255,(uint8_t)pan,b.generation);
+}
+/* Zero's melee hit objects: X3 Zero's slash ('SZ', also Modern Zero's) and
+ * Saber Zero's attack and wave families. */
+static bool saber_hit(unsigned shot) {
+  unsigned tag=word(g_ram+shot+0x3e);
+  return tag==0x5a53 ||
+      (tag&MMX_SABER_PROJECTILE_TAG_FAMILY_MASK)==MMX_SABER_PROJECTILE_TAG_FAMILY ||
+      ((tag&MMX_SABER_WAVE_TAG_FAMILY_MASK)==MMX_SABER_WAVE_TAG_FAMILY && (tag&0xff));
+}
+/* Weaknesses of relocated bodies. $84:9E1A loads the hitting shot's class
+ * (the damage column in the target's X1 row); $84:9E3A stores the reaction
+ * class in $1F1D, which their relocated weakness test reads. X = shot. */
+static void foreign_weakness_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  bool reaction=(pc&0xffff)==0x9e3a;
+  if(reaction && saber_hit(cpu->X) && MmxBossRushForeignSaberKill(b.id,NULL,NULL)) {
+    /* A Zero saber hit: mark it so the body's death test can tell. */
+    cpu->A=(uint16_t)((cpu->A&0xff00)|MMX_RUSH_SABER_MARKER);
+    cpu->_flag_Z=0;cpu->_flag_N=0;cpu->P&=~0x82u;
+    return;
+  }
+  unsigned page,weapon,charged;
+  if(!MmxWeaponsShotIdentity(g_ram,cpu->X,&page,&weapon,&charged)) return;
+  const MmxBossRushWeakness *w=MmxBossRushForeignWeakness(b.id,page,weapon);
+  if(!w) return;
+  unsigned value=reaction?w->reaction[charged!=0]:w->damage[charged!=0];
+  cpu->A=(uint16_t)((cpu->A&0xff00)|value);
+  cpu->_flag_Z=!value;cpu->_flag_N=0;
+  cpu->P=(cpu->P&~0x82u)|(cpu->_flag_Z?2:0);
+}
+/* Relocated palette helpers write the shared OBJ palette. Run them on the
+ * seat's private colors instead and return through their own RTL (+3,
+ * after `JSR body; RTL`). The fade reports carry while still changing. */
+static void foreign_palette_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || MmxBossRushNative(b.id)) return;
+  const uint16_t *base=MmxBossRushForeignColors(b.id);if(!base) return;
+  const uint32_t *palette;const bool *rotates;unsigned palette_count=MmxBossRushForeignPaletteHooks(&palette,&rotates);
+  bool rotate=false;
+  for(unsigned i=0;i<palette_count;++i) if((palette[i]&0x7fffff)==(pc&0x7fffff)) rotate=rotates[i];
+  if(rotate) MmxBossRushVisualRotate((unsigned)owner,b.generation,base);
+  else {
+    MmxBossRushVisualFade((unsigned)owner,b.generation,base,1);
+    MmxBossRushVisualState v=MmxBossRushVisualGetState();
+    bool busy=memcmp(v.colors[owner],base,sizeof(v.colors[owner]))!=0;
+    cpu->_flag_C=busy;cpu->P=(cpu->P&~1u)|(busy?1:0);
+  }
+  interp_bridge_pre_opcode_redirect((pc&0xff0000)|((pc+3)&0xffff));
+}
+/* A relocated `LDA $05`/`EOR $05` midline test: use the room-relative X
+ * low byte with its X3 meaning ($80 = the arena's center) and skip the read. */
+static void foreign_midline_hook(CpuState *cpu,uint32_t pc) {
+  if(!playing()) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushState s=MmxBossRushGetState();MmxBossRushBoss b=s.bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  int width=256+(g_ram[0x1f7a]==4?MMX_RUSH_MAMMOTH_SCROLL:0);
+  int x=(int)word(g_ram+cpu->D+5)-(int)s.camera_x-width/2+0x80;
+  uint8_t value=(uint8_t)(x<0?0:x>255?255:x),opcode=0;
+  if(!MmxCartExtensionRead(pc,&opcode,1) || (opcode!=0xa5 && opcode!=0x45)) return;
+  if(opcode==0x45) value^=(uint8_t)cpu->A;
+  cpu->A=(uint16_t)((cpu->A&0xff00)|value);
+  cpu->_flag_Z=!value;cpu->_flag_N=(value&0x80)!=0;
+  cpu->P=(cpu->P&~0x82u)|(cpu->_flag_Z?2:0)|(cpu->_flag_N?0x80:0);
+  interp_bridge_pre_opcode_redirect((pc&0xff0000)|((pc+2)&0xffff));
+}
+/* Keep a relocated body's live-child count to the children that spawned:
+ * after a failed allocation (Z clear before its BNE), or when a spawn loop
+ * stores its count (STA, A minus the children left unspawned). */
+static void foreign_spawn_hook(CpuState *cpu,uint32_t pc) {
+  uint8_t opcode=0;
+  if(!playing() || !MmxCartExtensionRead(pc,&opcode,1)) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushBoss b=MmxBossRushGetState().bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  const MmxBossRushSpawnGuard *guards;unsigned count=MmxBossRushForeignSpawnGuards(&guards);
+  for(unsigned i=0;i<count;++i) if((guards[i].pc&0x7fffff)==(pc&0x7fffff)) {
+    if(opcode==0xd0 && !cpu->_flag_Z) {
+      uint8_t *live=g_ram+cpu->D+guards[i].counter;
+      if(*live) --*live;
+    } else if(opcode==0x85 && guards[i].remaining) {
+      unsigned stored=cpu->A&0xff,missing=g_ram[cpu->D+guards[i].remaining];
+      cpu->A=(uint16_t)((cpu->A&0xff00)|(stored>missing?stored-missing:0));
+    }
+    return;
+  }
+}
+/* A relocated caught test (`LDA player-state`) answers "not caught" and
+ * skips the read without the catching child; a relocated spawn (`JSR`) is
+ * skipped while that child is alive. */
+static void foreign_child_hook(CpuState *cpu,uint32_t pc) {
+  uint8_t opcode=0;
+  if(!playing() || !MmxCartExtensionRead(pc,&opcode,1) || (opcode!=0xad && opcode!=0x20)) return;
+  int owner=MmxBossRushOwner(cpu->D);if(owner<0) return;
+  MmxBossRushState s=MmxBossRushGetState();MmxBossRushBoss b=s.bosses[owner];
+  if(!b.phase || b.object!=cpu->D || MmxBossRushNative(b.id)) return;
+  const MmxBossRushChildGuard *guards;unsigned count=MmxBossRushForeignChildGuards(&guards);
+  for(unsigned i=0;i<count;++i) if((guards[i].pc&0x7fffff)==(pc&0x7fffff)) {
+    bool alive=false;
+    for(unsigned d=0x1428;d<0x1628;d+=64)
+      if(g_ram[d] && g_ram[d+10]==guards[i].kind && g_ram[d+guards[i].field]==guards[i].value &&
+          MmxBossRushOwner(d)==owner) alive=true;
+    if(opcode==0xad && !alive) {
+      cpu->A&=0xff00;cpu->_flag_Z=1;cpu->_flag_N=0;cpu->P=(cpu->P&~0x80u)|2u;
+    } else if(!(opcode==0x20 && alive)) return;
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|((pc+3)&0xffff));
+    return;
+  }
+}
 void MmxBossRushHostFrame(void) {
 #if !MMX_VARIANT_JP
+  MmxBossRushForeignSync();
   static bool score_opened,score_warned;
   if(!score_opened) {
     char path[4096];score_opened=true;
@@ -349,6 +641,32 @@ void MmxBossRushHostFrame(void) {
     0x81b6b2,0x83b3ae,0x81c5ca,0x878cb8,0x879326,0x87d9bf,0x8790fb,0x879110,0xc6dd};
   for(unsigned i=0;i<sizeof(bosses)/sizeof(*bosses);++i)
     registered&=interp_bridge_add_pre_opcode_hook(bosses[i],boss_hook);
+  registered&=interp_bridge_add_pre_opcode_hook(0x00d544,foreign_dispatch_hook);
+  registered&=interp_bridge_add_pre_opcode_hook(0x80d544,foreign_dispatch_hook);
+  registered&=interp_bridge_add_pre_opcode_hook(0x00d4e7,foreign_projectile_hook);
+  registered&=interp_bridge_add_pre_opcode_hook(0x80d4e7,foreign_projectile_hook);
+  const unsigned effect_pcs[]={0x00d359,0x80d359,0x00d380,0x80d380};
+  for(unsigned i=0;i<sizeof(effect_pcs)/sizeof(*effect_pcs);++i)
+    registered&=interp_bridge_add_pre_opcode_hook(effect_pcs[i],foreign_effect_hook);
+  const MmxBossRushRoomRead *rooms;unsigned room_count=MmxBossRushForeignRoomReads(&rooms);
+  for(unsigned i=0;i<room_count;++i) registered&=interp_bridge_add_pre_opcode_hook(rooms[i].pc,foreign_room_hook);
+  const MmxBossRushPoke *pokes;unsigned poke_count=MmxBossRushForeignPokes(&pokes);
+  for(unsigned i=0;i<poke_count;++i) registered&=interp_bridge_add_pre_opcode_hook(pokes[i].pc,foreign_poke_hook);
+  const uint32_t *kills;unsigned kill_count=MmxBossRushForeignSaberKillReads(&kills);
+  for(unsigned i=0;i<kill_count;++i) registered&=interp_bridge_add_pre_opcode_hook(kills[i],foreign_saber_kill_hook);
+  const unsigned weakness_pcs[]={0x049e1d,0x849e1d,0x049e3a,0x849e3a};
+  for(unsigned i=0;i<sizeof(weakness_pcs)/sizeof(*weakness_pcs);++i)
+    registered&=interp_bridge_add_pre_opcode_hook(weakness_pcs[i],foreign_weakness_hook);
+  const uint32_t *palette;unsigned palette_count=MmxBossRushForeignPaletteHooks(&palette,NULL);
+  for(unsigned i=0;i<palette_count;++i) registered&=interp_bridge_add_pre_opcode_hook(palette[i],foreign_palette_hook);
+  const uint32_t *midline;unsigned midlines=MmxBossRushForeignMidlineReads(&midline);
+  for(unsigned i=0;i<midlines;++i) registered&=interp_bridge_add_pre_opcode_hook(midline[i],foreign_midline_hook);
+  const MmxBossRushSpawnGuard *spawns;unsigned spawn_count=MmxBossRushForeignSpawnGuards(&spawns);
+  for(unsigned i=0;i<spawn_count;++i) registered&=interp_bridge_add_pre_opcode_hook(spawns[i].pc,foreign_spawn_hook);
+  const MmxBossRushChildGuard *children;unsigned child_count=MmxBossRushForeignChildGuards(&children);
+  for(unsigned i=0;i<child_count;++i) registered&=interp_bridge_add_pre_opcode_hook(children[i].pc,foreign_child_hook);
+  const uint32_t *shims;unsigned shim_count=MmxBossRushForeignSoundShims(&shims,NULL);
+  for(unsigned i=0;i<shim_count;++i) registered&=interp_bridge_add_pre_opcode_hook(shims[i],foreign_sound_hook);
   static bool warned;
   if(!registered && !warned) {warned=true;fprintf(stderr,"[mmx-rush] native hook registration failed: interpreter hook table is full\n");}
 #endif
@@ -529,7 +847,11 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
     for(unsigned i=0;i<2;++i) {
       s=MmxBossRushGetState();MmxBossRushBoss *b=&s.bosses[i];
       if(b->phase==MMX_RUSH_DYING) {
-        if(++b->ticks>=48) {
+        uint8_t field,value,frames;
+        if(!b->reserved && !MmxBossRushNative(b->id) && b->ticks<2 &&
+            MmxBossRushForeignOwnDeath(b->id,&field,&value,&frames) && g_ram[b->object+field]==value)
+          b->reserved=frames;
+        if(++b->ticks>=48u+b->reserved) {
           for(unsigned d=0xe68;d<0x1d08;) {
             if(d==0x1228) {d=0x1428;continue;}
             unsigned n=(d-0xe68)/32;
@@ -539,7 +861,7 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
           /* Cleanup releases that boss's item slots first. If the shared
            * native pool is full, retry without losing or duplicating its drop. */
           if(!drop_health(r,&s,b)) {
-            b->ticks=48;MmxBossRushSetState(&s);continue;
+            b->ticks=(uint16_t)(48u+b->reserved);MmxBossRushSetState(&s);continue;
           }
           memset(b,0,sizeof(*b));
         }
@@ -551,12 +873,21 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
         for(unsigned d=0xe68;d<0x1228;d+=64) if(!r[d]) {object=d;break;}
         if(!object) continue;
         int id=MmxBossRushNextBoss();if(id<0) continue;
+        /* X2/X3 bodies are offered only once their relocated controller
+         * exists; the class dispatch hook then replaces the stock stub. */
+        bool native=MmxBossRushNative((unsigned)id);
+        if(!native && !MmxBossRushForeignController((unsigned)id)) continue;
         if(!MmxBossRushAssign(i,(unsigned)id,(uint16_t)object)) continue;
+        /* A new body starts with clean shared scratch RAM. */
+        MmxBossRushScratchState scratch=MmxBossRushScratchGetState();
+        memset(scratch.seat[i],0,sizeof(scratch.seat[i]));MmxBossRushScratchSetState(&scratch);
         s=MmxBossRushGetState();
         for(unsigned n=0;n<sizeof(globals)/sizeof(*globals);++n)
           s.bosses[i].globals[n]=r[globals[n]];
         MmxBossRushSetState(&s);
-        memset(r+object,0,64);r[object]=0x81;r[object+10]=kMmxBossRushBosses[id].kind;
+        /* Foreign bodies keep a valid X1 boss class so any class-indexed
+         * native table stays in range; their dispatch never reaches it. */
+        memset(r+object,0,64);r[object]=0x81;r[object+10]=native?kMmxBossRushBosses[id].kind:0x02;
         unsigned x=entry_x(r,i),y=s.camera_y+(id==4?43:96);
         put(r+object+5,x);put(r+object+8,y);put(r+object+0x22,x);put(r+object+0x24,y);
       }
@@ -573,7 +904,9 @@ void MmxBossRushAfterFrame(uint8_t *r) {
   if(!playing()) return;
   MmxBossRushState s=MmxBossRushGetState();
   for(unsigned i=0;i<2;++i) {
-    MmxBossRushBoss *b=&s.bosses[i];if(!b->phase) continue;
+    MmxBossRushBoss *b=&s.bosses[i];
+    bool sounded=hurt_sounded[i];hurt_sounded[i]=false;
+    if(!b->phase) continue;
     if(b->id==4 && b->phase==MMX_RUSH_FIGHTING && r[b->object]) {
       /* Closed door tiles do not provide the tower's full boss-height walls.
        * Bound the body as well as its destinations, including old saves that
@@ -590,11 +923,19 @@ void MmxBossRushAfterFrame(uint8_t *r) {
       }
     }
     unsigned native=r[b->object+1],hp=r[b->object+0x27]&127;
-    /* State 4 is ordinary combat, 8 is a hit reaction and 6 is death.
-     * Watching only state 4 misses a boss hit as its entrance completes. */
-    if(b->phase==MMX_RUSH_ENTERING && native>=4) b->phase=MMX_RUSH_FIGHTING;
+    /* A boss plays its hurt sound when a hit starts its damage flash. Combo
+     * follow-ups (Zero's saber priority) land inside that flash, where only
+     * the impact sound repeats; give each one the hurt sound too. */
+    if(b->phase==MMX_RUSH_FIGHTING && hp && hp<b->health && !sounded && r[b->object])
+      queue_native_sound(r,b->object,0x13);
+    /* X1: state 4 is ordinary combat, 8 is a hit reaction and 6 is death.
+     * Watching only state 4 misses a boss hit as its entrance completes.
+     * Relocated X2/X3 bodies register their own combat and death states. */
+    uint8_t fighting=4,dying=6;
+    if(!MmxBossRushNative(b->id)) MmxBossRushForeignStates(b->id,&fighting,&dying);
+    if(b->phase==MMX_RUSH_ENTERING && native>=fighting) b->phase=MMX_RUSH_FIGHTING;
     if(b->phase==MMX_RUSH_DYING || (b->phase==MMX_RUSH_FIGHTING &&
-        (native==6 || !r[b->object]))) hp=0;
+        (native==dying || !r[b->object]))) hp=0;
     b->health=(uint8_t)(hp>32?32:hp);
     if(b->phase==MMX_RUSH_FIGHTING && !b->health) {
       b->death_x=(int16_t)(word(r+b->object+5)-s.camera_x);
@@ -604,6 +945,13 @@ void MmxBossRushAfterFrame(uint8_t *r) {
   MmxBossRushSetState(&s);
   for(unsigned i=0;i<2;++i) if(s.bosses[i].phase==MMX_RUSH_FIGHTING && !s.bosses[i].health)
     MmxBossRushDefeat(i);
+  /* A hit during a health pickup's refill: the refill takes the player back
+   * before the hurt reaction ($0E) starts the invulnerability countdown
+   * $0C13, which is what clears the hurt latches. X1 freezes enemies while
+   * refilling; Rush's bosses keep fighting, so start the native countdown
+   * here or nothing could hurt the player again. */
+  if(r[0xbd8] && !r[0xc13] && r[0xbaa]!=0x0e && r[0xbaa]!=0x0c && r[0xbaa]!=0x1e && (r[0xbcf]&127))
+    r[0xc13]=0x3c;
   bool alive=(r[0xbcf]&127)!=0;
   bool death_complete=r[0xbaa]==12 && r[0xbab]>=6;
   if(s.coop) {

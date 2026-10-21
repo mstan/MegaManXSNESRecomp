@@ -31,16 +31,17 @@ static const BossWeakness boss_weaknesses[] = {
   {0x52,2,X3_BLADE,{X1_STING,X1_STING+9},{KEEP_ATTACK_CLASS,KEEP_ATTACK_CLASS}}, /* Eagle: Spinning Blade */
   {0x0c,1,X2_BUBBLE,{X1_TORNADO,X1_TORNADO+9},{KEEP_ATTACK_CLASS,KEEP_ATTACK_CLASS}}, /* Mammoth: Bubble Splash */
 };
-static const BossWeakness *boss_weakness(const uint8_t *r,unsigned enemy,unsigned d,unsigned *charged) {
-  if(!MmxWeaponsEnabled() || !r || enemy<0xe68 || enemy>=0x1228 ||
-      (enemy-0xe68)%64 || !r[enemy] || !slot_valid(d) || !r[d]) return NULL;
+/* Which weapon fired player shot `d`: page 0 is X1 (weapon in X1 menu order,
+ * Homing Torpedo = 1), 1 is X2 and 2 is X3, by native weapon id. */
+bool MmxWeaponsShotIdentity(const uint8_t *r,unsigned d,unsigned *page_out,unsigned *weapon_out,unsigned *charged) {
+  if(!r || !slot_valid(d) || !r[d]) return false;
   unsigned page=0,weapon=0;*charged=0;
   if(owned(r,d)) {
     const MmxWeaponShot *s=combat.shots+slot_index(d);
-    if(!s->active) return NULL;
+    if(!s->active) return false;
     page=s->page;weapon=s->weapon;*charged=s->charged!=0;
     /* Underwater Speed Burner becomes bubbles/an unlit dash, not fire. */
-    if(page==1 && weapon==8 && !native_damage_class(s)) return NULL;
+    if(page==1 && weapon==8 && !native_damage_class(s)) return false;
   } else {
     static const uint8_t x1_classes[]={0,X1_TORPEDO,X1_STING,X1_SHIELD,X1_FIRE,
         X1_TORNADO,X1_SPARK,X1_CUTTER,X1_ICE};
@@ -48,8 +49,19 @@ static const BossWeakness *boss_weakness(const uint8_t *r,unsigned enemy,unsigne
       if(r[d+10]==x1_classes[i]) {weapon=i;break;}
       if(r[d+10]==x1_classes[i]+9) {weapon=i;*charged=1;break;}
     }
-    if(!weapon) return NULL;
+    if(!weapon) return false;
   }
+  *page_out=page;*weapon_out=weapon;return true;
+}
+static const BossWeakness *boss_weakness(const uint8_t *r,unsigned enemy,unsigned d,unsigned *charged) {
+  if(!MmxWeaponsEnabled() || !r || enemy<0xe68 || enemy>=0x1228 ||
+      (enemy-0xe68)%64 || !r[enemy] || !slot_valid(d) || !r[d]) return NULL;
+  /* Relocated X2/X3 bodies keep an X1 boss class byte for range safety only;
+   * Boss Rush owns their weaknesses (mmx_boss_rush_runtime.c). */
+  int seat=MmxBossRushOwner(enemy);
+  if(seat>=0 && !MmxBossRushNative(MmxBossRushGetState().bosses[seat].id)) return NULL;
+  unsigned page=0,weapon=0;
+  if(!MmxWeaponsShotIdentity(r,d,&page,&weapon,charged)) return NULL;
   for(unsigned i=0;i<sizeof(boss_weaknesses)/sizeof(boss_weaknesses[0]);++i) {
     const BossWeakness *w=boss_weaknesses+i;
     if(w->boss==r[enemy+10] && w->page==page && w->weapon==weapon) return w;

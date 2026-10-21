@@ -1,6 +1,18 @@
 /* Exercise the title entry and the original controllers in a real ROM.
  * Kept separate from the portable queue tests: no ROM fixtures are shipped. */
 #include "mod_audio.h"
+#include "mmx_boss_rush_foreign.h"
+#include "mmx_cart_extension.h"
+#include "mmx_boss_rush_foreign_art.h"
+#include "mmx_boss_rush_audio.h"
+#include "mmx_weapon_combat.h"
+#include "mmx_source_assets.h"
+#include "host_paths.h"
+#include "mod_runtime.h"
+#include "recomp_launcher.h"
+#include "saber/mmx_saber_plugin.h"
+#include "saber/mmx_saber_attack.h"
+#include <stdlib.h>
 #include "mmx_wide_policy.h"
 
 static void rush_keep_players_alive(void) {
@@ -140,6 +152,68 @@ static void rush_return_title_checks(void) {
       "native opening returns to all four title choices");
   puts("MMX BOSS RUSH RETURN TITLE CHECKS PASSED");
 }
+/* Feasibility spike: a body controller built in a cart extension bank runs
+ * inside X1's enemy loop for one Rush seat, calls a native X1 helper, and
+ * replays deterministically. Seat 0 keeps a native Penguin beside it. */
+static void rush_foreign_spike_checks(uint8_t *start,size_t cap) {
+  const Cart *cart=g_snes->cart;
+  uint32_t image=cart->romImageSize;uint8_t before[16];
+  memcpy(before,cart->rom+0x1ffff0,sizeof(before));
+  check(MmxCartExtensionEnsure() && MmxCartExtensionReady(),"cart image grows to 4 MB");
+  cart=g_snes->cart;
+  check(cart->romSize==0x400000 && cart->romImageSize==image && g_rom==cart->rom,
+      "extension keeps the original image identity and updates g_rom");
+  check(!memcmp(cart->rom+0x1ffff0,before,sizeof(before)) &&
+      !memcmp(cart->rom+0x200000,cart->rom,0x200000),
+      "upper half mirrors the original padded image before any write");
+  /* INC $3E ; JSL $84:9086 (native RNG) ; STA $3F ; RTL */
+  static const uint8_t body[]={0xe6,0x3e,0x22,0x86,0x90,0x84,0x85,0x3f,0x6b};
+  check(MmxCartExtensionWrite(0xf08000,body,sizeof(body)),"spike controller writes to bank $F0");
+  check(!memcmp(RomPtr(0xf08000),body,sizeof(body)),"bank $F0 reads back the spike controller");
+  check(!MmxCartExtensionWrite(0xa08000,body,sizeof(body)) && !MmxCartExtensionWrite(0x86f000,body,2) &&
+      !MmxCartExtensionWrite(0xf07fff,body,2),"writes outside the extension windows are refused");
+  check(MmxBossRushForeignSetController(23,0xf08000),"spike controller registers for roster id 23");
+  MmxBossRushState s=MmxBossRushGetState();
+  memset(s.bosses,0,sizeof(s.bosses));memset(s.owner,0,sizeof(s.owner));
+  memset(g_ram+0xe68,0,0x3c0);memset(g_ram+0x1428,0,0x8e0);s.queued=0;
+  check(MmxBossRushSetState(&s),"spike clears the opening pair");
+  MmxBossRushRosterState roster={.available=MMX_RUSH_X1_MASK|(1u<<23),.queued=2};
+  roster.queue[0]=0;roster.queue[1]=23;
+  check(MmxBossRushRosterSetState(&roster),"spike queues Penguin and roster id 23");
+  unsigned object=0;
+  for(unsigned t=0;t<600 && !object;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    if(s.bosses[1].phase && s.bosses[1].id==23) object=s.bosses[1].object;
+  }
+  check(object && MmxBossRushOwner(object)==1,"roster id 23 spawns in seat 1");
+  for(unsigned t=0;t<5;++t) {frame(0);rush_keep_players_alive();}
+  uint8_t counter=g_ram[object+0x3e];uint16_t rng=eagle_word(g_ram+0xba6);
+  unsigned changes=0;uint8_t last=g_ram[object+0x3f];
+  for(unsigned t=0;t<60;++t) {
+    frame(0);rush_keep_players_alive();
+    if(g_ram[object+0x3f]!=last) {++changes;last=g_ram[object+0x3f];}
+  }
+  unsigned advanced=(uint8_t)(g_ram[object+0x3e]-counter);
+  fprintf(stderr,"foreign spike counter advanced=%u rng-writes=%u rng %04x->%04x penguin=%u:%u\n",
+      advanced,changes,rng,eagle_word(g_ram+0xba6),MmxBossRushGetState().bosses[0].phase,g_ram[MmxBossRushGetState().bosses[0].object+1]);
+  check(advanced==60,"extension controller runs once per frame for its seat");
+  check(changes>=30 && eagle_word(g_ram+0xba6)!=rng,"native X1 RNG call returns into the extension bank");
+  s=MmxBossRushGetState();
+  check(s.bosses[0].id==0 && s.bosses[0].phase && g_ram[s.bosses[0].object] && s.bosses[1].object==object,
+      "native Penguin keeps running beside the foreign seat");
+  size_t n=RtlSaveSnapshotToMemory(start,cap);check(n,"foreign seat snapshot saves");
+  static uint8_t first[0x20000];
+  for(unsigned t=0;t<30;++t) {frame(0);rush_keep_players_alive();}
+  memcpy(first,g_ram,sizeof(first));
+  check(RtlLoadSnapshotFromMemory(start,n),"foreign seat snapshot restores");
+  for(unsigned t=0;t<30;++t) {frame(0);rush_keep_players_alive();}
+  check(!memcmp(first,g_ram,sizeof(first)),"foreign seat replay is deterministic");
+  MmxBossRushForeignSetController(23,0);MmxCartExtensionClear();
+  check(!memcmp(cart->rom+0x380000,cart->rom+0x180000,0x8000),"clearing restores the mirrored bank");
+  puts("MMX BOSS RUSH FOREIGN SPIKE CHECKS PASSED");
+}
+#include "mmx_boss_rush_rhino_test.inc"
+#include "mmx_boss_rush_sponge_test.inc"
 static uint8_t rush_extension_value;
 static void rush_extension_reset(uint8_t *ram) {(void)ram;rush_extension_value=0;}
 static void rush_extension_save(uint8_t out[]) {out[0]='R';out[1]=rush_extension_value;}
@@ -150,8 +224,10 @@ static void rush_state_format_checks(uint8_t *start,uint8_t *legacy,uint8_t *act
   MmxZeroSetExtension(&extension);rush_extension_value=7;
   size_t n=RtlSaveSnapshotToMemory(start,cap);check(n,"combined Zero/Rush snapshot saves");
   size_t rush_bytes=sizeof(MmxBossRushState),audio_bytes=sizeof(MmxBossRushAudioState),
-      visual_bytes=sizeof(MmxBossRushVisualState);
-  size_t tail=n-MMX_ZERO_EXTENSION_STATE_BYTES-rush_bytes-audio_bytes-visual_bytes;
+      visual_bytes=sizeof(MmxBossRushVisualState),bounds_bytes=sizeof(MmxCoopViewBoundsState),
+      roster_bytes=sizeof(MmxBossRushRosterState),scratch_bytes=sizeof(MmxBossRushScratchState);
+  size_t v21_bytes=MMX_ZERO_EXTENSION_STATE_BYTES+rush_bytes+audio_bytes+visual_bytes;
+  size_t tail=n-v21_bytes-bounds_bytes-roster_bytes-scratch_bytes;
   size_t chunk=0;
   for(size_t i=n-8;i>8;--i) {
     uint32_t magic;memcpy(&magic,start+i,4);
@@ -159,9 +235,12 @@ static void rush_state_format_checks(uint8_t *start,uint8_t *legacy,uint8_t *act
   }
   check(chunk && tail>chunk,"bounded game state tail located");
   uint32_t version;memcpy(&version,start+chunk+4,4);
-  check(version==21,"combined state uses unambiguous v21");
+  check(version==24,"combined state uses v24 with the Boss Rush roster and scratch RAM");
   MmxBossRushState original=MmxBossRushGetState();
-  for(unsigned format=0;format<5;++format) {
+  /* 0: main v18 (extension only); 1-3: Rush previews v18/v19/v20;
+   * 4: v21 extension + Rush; 5: v22 adds per-seat view bounds; 6: v23 adds
+   * the roster. */
+  for(unsigned format=0;format<7;++format) {
     memcpy(legacy,start,n);size_t length=n;
     version=format?format+17:18;
     if(!format) length=tail+MMX_ZERO_EXTENSION_STATE_BYTES; /* main v18 */
@@ -169,14 +248,19 @@ static void rush_state_format_checks(uint8_t *start,uint8_t *legacy,uint8_t *act
       size_t bytes=rush_bytes+(format>=2?audio_bytes:0)+(format>=3?visual_bytes:0);
       memmove(legacy+tail,start+tail+MMX_ZERO_EXTENSION_STATE_BYTES,bytes);
       length=tail+bytes; /* original Rush v18/v19/v20 */
-    }
+    } else length=tail+v21_bytes+(format>=5?bounds_bytes:0)+(format>=6?roster_bytes:0);
     memcpy(legacy+chunk+4,&version,4);rush_extension_value=99;
     check(RtlLoadSnapshotFromMemory(legacy,length),"main/preview/current memory state imports");
-    check(rush_extension_value==(format==0 || format==4?7:0),
+    check(rush_extension_value==(format==0 || format>=4?7:0),
         "only main/current states restore the Zero extension blob");
     MmxBossRushState loaded=MmxBossRushGetState();
     check(format?!memcmp(&original,&loaded,sizeof(loaded)):loaded.mode==MMX_RUSH_OFF,
         "old main v18 has no Rush state; each preview keeps its queue");
+    if(format && format<6) {
+      MmxBossRushRosterState imported=MmxBossRushRosterGetState();
+      check(imported.available==MMX_RUSH_X1_MASK && MmxBossRushRosterMatches(&loaded,&imported),
+          "pre-roster states import an X1-only roster");
+    }
     if(!format) {
       FILE *f=fopen("rush-main-v18.sav","wb");check(f!=NULL,"main v18 file opens");
       check(fwrite(legacy,1,length,f)==length && !fclose(f),"main v18 file writes");
@@ -350,6 +434,64 @@ static void rush_drop_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,si
   check(s.bosses[1].phase==MMX_RUSH_ENTERING && eagle_word(g_ram+0x165d)==s.camera_x+352 &&
       eagle_word(g_ram+0x1660)==s.camera_y+184,"second reward stays reachable at the arena's opposite edge");
   puts("MMX BOSS RUSH NATIVE HEALTH DROP CHECKS PASSED");
+}
+/* A native boss's death scene makes the player invulnerable until the stage
+ * ends. Kill Penguin with a real shot, collect his drop, then require that
+ * Chameleon can still hurt the player. */
+static void rush_death_latch_checks(void) {
+  MmxBossRushState s=MmxBossRushGetState();
+  static const uint8_t queue[]={0,5,1,3,2,4,6,7};
+  memcpy(s.queue,queue,sizeof(queue));s.queued=8;
+  check(MmxBossRushSetState(&s),"death latch fixture queues Penguin and Chameleon");
+  for(unsigned t=0;t<1500;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    if(s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].phase==MMX_RUSH_FIGHTING) break;
+  }
+  check(s.bosses[0].id==0 && s.bosses[0].phase==MMX_RUSH_FIGHTING && s.bosses[1].id==5,
+      "death latch fixture reaches combat");
+  unsigned penguin=s.bosses[0].object,item=0;g_ram[penguin+0x27]=1;
+  for(unsigned t=0;t<600;++t) {
+    if(s.bosses[0].id==0 && s.bosses[0].phase==MMX_RUSH_FIGHTING)
+      for(unsigned d=0x1228;d<0x1428;d+=64) if(g_ram[d]) {
+        memcpy(g_ram+d+5,g_ram+penguin+5,2);memcpy(g_ram+d+8,g_ram+penguin+8,2);
+      }
+    frame(t<200 && t%20==0?SNES_PAD_Y:0);rush_keep_players_alive();s=MmxBossRushGetState();
+    if(!item) for(unsigned d=0x1628;d<0x1928;d+=48)
+      if(g_ram[d] && g_ram[d+10]==2 && MmxBossRushOwner(d)<0) {
+        item=d;g_ram[0xbcf]=0x88;
+        eagle_putword(g_ram+0xbad,eagle_word(g_ram+item+5));eagle_putword(g_ram+0xbb0,eagle_word(g_ram+item+8)+16);
+        break;
+      }
+  }
+  check(item && !g_ram[item],"Penguin's drop is collected after his native death");
+  g_ram[0xbcf]=0x90;unsigned hits=0,hp=16;
+  for(unsigned t=0;t<300;++t) {
+    s=MmxBossRushGetState();unsigned d=s.bosses[1].object;
+    eagle_putword(g_ram+d+5,eagle_word(g_ram+0xbad));eagle_putword(g_ram+d+8,eagle_word(g_ram+0xbb0)-8);
+    frame(0);
+    if((g_ram[0xbcf]&127)<hp) ++hits;
+    hp=g_ram[0xbcf]&127;
+    if(hp<4) {g_ram[0xbcf]=0x90;hp=16;}
+  }
+  fprintf(stderr,"death latch: contact hits=%u bd8=%u c32=%u\n",hits,g_ram[0xbd8],g_ram[0xc32]);
+  check(hits>=2,"the player stays hittable after another boss's native death");
+  /* A hit during a pickup's refill leaves the hurt latches set without the
+   * countdown that clears them (playtest 2026-10-18): Rush starts it. */
+  for(unsigned t=0;t<120 && (g_ram[0xbaa]==0x0e || g_ram[0xc13]);++t) frame(0);
+  g_ram[0xbd8]=g_ram[0xc32]=8;g_ram[0xc13]=0;g_ram[0xbcf]=0x90;hits=0;hp=16;
+  bool cleared=false;
+  for(unsigned t=0;t<300;++t) {
+    s=MmxBossRushGetState();unsigned d=s.bosses[1].object;
+    if(cleared) {eagle_putword(g_ram+d+5,eagle_word(g_ram+0xbad));eagle_putword(g_ram+d+8,eagle_word(g_ram+0xbb0)-8);}
+    frame(0);
+    cleared|=!g_ram[0xbd8] && !g_ram[0xc32];
+    if((g_ram[0xbcf]&127)<hp) ++hits;
+    hp=g_ram[0xbcf]&127;
+    if(hp<4) {g_ram[0xbcf]=0x90;hp=16;}
+  }
+  fprintf(stderr,"death latch: refill latches cleared=%u hits=%u\n",cleared,hits);
+  check(cleared && hits>=1,"hurt latches left by an interrupted hurt reaction clear");
+  puts("MMX BOSS RUSH DEATH LATCH CHECKS PASSED");
 }
 static void rush_chameleon_replacement_checks(uint8_t *snapshot,size_t cap) {
   size_t n=RtlSaveSnapshotToMemory(snapshot,cap);check(n,"Chameleon replacement baseline saves");
@@ -648,6 +790,9 @@ static void rush_hit_visual_checks(uint8_t *arena,uint8_t *pair,size_t cap) {
           d+=step;
         }
         g_ram[0xbad]=(uint8_t)(s.camera_x+100);g_ram[0xbae]=(uint8_t)((s.camera_x+100)>>8);
+        /* Keep the shooter in X1's post-hit protection (latches plus their
+         * countdown), so contact and Mammoth's stomp stun never interrupt it. */
+        g_ram[0xbd8]=g_ram[0xc32]=8;g_ram[0xc13]=0x3c;
         if(cut && t%90==0 && !g_ram[body+(boss==3?0x3c:0x39)]) {
           g_ram[body+2]=g_ram[body+3]=0;
           if(boss==3) g_ram[body+0x3a]=0; /* Select a hittable native behavior. */
@@ -927,9 +1072,142 @@ static void rush_projectile_defeat(unsigned seat,unsigned weapon) {
   check(s.defeated==count+1,"native weapon finishing hit counts exactly one defeat");
 }
 #include "mmx_boss_rush_coop_combat_test.inc"
+/* Developer scan of a recorded session (Tier 2 diagnostics replays):
+ * MMX_REPLAY_SCAN names a text file listing .replay segments. Restore each
+ * segment's opening checkpoint and print the player's hurt state and Rush's
+ * bosses, so a bug can be located in a long playtest. */
+static void rush_replay_scan(const char *list) {
+  FILE *names=fopen(list,"r");check(names!=NULL,"replay list opens");
+  static uint8_t state[2*1024*1024];char name[1400],line[256],sidecar[1500];
+  while(fgets(name,sizeof(name),names)) {
+    name[strcspn(name,"\r\n")]=0;if(!*name) continue;
+    FILE *replay=fopen(name,"r");if(!replay) continue;
+    unsigned offset=0,size=0,digest=0,frame=0;bool found=false;
+    while(fgets(line,sizeof(line),replay))
+      if(sscanf(line,"S %u %u %x",&offset,&size,&digest)==3) {found=true;break;}
+    if(found && fgets(line,sizeof(line),replay)) sscanf(line,"I %u",&frame);
+    fclose(replay);
+    snprintf(sidecar,sizeof(sidecar),"%s.sav",name);
+    FILE *sav=found?fopen(sidecar,"rb"):NULL;
+    bool loaded=sav && size<=sizeof(state) && !fseek(sav,(long)offset,SEEK_SET) &&
+        fread(state,1,size,sav)==size && RtlLoadSnapshotFromMemory(state,size);
+    if(sav) fclose(sav);
+    if(!loaded) {fprintf(stderr,"scan %s: cannot restore\n",name);continue;}
+    MmxBossRushState s=MmxBossRushGetState();
+    fprintf(stderr,"scan frame=%u mode=%u st=%02x hp=%u bd8=%02x c32=%02x c30=%02x 1f0c=%u zero=%u"
+        " boss0=%u/%u obj=%04x hp=%u priv=%u boss1=%u/%u obj=%04x hp=%u priv=%u world=%u/%u actor=%u defeated=%u\n",
+        frame,s.mode,g_ram[0xbaa],g_ram[0xbcf]&127,g_ram[0xbd8],g_ram[0xc32],g_ram[0xc30],g_ram[0x1f0c],
+        MmxZeroActive(),s.bosses[0].id,s.bosses[0].phase,s.bosses[0].object,
+        s.bosses[0].object?g_ram[s.bosses[0].object+0x27]&127:0,s.bosses[0].globals[0],
+        s.bosses[1].id,s.bosses[1].phase,s.bosses[1].object,
+        s.bosses[1].object?g_ram[s.bosses[1].object+0x27]&127:0,s.bosses[1].globals[0],
+        s.globals[31],s.globals[39],s.actor,s.defeated);
+    for(unsigned d=0x1428;d<0x1628;d+=64) if(g_ram[d])
+      fprintf(stderr,"  projectile %04x class=%02x state=%02x/%02x owner=%u occupied=%u\n",d,g_ram[d+10],g_ram[d+1],
+          g_ram[d+2],s.owner[(d-0xe68)/32],s.occupied[(d-0xe68)/32]);
+  }
+  fclose(names);
+}
+/* MMX_REPLAY_PLAY names one .replay segment: restore its checkpoint, feed
+ * its recorded inputs on the current code (no divergence check), then idle
+ * MMX_REPLAY_PLAY_EXTRA frames, printing the player's hurt state whenever it
+ * changes. Shows how a fix changes a captured bug. */
+static void rush_replay_play(const char *name) {
+  static uint8_t state[2*1024*1024];char line[256],sidecar[1500];
+  FILE *replay=fopen(name,"r");check(replay!=NULL,"replay segment opens");
+  unsigned offset=0,size=0,digest=0,frame_number=0,word=0,inputs=0;bool loaded=false;
+  uint8_t last[6]={0};bool first=true;
+  const char *extra_text=getenv("MMX_REPLAY_PLAY_EXTRA");unsigned extra=extra_text?(unsigned)atoi(extra_text):0;
+  for(;;) {
+    bool have=replay && fgets(line,sizeof(line),replay);
+    if(have && !loaded && sscanf(line,"S %u %u %x",&offset,&size,&digest)==3) {
+      snprintf(sidecar,sizeof(sidecar),"%s.sav",name);
+      FILE *sav=fopen(sidecar,"rb");
+      loaded=sav && size<=sizeof(state) && !fseek(sav,(long)offset,SEEK_SET) &&
+          fread(state,1,size,sav)==size && RtlLoadSnapshotFromMemory(state,size);
+      if(sav) fclose(sav);
+      check(loaded,"replay checkpoint restores");continue;
+    }
+    if(have && !(loaded && sscanf(line,"I %u %x",&frame_number,&word)==2)) continue;
+    if(!have) {if(!extra--) break;word=1u<<30;}
+    frame(word&~(1u<<30));++inputs;
+    /* MMX_REPLAY_PLAY_WATCH: hex WRAM addresses, comma separated. */
+    static unsigned watch[32],watch_count;static uint8_t watched[32];static bool parsed;
+    if(!parsed) {
+      parsed=true;const char *w=getenv("MMX_REPLAY_PLAY_WATCH");
+      while(w && *w && watch_count<32) {watch[watch_count++]=(unsigned)strtoul(w,(char **)&w,16);if(*w==',') ++w;}
+    }
+    for(unsigned i=0;i<watch_count;++i) if(g_ram[watch[i]]!=watched[i] || inputs==1) {
+      fprintf(stderr,"play %u %04x=%02x\n",inputs,watch[i],g_ram[watch[i]]);watched[i]=g_ram[watch[i]];
+    }
+    uint8_t now[6]={g_ram[0xbaa],g_ram[0xbcf]&127,g_ram[0xbd8],g_ram[0xc32],g_ram[0xc13],0};
+    if(first || memcmp(now,last,5)) {
+      fprintf(stderr,"play %u st=%02x hp=%u bd8=%02x c32=%02x c13=%02x\n",inputs,now[0],now[1],now[2],now[3],now[4]);
+      memcpy(last,now,6);first=false;
+    }
+  }
+  if(replay) fclose(replay);
+  fprintf(stderr,"play done after %u frames: bd8=%02x c32=%02x c13=%02x\n",inputs,g_ram[0xbd8],g_ram[0xc32],g_ram[0xc13]);
+}
+/* MMX_BOSS_RUSH_COMBO_SOUND_TEST: Zero's attack chain (Y) on a boss
+ * (MMX_COMBO_BOSS roster id, default Flame Mammoth). Every landed hit,
+ * including combo follow-ups inside the boss's damage flash, must queue the
+ * boss-hurt sound $13 in the native sound ring ($0B72). */
+static void rush_combo_sound_checks(void) {
+  const char *boss_text=getenv("MMX_COMBO_BOSS");unsigned boss=boss_text?(unsigned)atoi(boss_text):4;
+  if(boss>=8) {
+    MmxBossRushForeignSetPreview(true);
+    MmxBossRushRosterState roster={.available=MMX_RUSH_X1_MASK|(1u<<boss),.queued=2};
+    roster.queue[0]=(uint8_t)boss;roster.queue[1]=0;
+    check(MmxBossRushRosterSetState(&roster),"combo sound fixture queues the relocated boss");
+  } else {
+    MmxBossRushState s=MmxBossRushGetState();
+    uint8_t queue[]={(uint8_t)boss,boss?0:1,1,3,2,5,6,7};
+    memcpy(s.queue,queue,sizeof(queue));s.queued=8;
+    check(MmxBossRushSetState(&s),"combo sound fixture queues the boss");
+  }
+  MmxBossRushState s=MmxBossRushGetState();
+  unsigned seat=2;
+  for(unsigned t=0;t<2400 && seat==2;++t) {
+    frame(0);rush_keep_players_alive();s=MmxBossRushGetState();
+    for(unsigned i=0;i<2;++i) if(s.bosses[i].id==boss && s.bosses[i].phase==MMX_RUSH_FIGHTING) seat=i;
+  }
+  check(seat<2,"combo sound fixture reaches combat");
+  unsigned body=s.bosses[seat].object,hits=0,silent=0,hp=g_ram[body+0x27]&127;
+  for(unsigned t=0;t<240;++t) {
+    s=MmxBossRushGetState();unsigned other=s.bosses[seat^1].object;
+    /* The boss stands beside the player; the other stays out of reach. */
+    eagle_putword(g_ram+body+5,eagle_word(g_ram+0xbad)+20);eagle_putword(g_ram+body+8,eagle_word(g_ram+0xbb0));
+    if(other) eagle_putword(g_ram+other+5,eagle_word(g_ram+0xbad)-200);
+    g_ram[body+0x26]=0;if(other) g_ram[other+0x26]=0;
+    g_ram[0xbd8]=g_ram[0xc32]=8;g_ram[0xc13]=0x3c;g_ram[0xbb9]|=64u; /* protected, facing right */
+    unsigned ring=g_ram[0xba3]&0x1e;
+    frame(t%10<2?SNES_PAD_Y:0);rush_keep_players_alive();
+    bool sounded=false;
+    for(unsigned x=ring;x!=(g_ram[0xba3]&0x1eu);x=(x+2)&0x1e) sounded|=g_ram[0xb72+x]==0x13;
+    unsigned now=g_ram[body+0x27]&127;
+    if(now<hp) {
+      ++hits;if(!sounded) ++silent;
+      fprintf(stderr,"combo hit t=%u hp=%u->%u state=%02x/%02x hurt-sound=%u\n",t,hp,now,
+          g_ram[body+1],g_ram[body+2],sounded);
+    }
+    hp=now;
+    if(now<8) {g_ram[body+0x27]=(uint8_t)((g_ram[body+0x27]&128)|32);hp=32;}
+  }
+  fprintf(stderr,"combo sounds: hits=%u silent=%u\n",hits,silent);
+  /* Saber Zero's priority combos land inside the damage flash; other
+   * characters land one hit per flash. */
+  const char *who=getenv("MMX_BOSS_RUSH_RHINO_CHARACTER");
+  check(hits>=(who && !strcmp(who,"saber")?4u:1u),"the attack chain lands its hits");
+  check(!silent,"every landed combo hit plays the boss-hurt sound");
+  puts("MMX BOSS RUSH COMBO SOUND CHECKS PASSED");
+}
 #include "mmx_boss_rush_reports_test.inc"
 #include "mmx_gravity_rush_test.inc"
 static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,size_t cap) {
+  rush_rhino_launcher();
+  if(getenv("MMX_REPLAY_SCAN")) {rush_replay_scan(getenv("MMX_REPLAY_SCAN"));return;}
+  if(getenv("MMX_REPLAY_PLAY")) {rush_replay_play(getenv("MMX_REPLAY_PLAY"));return;}
   const char *coop_assets=getenv("MMX_BOSS_RUSH_COOP");
   const char *zero_assets=getenv("MMX_BOSS_RUSH_ZERO");
   if(zero_assets) {
@@ -1047,6 +1325,9 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   int player_screen_x=(int)eagle_word(g_ram+0xbad)-(int)eagle_word(g_ram+0x1e4d);
   check(player_screen_x>=104 && player_screen_x<=160,
       "the encounter begins with the player near the middle of the view");
+  if(getenv("MMX_BOSS_RUSH_FOREIGN_SPIKE_TEST")) {rush_foreign_spike_checks(start,cap);return;}
+  if(getenv("MMX_BOSS_RUSH_RHINO_TEST")) {rush_rhino_checks(start,cap,getenv("MMX_BOSS_RUSH_X3_ROM"));return;}
+  if(getenv("MMX_BOSS_RUSH_SPONGE_TEST")) {rush_sponge_checks(start,cap,getenv("MMX_BOSS_RUSH_X2_ROM"));return;}
   if(getenv("MMX_BOSS_RUSH_ARENA_TEST")) {
     MmxBossRushState s=MmxBossRushGetState();
     memset(s.bosses,0,sizeof(s.bosses));memset(s.owner,0,sizeof(s.owner));
@@ -1129,6 +1410,8 @@ static void rush_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual
   if(getenv("MMX_BOSS_RUSH_DEATH_TEST")) {rush_natural_death_checks();return;}
   if(getenv("MMX_BOSS_RUSH_HIT_VISUAL_TEST") || getenv("MMX_BOSS_RUSH_HIT_AUDIO_TEST")) {rush_hit_visual_checks(start,expected,cap);return;}
   if(getenv("MMX_BOSS_RUSH_CHAMELEON_TEST")) {rush_chameleon_replacement_checks(start,cap);return;}
+  if(getenv("MMX_BOSS_RUSH_DEATH_LATCH_TEST")) {rush_death_latch_checks();return;}
+  if(getenv("MMX_BOSS_RUSH_COMBO_SOUND_TEST")) {rush_combo_sound_checks();return;}
   if(getenv("MMX_BOSS_RUSH_REPLACEMENT_VISUAL_TEST") || getenv("MMX_BOSS_RUSH_PAUSE_VISUAL_TEST")) {
     rush_replacement_menu_checks(start,expected,cap);return;
   }

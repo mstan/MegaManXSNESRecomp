@@ -1,5 +1,5 @@
 #include "mmx_boss_rush.h"
-#include "mod_runtime.h"
+#include "mmx_mod_constructor.h"
 
 static void reset(void) { MmxBossRushSetEnabled(false); }
 static void activate(void) { MmxBossRushSetEnabled(true); }

@@ -1,0 +1,36 @@
+format_version = 1
+id = "megaman-x.boss-rush.x2-bosses"
+version = "0.1.0"
+name = "Boss Rush: X2 Mavericks (experimental)"
+author = "mstan"
+description = "Adds Mega Man X2 Mavericks to Boss Rush. Bosses are being ported one at a time."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "requires-same-mods"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "bosses"
+name = "X2 Mavericks in Boss Rush"
+description = "Mixes ported X2 Mavericks into Boss Rush alongside X1's, using their original code, art and sounds from your X2 ROM. Requires Boss Rush. Available now: Wire Sponge."
+group = "Game Modes"
+default_enabled = false
+
+[[resource]]
+feature = "bosses"
+id = "x2-rom"
+label = "Mega Man X2 ROM"
+description = "Select your original Mega Man X2 USA ROM. This selection is shared with the X2 weapons."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X2 USA ROM"
+shared_key = "megaman-x.source.x2"
+normalized_sha256 = "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed"
+required = true
+
+[[plugin]]
+feature = "bosses"
+id = "megaman-x.boss-rush.x2-bosses"
