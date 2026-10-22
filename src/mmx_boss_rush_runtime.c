@@ -543,7 +543,7 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
   camera(r);
   unsigned vs_phase=MmxVsGetState().phase;
   if(r[0xd3]==4 && !r[0x1f19] && !MmxWeaponsMenuVisible(r) && !MmxCoopGetState().menu_owner &&
-      (!s.versus || (vs_phase>=MMX_VS_LOADING && vs_phase<=MMX_VS_FIGHT))) {
+      (!s.versus || (!r[0x1f10] && !r[0x1ec9] && vs_phase>=MMX_VS_LOADING && vs_phase<=MMX_VS_FIGHT))) {
     for(unsigned i=0;i<2;++i) {
       s=MmxBossRushGetState();MmxBossRushBoss *b=&s.bosses[i];
       if(b->phase==MMX_RUSH_DYING) {

@@ -3,6 +3,7 @@
 #include "mmx_boss_rush_audio.h"
 #include "mmx_coop.h"
 #include "mmx_rtl.h"
+#include "mmx_replay.h"
 #include "cpu_state.h"
 #include "snes/interp_bridge.h"
 #include "snes_overlay_draw.h"
@@ -14,6 +15,38 @@ extern uint8_t g_ram[0x20000];
 static unsigned word(const uint8_t *r) {return r[0]|r[1]<<8;}
 static void put(uint8_t *r,unsigned v) {r[0]=(uint8_t)v;r[1]=(uint8_t)(v>>8);}
 static unsigned step(unsigned d) {return d<0x1628?64:d<0x1928?48:32;}
+/* Complete native checkpoint/door/menu and entrance work within one host tick.
+ * This runs before RtlRunFrame installs its CPU/watchdog frame. Recursive
+ * frames keep their guest clocks and raster IRQs, but never record another
+ * host input or expose their PCM. The state, not wall time, ends the batch. */
+static bool setup_batch;
+static bool setup_pending(void) {
+  MmxVsState s=MmxVsGetState();
+  return (s.phase==MMX_VS_SELECT && !s.menu_ready) ||
+      s.phase==MMX_VS_LOADING || s.phase==MMX_VS_ENTRANCE;
+}
+bool MmxVsFrameBegin(uint32_t *inputs) {
+  if(setup_batch)return true;
+  if(!MmxReplayBegin(inputs))return false;
+  if(!setup_pending())return true;
+  setup_batch=true;
+  RtlApuLock();
+  uint32_t audio=RtlAudioProducerCursor();
+  unsigned n=0;
+  for(;n<2400 && setup_pending();++n) {
+    MmxVsRunSetupFrame(*inputs&0xc0000000u);
+    RtlAudioRewindProducer(audio);
+  }
+  MmxBossRushAudioReset();
+  RtlApuUnlock();setup_batch=false;
+  MmxReplayInternalFramesComplete();
+  MmxVsState s=MmxVsGetState();
+  s.release[0]|=*inputs&4095;s.release[1]|=(*inputs>>12)&4095;MmxVsSetState(&s);
+  if(n==2400)fprintf(stderr,"[mmx-vs] setup timeout phase=%u menu=%u:%u native=%u:%u c3=%u rush=%u\n",
+      s.phase,s.menu_ready,s.menu_opening,g_ram[0x1ec9],g_ram[0x1f10],g_ram[0xc3],MmxBossRushGetState().mode);
+  return true;
+}
+void MmxVsFrameEnd(void) {if(!setup_batch)MmxReplayEnd();}
 /* Verified USA combat JSR dispatches. Native init, animation and child updates
  * execute normally; only autonomous choice is replaced by seat input. */
 static const uint32_t dispatches[8]={0x81b638,0x889d78,0x83b2ea,0x81c540,
@@ -91,17 +124,32 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     rush.mode=MMX_RUSH_LOADING;rush.return_title=1;MmxBossRushSetState(&rush);return false;
   }
   if(s.phase==MMX_VS_SELECT) {
+    MmxBossRushState rush=MmxBossRushGetState();
+    if(rush.mode!=MMX_RUSH_PLAYING) {MmxVsSetState(&s);return false;}
+    if(!s.menu_ready) {
+      /* Invoke the retail Start-menu task; all of its initialization,
+       * camera save/restore, native tiles, cursor and preview still run. */
+      if(!s.menu_opening) {
+        put(r+0xac,0x1000);put(r+0xae,0x1000);s.menu_opening=1;
+      }
+      if(r[0x1ec9]==4 && r[0x1f10]==6 && (r[0xc3]&128)) {
+        s.menu_ready=1;
+        r[0x1ed2]=(uint8_t)MmxVsWeaponSlot(s.cursor[s.picker]);
+      }
+      MmxVsSetState(&s);return false;
+    }
     unsigned seat=s.picker,p=press[seat];
-    unsigned cursor=s.cursor[seat];
-    if(p&SNES_PAD_UP)s.cursor[seat]=(uint8_t)((cursor&4)|((cursor+3)&3));
-    else if(p&SNES_PAD_DOWN)s.cursor[seat]=(uint8_t)((cursor&4)|((cursor+1)&3));
-    else if(p&(SNES_PAD_LEFT|SNES_PAD_RIGHT))s.cursor[seat]^=4;
+    unsigned slot=MmxVsWeaponSlot(s.cursor[seat]);
+    if(p&SNES_PAD_UP)slot=slot==1?4:slot==5?8:slot-1;
+    else if(p&SNES_PAD_DOWN)slot=slot==4?1:slot==8?5:slot+1;
+    else if(p&(SNES_PAD_LEFT|SNES_PAD_RIGHT))slot=slot<5?(slot==4?8:slot+5):(slot==5?1:slot-5);
+    s.cursor[seat]=(uint8_t)MmxVsSlotBoss(slot);
     MmxVsSetState(&s);
     if(p&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y)) {
       MmxVsChoose(seat,s.cursor[seat]);s=MmxVsGetState();
       s.release[seat]=s.input[seat];MmxVsSetState(&s);
     }
-    return true;
+    return false;
   }
   if(s.phase==MMX_VS_RESULT) {
     if(s.ticks<120)++s.ticks;
@@ -130,6 +178,11 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     MmxVsSetState(&s);return s.paused!=0;
   }
   MmxBossRushState rush=MmxBossRushGetState();
+  if(s.phase==MMX_VS_LOADING && s.menu_opening) {
+    if(r[0x1ec9]==4)r[0x1ec9]=6;
+    if(r[0x1f10] || r[0x1ec9]) {MmxVsSetState(&s);return false;}
+    s.menu_opening=s.menu_ready=0;
+  }
   if(s.phase==MMX_VS_LOADING && rush.mode==MMX_RUSH_PREPARING) {
     /* Let the native door/checkpoint scripts finish before the hidden anchor
      * reaches the central encounter trigger. Teleporting through the closed
@@ -158,6 +211,13 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     if(f->captured && ++f->capture_ticks>=120) {f->captured=0;f->capture_ticks=0;f->stun=0;f->invulnerable=30;s.proxy_source=0;}
     if(s.phase!=MMX_VS_FIGHT)continue;
     unsigned d=rush.bosses[i].object;
+    if((f->action==MMX_VS_JUMP || f->action==MMX_VS_CEILING) &&
+        !f->attached && !f->stun && !f->captured) {
+      f->vx=(value&SNES_PAD_LEFT)?-512:(value&SNES_PAD_RIGHT)?512:0;
+      if(f->vx)f->facing=f->vx>0;
+      put(r+d+0x1a,f->vx);
+      r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
+    }
     if(f->action && f->ticks<240)++f->ticks;
     if(f->action && f->ticks>=240 && !f->attached && !(f->boss==2 && f->action==MMX_VS_ABILITY)) {
       f->action=MMX_VS_IDLE;f->started=0;r[d+2]=r[d+3]=0;f->lockout=12;
@@ -385,7 +445,17 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
 bool MmxVsNativeHook(CpuState *cpu,uint32_t pc) {
   if(!MmxVsActive())return false;uint32_t at=pc|0x800000;
   MmxVsState s=MmxVsGetState();int owner=MmxBossRushOwner(cpu->D);
-  if((at&0x7fffff)==0x018136 && MmxBossRushGetState().mode==MMX_RUSH_PLAYING) {
+  if(at==0x80c67f && s.phase==MMX_VS_SELECT && s.menu_ready) {
+    unsigned slot=MmxVsWeaponSlot(s.cursor[s.picker]);
+    bool changed=g_ram[cpu->D+10]!=slot;
+    g_ram[cpu->D+10]=g_ram[cpu->D+11]=(uint8_t)slot;
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|(changed?0xc6bd:0xc770));return true;
+  }
+  if(setup_batch && (at==0x8088a2 || at==0x8088cd)) {
+    /* Positional and nonpositional SFX entry points share this bare RTL. */
+    interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x88eb);return true;
+  }
+  if((at&0x7fffff)==0x018136 && MmxBossRushGetState().mode==MMX_RUSH_PLAYING && s.phase!=MMX_VS_SELECT) {
     interp_bridge_pre_opcode_redirect((pc&0xff0000)|0x819c);return true;
   }
   if(owner<0)return false;
@@ -417,6 +487,9 @@ void MmxVsHostFrame(void) {
 #if !MMX_VARIANT_JP
   for(unsigned i=0;i<8;++i)interp_bridge_add_pre_opcode_hook(dispatches[i],hook);
   interp_bridge_add_pre_opcode_hook(0x818136,hook);
+  interp_bridge_add_pre_opcode_hook(0x80c67f,hook);
+  interp_bridge_add_pre_opcode_hook(0x8088a2,hook);
+  interp_bridge_add_pre_opcode_hook(0x8088cd,hook);
   interp_bridge_add_pre_opcode_hook(0x84aca5,hook);
   interp_bridge_add_pre_opcode_hook(0x849e3a,hook);
 #endif

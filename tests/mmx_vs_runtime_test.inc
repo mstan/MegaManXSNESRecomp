@@ -12,6 +12,44 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
   rush_visual_bmp("vs-title-entry.bmp");
   frame(SNES_PAD_Y);frame(0);
   check(MmxVsGetState().phase==MMX_VS_SELECT,"VS opens character selection");
+  check(MmxVsGetState().menu_ready && g_ram[0x1ec9]==4 && g_ram[0x1f10]==6,
+      "first selection is the fully initialized native pause menu within one host tick");
+  rush_visual_bmp("vs-native-first-selection.bmp");
+  {
+    MmxVsState menu=MmxVsGetState();
+    static uint32_t native[256*224],versus[256*224];
+    check(MmxRendererDraw(versus,(MmxRenderView){256,0,4.0/3.0},true),"VS native menu renders");
+    MmxVsReset();CaptureSimulationFrame(1);
+    check(MmxRendererDraw(native,(MmxRenderView){256,0,4.0/3.0},true),"unmodified pause reference renders from the same native frame");
+    unsigned compared=0;bool identical=true;
+    for(unsigned y=0;y<224;++y)for(unsigned x=0;x<256;++x) {
+      bool changed=(y>=39 && y<56 && x>=32 && x<128) ||
+          (y>=103 && y<120 && x>=136 && x<232) ||
+          (y>=39 && y<120 && ((x>=56 && x<128)||(x>=160 && x<232))) ||
+          (y>=128 && y<200 && x>=24 && x<232);
+      if(!changed) {identical&=native[y*256+x]==versus[y*256+x];++compared;}
+    }
+    fprintf(stderr,"VS native menu unchanged pixels compared=%u\n",compared);
+    check(identical,"unchanged menu artwork matches the original pause screen pixel for pixel");
+    check(MmxVsSetState(&menu),"VS menu restores after reference comparison");
+    for(unsigned boss=0;boss<8;++boss) {
+      MmxVsState preview=menu;preview.cursor[0]=(uint8_t)boss;
+      check(MmxVsSetState(&preview),"boss menu preview selects");frame(0);
+      char image[80];snprintf(image,sizeof(image),"vs-native-menu-boss-%u.bmp",boss);rush_visual_bmp(image);
+    }
+    check(MmxVsSetState(&menu),"initial picker restores after all eight previews");frame(0);
+  }
+  if(getenv("MMX_VS_DIAGNOSTIC_TEST")) {
+    MmxReplayEnable(true);frame(0);
+    frame(SNES_PAD_A);frame(0);frame(SNES_PAD_A<<12);frame(0);zero_replay(20);
+    check(MmxVsGetState().phase==MMX_VS_FIGHT,"recorded native menu inputs start the fight atomically");
+    char path[2048];snprintf(path,sizeof(path),"%s",MmxReplayPath());
+    MmxReplayClose();MmxReplayEnable(false);
+    check(MmxReplayPlayback(path),"VS setup diagnostic recording opens");
+    for(unsigned t=0;t<100 && !MmxReplayFinished() && !MmxReplayFailed();++t)frame(0);
+    check(MmxReplayFinished() && !MmxReplayFailed(),"native setup and both picks replay with matching checkpoints");
+    puts("MMX VS SETUP DIAGNOSTIC REPLAY PASSED");return;
+  }
   check(MmxVsChoose(0,0) && MmxVsChoose(1,4),"Penguin and Kuwanger lock in");
   for(unsigned t=0;t<2400 && MmxVsGetState().phase!=MMX_VS_FIGHT;++t) {
     frame(0);
@@ -67,7 +105,8 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
       memcmp(expected,actual,256*224*4),"active picker sees their own cursor");
   MmxCoopViewsSetOnline(false);MmxRendererSetPeerView(-1);check(MmxVsSetState(&selection),"local selection restores");
   frame(SNES_PAD_RIGHT<<12);frame(0);
-  check(MmxVsGetState().cursor[1]==(selection.cursor[1]^4),"selection moves between the two weapon-menu columns");
+  check((MmxVsWeaponSlot(MmxVsGetState().cursor[1])<5)!=(MmxVsWeaponSlot(selection.cursor[1])<5),
+      "selection moves between the two native weapon-menu columns");
   check(MmxVsSetState(&selection),"selection navigation fixture restores");CaptureSimulationFrame(1);
   size_t select_n=RtlSaveSnapshotToMemory(expected,cap);check(select_n,"between-round selection snapshot saves");
   check(RtlSaveSnapshot("vs-selection.sav"),"private VS selection netplay fixture saves");
@@ -86,6 +125,8 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
     fprintf(stderr,"VS pair %u/%u phase=%u native=%u:%u:%u,%u:%u:%u hp=%u,%u\n",a,b,MmxVsGetState().phase,
         g_ram[r.bosses[0].object+1],g_ram[r.bosses[0].object+2],g_ram[r.bosses[0].object+3],
         g_ram[r.bosses[1].object+1],g_ram[r.bosses[1].object+2],g_ram[r.bosses[1].object+3],r.bosses[0].health,r.bosses[1].health);
+    check(g_ram[r.bosses[0].object+0x16]==(a==6?0x89:a==7?6:a==0?0x67:a==1?0x91:a==2?0x62:a==3?0x76:a==4?0x75:0x23),
+        "native body animation group matches its menu preview resource");
     check(MmxVsGetState().phase==MMX_VS_FIGHT,"ordered pair completes both entrances");
     zero_replay(30);check(MmxVsGetState().phase==MMX_VS_FIGHT,"idle pair remains alive");
     check(MmxVsGetState().fighters[0].hp==32 && MmxVsGetState().fighters[1].hp==32,

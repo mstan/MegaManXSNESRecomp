@@ -369,7 +369,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 23u /* deterministic Maverick VS */
+#define MMX_SAV_CHUNK_VERSION 24u /* native VS selector/setup state */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -593,7 +593,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       sli->func(sli,&g_load_view_bounds,sizeof(g_load_view_bounds));
       if(!MmxCoopViewsValidBoundsState(&g_load_view_bounds)) g_load_chunk_ok=0;
     }
-    if(g_load_chunk_ok && g_load_chunk.version>=23) {
+    if(g_load_chunk_ok && g_load_chunk.version==23)g_load_chunk_ok=0;
+    if(g_load_chunk_ok && g_load_chunk.version>=24) {
       sli->func(sli,&g_load_vs,sizeof(g_load_vs));
       if(!MmxVsValidState(&g_load_vs))g_load_chunk_ok=0;
     }
@@ -934,8 +935,14 @@ void MmxDrawPpuFrame(void) {
 }
 
 void RunOneFrameOfGame(void) {
+  uint16_t vs_input1=RtlGetPadState(0),vs_input2=RtlGetPadState(1);
   RtlSetPadState(0,MmxBossRushFilterInput(RtlGetPadState(0)));
-  if(MmxVsGetState().phase==MMX_VS_LOADING && MmxBossRushGetState().mode==MMX_RUSH_PREPARING)
+  if(MmxVsActive()) {
+    MmxVsState vs=MmxVsGetState();
+    RtlSetPadState(0,vs.phase==MMX_VS_SELECT && !vs.menu_opening &&
+        MmxBossRushGetState().mode==MMX_RUSH_PLAYING?SNES_PAD_START:0);
+  }
+  if(MmxVsActive() && MmxBossRushGetState().mode==MMX_RUSH_PREPARING)
     RtlSetPadState(0,(g_ram[0xbad]|g_ram[0xbae]<<8)<MmxBossRushGetState().camera_x+MMX_RUSH_ARENA_CENTER_X?SNES_PAD_RIGHT:0);
   s_graphics_frame_start = g_cpu.master_cycles;
   s_graphics_frame_active = g_did_reset;
@@ -1064,7 +1071,7 @@ void RunOneFrameOfGame(void) {
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2002, "before_Internal");
   MmxBossRushFrame(g_ram,RtlGetPadState(0));
-  if(MmxVsFrame(g_ram,RtlGetPadState(0),RtlGetPadState(1)))return;
+  if(MmxVsFrame(g_ram,MmxVsActive()?vs_input1:RtlGetPadState(0),vs_input2))return;
   if(MmxBossRushGetState().mode==MMX_RUSH_FINISHED) return;
   MmxKncBugfixTick(g_ram,RtlGetPadState(0),RtlGetPadState(1));
   if (!MmxVsActive() && MmxCoopEnabled()) MmxCoopPoll(RtlGetPadState(0), RtlGetPadState(1));

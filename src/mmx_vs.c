@@ -7,6 +7,12 @@ static MmxVsState state;
 static const char *const names[8]={"C. PENGUIN","S. MANDRILL","A. ARMADILLO","L. OCTOPUS",
   "B. KUWANGER","S. CHAMELEON","S. EAGLE","F. MAMMOTH"};
 const char *MmxVsBossName(unsigned boss) {return boss<8?names[boss]:"?";}
+static const uint8_t slots[8]={8,6,3,1,7,2,5,4};
+unsigned MmxVsWeaponSlot(unsigned boss) {return boss<8?slots[boss]:8;}
+unsigned MmxVsSlotBoss(unsigned slot) {
+  for(unsigned i=0;i<8;++i)if(slots[i]==slot)return i;
+  return 0;
+}
 void MmxVsSetEnabled(bool value) {enabled=value;}
 bool MmxVsEnabled(void) {return enabled;}
 bool MmxVsActive(void) {return state.phase!=MMX_VS_OFF;}
@@ -15,7 +21,7 @@ MmxVsState MmxVsGetState(void) {return state;}
 bool MmxVsValidState(const MmxVsState *s) {
   if(!s || s->phase>MMX_VS_RESULT || s->first>1 || s->picker>1 || s->locked>3 ||
       s->cursor[0]>7 || s->cursor[1]>7 || s->winner>2 || s->paused>1 ||
-      s->pause_choice>1 || s->advance>1 || s->exit_requested>1 || s->shake_ticks>60 || s->projected>2 || s->proxy>1 || s->proxy_seat>1 ||
+      s->menu_ready>1 || s->menu_opening>1 || s->pause_choice>1 || s->advance>1 || s->exit_requested>1 || s->shake_ticks>60 || s->projected>2 || s->proxy>1 || s->proxy_seat>1 ||
       s->proxy_hp>32 || (s->proxy && !s->projected)) return false;
   for(unsigned i=0;i<2;++i) {
     const MmxVsFighter *f=&s->fighters[i];
@@ -62,6 +68,7 @@ void MmxVsResolveRound(unsigned a,unsigned b) {
 void MmxVsNextRound(void) {
   if(state.phase!=MMX_VS_RESULT) return;
   state.phase=MMX_VS_SELECT;state.picker=state.first;state.locked=0;state.ticks=0;
+  state.menu_ready=state.menu_opening=0;
   state.advance=0;
   state.shake_ticks=0;state.proxy_source=0;
   memset(state.attack_class,0,sizeof(state.attack_class));

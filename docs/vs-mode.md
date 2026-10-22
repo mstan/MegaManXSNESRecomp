@@ -23,12 +23,23 @@ For online play, enable the mod before opening Netplay; each computer uses
 its local Player 1 bindings. The current build is an initial playable version
 whose move timings and balance are intended for playtest tuning.
 
+Round selection uses X's original pause-menu task and artwork. The original
+eight weapon cells contain the boss names and a native sprite preview of the
+current choice. Buster, Escape, lives and Sub Tanks are removed. Player 1
+chooses first in round one; later rounds give the winner first choice.
+Checkpoint, door and boss entrance scripts finish in an unpresented batch:
+the arena opens with both fighters ready, without the hidden X walk or its
+sound effects.
+
 ## Controls
 
 Default actions are B Jump, Y Primary, X Special and A Ability. Native
 shoot/jump/dash remapping also maps Primary/Jump/Ability; X is independently
 bindable in the host Controls page. Directions face the boss and guide its
-movement action. These bosses do not acquire synthetic walking animations.
+movement action. Left/Right can start, reverse and stop horizontal movement
+after jump takeoff. These bosses do not acquire synthetic walking animations.
+Penguin slides with Special (SNES X, the top face button on the default Xbox
+layout), independently of Jump and his ice shot.
 
 | Boss | Movement | Primary | Special | Ability |
 | --- | --- | --- | --- | --- |
@@ -76,7 +87,7 @@ Boss damage uses a temporary player-projectile proxy through `$84:9E15`.
 The source actor retains its identity; native damage rows, immunity and boss
 reactions remain responsible for accepted hits. The original proxy storage
 and hidden player target are snapshot-owned until the actor returns. New
-game snapshots use chunk 23. Old build snapshots are disposable; no migration
+game snapshots use chunk 24. Old build snapshots are disposable; no migration
 is required. Native SRAM is unaffected.
 
 ## Development validation
@@ -95,6 +106,13 @@ from attack damage, full moveset feel and real two-peer qualification; passing
 an entrance or input response alone does not certify those other behaviors.
 
 Windows x64 validation for the initial playtest:
+
+The selector/movement follow-up additionally checks the original menu's
+unchanged pixels against an unmodified native pause frame, all eight previews,
+both seats' midair start/reverse/stop and Penguin slides, and diagnostic replay
+across native selection and the atomic setup batch. Native guest audio clocks
+continue during setup; setup SFX are suppressed and only its output PCM is
+discarded under the audio lock. The host's normal volume is preserved.
 
 - All 64 native roster pairings and entrances, including mirrors; idle contact
   remains harmless. All assigned action buttons reach native controllers on

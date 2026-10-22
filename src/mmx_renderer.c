@@ -814,7 +814,7 @@ bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path) return false;
   FILE *f = fopen(path, "wb");
   if (!f) return false;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 25 : 24,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 27 : 26,
       sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
       (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) + sizeof(frame_rush_visual)+sizeof(frame_bounds)+sizeof(frame_vs)};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 && fwrite(&frame, sizeof(frame), 1, f) == 1 &&
@@ -857,7 +857,7 @@ bool MmxRendererLoadCapture(const char *path) {
        (h[1] == 14 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
        ((h[1] == 15 || h[1] == 17) && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) + sizeof(frame_coop)) ||
        (h[1] == 16 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
-       ((h[1]>=18 && h[1]<=25) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0)+(h[1]>=22?sizeof(frame_bounds):0)+(h[1]>=24?sizeof(frame_vs):0))) &&
+       ((h[1]>=18 && h[1]<=27 && h[1]!=24 && h[1]!=25) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0)+(h[1]>=22?sizeof(frame_bounds):0)+(h[1]>=26?sizeof(frame_vs):0))) &&
       fread(&frame, sizeof(frame), 1, f) == 1 &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES && frame.valid;
   size_t zero_size = h[1] == 3 ? MMX_ZERO_LEGACY_STATE_SIZE :
@@ -890,7 +890,7 @@ bool MmxRendererLoadCapture(const char *path) {
       }
     }
   }
-  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21 || h[1]==23 || h[1]==25)) {
+  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21 || h[1]==23 || h[1]==27)) {
     MmxCoopState coop;
     if (h[1] == 13) {
       uint8_t legacy[MMX_COOP_LEGACY_STATE_SIZE];
@@ -907,7 +907,7 @@ bool MmxRendererLoadCapture(const char *path) {
   if(ok && h[1]>=20) ok=fread(&frame_rush_visual,sizeof(frame_rush_visual),1,f)==1 && MmxBossRushVisualValidState(&frame_rush_visual);
   if(ok && h[1]>=22) ok=fread(&frame_bounds,sizeof(frame_bounds),1,f)==1 && MmxCoopViewsValidBoundsState(&frame_bounds);
   memset(&frame_vs,0,sizeof(frame_vs));
-  if(ok && h[1]>=24)ok=fread(&frame_vs,sizeof(frame_vs),1,f)==1 && MmxVsValidState(&frame_vs);
+  if(ok && h[1]>=26)ok=fread(&frame_vs,sizeof(frame_vs),1,f)==1 && MmxVsValidState(&frame_vs);
   ok = ok && fgetc(f) == EOF;
   fclose(f); frame.valid = ok; return ok;
 }
@@ -998,7 +998,20 @@ static unsigned menu_glyph(unsigned c) {
   if (c >= 'R' && c <= 'W') return 0xd8 + c - 'R';
   return c == '.' ? 0xdf : c == 'X' ? 0x9d : 0;
 }
+static bool vs_weapon_menu(void) {
+  return (frame_vs.phase==MMX_VS_SELECT || frame_vs.phase==MMX_VS_LOADING) && frame_vs.menu_ready;
+}
 static uint16_t weapon_menu_tile(unsigned tx, unsigned ty, uint16_t original) {
+  if(vs_weapon_menu()) {
+    /* Keep the cartridge's frame, headings, eight icons and energy meters.
+     * Only the removed inventory cells and renamed lettering are blanked. */
+    if((ty>=17 && ty<=24 && ((tx>=3 && tx<=8)||(tx>=23 && tx<=28))) ||
+        (ty>=5 && ty<=6 && tx>=4 && tx<=14) ||
+        (ty>=13 && ty<=14 && tx>=17 && tx<=27))return 0x1c00;
+    if(ty>=5 && ty<=14 && (ty&1) &&
+        ((tx>=7 && tx<=15)||(tx>=20 && tx<=28)))return 0x1c00;
+    return original;
+  }
   if (!frame_weapons.menu_page || !MmxWeaponsMenuVisible(frame.ram) || ty < 5 || ty > 14) return original;
   unsigned column = tx >= 17, local = tx - (column ? 13 : 0), item = (ty - 5) / 2 + column * 5;
   if (!item || item > 8) return original;
@@ -1907,9 +1920,73 @@ static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const 
     }
   }
 }
-static void vs_rect(uint32_t *out,MmxRenderView view,int x,int y,int w,int h,uint32_t color) {
-  for(int row=y;row<y+h;++row)for(int col=x;col<x+w;++col)
-    if(row>=0 && row<224 && col>=0 && col<view.width)out[row*view.width+col]=color;
+static bool vs_menu_visible(void) {
+  return !MmxCoopViewsOnline() || peer_seat<0 ||
+      MmxVsPickVisible(&frame_vs,(unsigned)peer_seat,frame_vs.picker,true);
+}
+static void vs_preview_row(const Ppu *p,const Raster *r,int y,MmxRenderView view,
+    uint16_t *objects,int *colors) {
+  if(y<130 || y>=190 || !vs_menu_visible())return;
+  unsigned boss=frame_vs.cursor[frame_vs.picker];
+  const MmxBossRushDefinition *def=&kMmxBossRushBosses[boss];
+  const uint8_t *binding=rom_at(0x86a5e4+(def->kind-1)*2,2);
+  if(!binding)return;
+  unsigned group=binding[0];
+  const uint8_t *a=sprite_arrangement(group,0);
+  const MmxSpriteAsset *art=MmxRenderAssetsRushSprite(def->stage,group);
+  if(!a || !art)return;
+  /* Mammoth's trunk is a separate native child, sharing his body origin. */
+  /* $82:95CE selects animation 6, whose first frame is group 6 / pose 7. */
+  const uint8_t *trunk=boss==7?sprite_arrangement(group,7):NULL;
+  int left=256,right=-256,bottom=-256;
+  for(unsigned part=0;part<2;++part) {
+    const uint8_t *layout=part?trunk:a;if(!layout)continue;
+    for(unsigned i=0;i<layout[0];++i) {
+      Piece q=make_piece(layout+i*4,0,0,0,0,0,group,0,0);
+      if(q.x<left)left=q.x;if(q.x+q.size>right)right=q.x+q.size;
+      if(q.y+q.size>bottom)bottom=q.y+q.size;
+    }
+  }
+  for(unsigned part=0;part<2;++part) {
+    const uint8_t *layout=part?trunk:a;
+    const MmxSpriteAsset *asset=art;
+    if(!layout || !asset)continue;
+    for(int i=(int)layout[0]-1;i>=0;--i) {
+      Piece q=make_piece(layout+i*4,128-(left+right)/2,188-bottom,0,0,0,group,0,0);
+      unsigned attr=(q.attr&0xc000)|0x3000|((asset->attributes&15)<<8);
+      sprite(p,r,q.x,q.y,attr,q.size,y,view,objects,false,asset,q.tile,colors,true,false,false);
+    }
+  }
+}
+static void vs_menu_labels(uint32_t *out,MmxRenderView view) {
+  /* Native inventory uses several planes. Erase its remaining caption,
+   * head and heart graphics with the blank panel pixel from that same row;
+   * keep every frame edge and the center preview's native health meter. */
+  for(unsigned y=130;y<200;++y) {
+    uint32_t blank=out[y*view.width+view.extra+26];
+    for(unsigned x=28;x<74;++x)out[y*view.width+view.extra+x]=blank;
+    for(unsigned x=184;x<228;++x)out[y*view.width+view.extra+x]=blank;
+  }
+  for(unsigned slot=1;slot<=8;++slot) {
+    unsigned column=slot>=5,row=column?slot-5:slot;
+    int x=(column?160:56)+view.extra,y=40+(int)row*16;
+    const char *name=MmxVsBossName(MmxVsSlotBoss(slot));
+    /* The original six-pixel letter shapes fit full boss names with their
+     * initial, using the native menu CHR/palette instead of a replacement font. */
+    for(int py=0;py<8;++py) {
+      const Raster *r=&frame.lines[y+py];Ppu p={0};memcpy(&p,r->registers,sizeof(r->registers));
+      for(unsigned n=0;name[n];++n)for(int px=0;px<6;++px) {
+        unsigned pixel=tile_pixel(r->vram,(p.bgTileAdr&15)*4096+menu_glyph(name[n])*16,px,py,4);
+        if(!pixel)continue;
+        unsigned color=r->palette[7*16+pixel];uint32_t rgb=0;
+        for(unsigned c=0;c<3;++c) {
+          unsigned v=(color>>(c*5))&31;v=((v<<3)|(v>>2))*(p.inidisp&15)/15;
+          rgb|=v<<(16-c*8);
+        }
+        out[(y+py)*view.width+x+n*6+px]=rgb;
+      }
+    }
+  }
 }
 bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if (!out || !frame.valid || view.width < 256 || view.width > MMX_RENDER_MAX_WIDTH ||
@@ -1917,53 +1994,18 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   memset(&stats, 0, sizeof(stats)); stats.pieces = frame.piece_count;
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
-  if(frame_vs.phase==MMX_VS_LOADING) {
-    rush_native_text(out,view,view.width/2-60,64,"PREPARING ARENA",8);
-    rush_native_text(out,view,view.width/2-48,104,MmxVsBossName(frame_vs.fighters[0].boss),9);
-    rush_native_text(out,view,view.width/2-8,128,"VS",8);
-    rush_native_text(out,view,view.width/2-48,152,MmxVsBossName(frame_vs.fighters[1].boss),9);return true;
-  }
-  if(frame_vs.phase==MMX_VS_SELECT || frame_vs.phase==MMX_VS_RESULT || frame_vs.paused) {
+  if(frame_vs.phase==MMX_VS_RESULT || frame_vs.paused) {
     char text[80];int center=view.width/2;
-    if(frame_vs.phase==MMX_VS_SELECT) {
-      /* The pause menu's green panel and blue/white inset framing, with the
-       * eight weapon slots occupied by Maverick names instead of energy. */
-      vs_rect(out,view,center-122,30,244,174,0xffd8dce0);
-      vs_rect(out,view,center-120,32,240,170,0xff2838a0);
-      vs_rect(out,view,center-116,36,232,162,0xff16804a);
-      vs_rect(out,view,center-114,55,228,2,0xff2838a0);
-      vs_rect(out,view,center-114,157,228,2,0xff2838a0);
-    }
     snprintf(text,sizeof(text),"P1 %u      VS      P2 %u",frame_vs.score[0],frame_vs.score[1]);
     rush_native_text(out,view,center-(int)strlen(text)*4,16,text,8);
     if(frame_vs.paused) {
       rush_native_text(out,view,center-24,80,"PAUSED",8);
       rush_native_text(out,view,center-24,120,"RESUME",frame_vs.pause_choice?8:9);
       rush_native_text(out,view,center-36,144,"MAIN MENU",frame_vs.pause_choice?9:8);
-    } else if(frame_vs.phase==MMX_VS_RESULT) {
+    } else {
       snprintf(text,sizeof(text),frame_vs.winner<2?"PLAYER %u WINS":"DOUBLE KO",frame_vs.winner+1);
       rush_native_text(out,view,center-(int)strlen(text)*4,88,text,9);
-      rush_native_text(out,view,center-76,152,"START - NEXT ROUND",8);
-    } else {
-      bool online=MmxCoopViewsOnline() && peer_seat>=0;
-      unsigned viewer=online?(unsigned)peer_seat:frame_vs.picker;
-      snprintf(text,sizeof(text),"ROUND %u - P%u CHOOSE",frame_vs.round,frame_vs.picker+1);
-      rush_native_text(out,view,center-(int)strlen(text)*4,40,text,9);
-      bool visible=MmxVsPickVisible(&frame_vs,viewer,frame_vs.picker,online);
-      for(unsigned i=0;i<8;++i) {
-        bool selected=visible && frame_vs.cursor[frame_vs.picker]==i;
-        int x=center-104+(int)(i/4)*112,y=68+(int)(i%4)*24;
-        if(selected)vs_rect(out,view,x-7,y-4,110,18,0xff202864);
-        rush_native_text(out,view,x,y,MmxVsBossName(i),selected?9:8);
-        if(selected)rush_native_text(out,view,x-8,y,">",9);
-      }
-      for(unsigned i=0;i<2;++i) {
-        bool locked=(frame_vs.locked&(1u<<i))!=0;
-        const char *name=locked && MmxVsPickVisible(&frame_vs,viewer,i,online)?MmxVsBossName(frame_vs.fighters[i].boss):
-            locked?"READY":frame_vs.picker==i?"CHOOSING":"WAITING";
-        snprintf(text,sizeof(text),"P%u: %s",i+1,name);rush_native_text(out,view,center-100,166+(int)i*16,text,8);
-      }
-      rush_native_text(out,view,center-96,208,visible?"START / A - CONFIRM":"WAITING FOR OPPONENT",8);
+      rush_native_text(out,view,center-104,152,"PRESS START FOR NEXT ROUND",8);
     }
     return true;
   }
@@ -1986,7 +2028,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   bool weapon_menu = MmxWeaponsMenuVisible(frame.ram);
   /* Plain X's menu normally uses the stock frame. During a Rush fade it
    * still needs private art until the last matching boss OAM disappears. */
-  bool menu = zero_menu || weapon_menu ||
+  bool menu = vs_weapon_menu() || zero_menu || weapon_menu ||
       (!MmxWidePolicy_IsStageScene(frame.ram) && rush_pause_art_needed());
   bool zero_title = zero_title_menu();
   bool stage = MmxWidePolicy_IsStageScene(frame.ram) && !menu;
@@ -2217,6 +2259,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if(frame_rush.mode==MMX_RUSH_PLAYING && !frame.expand && s.object>=0xe68 && s.object<0x1d08 &&
           frame_rush.owner[(s.object-0xe68)/32] && !oam_match) continue;
       if(stage && frame_rush.versus && s.object>=0xba8 && s.object<0xe18)continue;
+      if(vs_weapon_menu() && s.y>=128)continue;
       /* Match original OAM before reprojection. HUD and native script panels
        * keep screen coordinates; world pieces use the selected peer origin. */
       if(stage) {s.x-=view_dx;s.y-=view_dy;}
@@ -2365,6 +2408,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if (x >= 256) x -= 512;
       int size = sizes[p.obsel >> 5][(hi >> 1) & 1];
       if (x + size <= 0 || x >= 256) continue;
+      if(vs_weapon_menu() && sy>=128)continue;
       /* Only the player's HUD badge: not weapon icons, bosses or actors.
        * This remains visible while the player blinks or has no body pieces. */
       bool zero_icon = (stage || zero_menu) && MmxZeroEnabled() && !frame_zero.active_x && slot == 0 &&
@@ -2398,6 +2442,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       }
       sprite(&p, r, x, sy, attr, size, y, view, objects, false, NULL, 0, object_colors, reprojected, zero_icon, false);
     }
+    if(vs_weapon_menu())vs_preview_row(&p,r,y,view,objects,object_colors);
     if (charge && zero_drawn[0] && !swapping) {
       int zx=(int16_t)(word(frame.ram,0xbad)-view_camera(frame.ram,0x1e4d));
       int zy=(int16_t)(word(frame.ram,0xbb0)-view_camera(frame.ram,0x1e50))-8;
@@ -2456,6 +2501,14 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       }
       out[y * view.width + sx] = colour(&p, r->palette, brightness, screens[0], screens[1], color_window, object_colors[sx], bg_colors,
                                        dialogue_backdrop && (x < 0 || x >= 256),camouflage_bg);
+    }
+  }
+  if(vs_weapon_menu()) {
+    vs_menu_labels(out,view);
+    if(!vs_menu_visible()) {
+      /* Do not expose an opponent's live cursor or preview over netplay. */
+      memset(out,0,(size_t)view.width*224*sizeof(*out));
+      rush_native_text(out,view,view.width/2-80,104,"WAITING FOR OPPONENT",8);
     }
   }
   for (unsigned i = 0; i < frame_debug_rect_count; ++i)

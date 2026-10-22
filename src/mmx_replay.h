@@ -12,6 +12,7 @@ void MmxReplayClose(void);
 void MmxReplayShutdown(void);
 const char *MmxReplayPath(void);
 bool MmxReplayBegin(uint32_t *inputs);
+void MmxReplayInternalFramesComplete(void);
 void MmxReplayEnd(void);
 void MmxReplayViewport(int *width, int *extra);
 /* Playback uses the same executable, ROM and enabled mods as the recording.

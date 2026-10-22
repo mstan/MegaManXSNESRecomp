@@ -17,11 +17,40 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
   } else {
     frame(SNES_PAD_B|SNES_PAD_RIGHT);
     for(unsigned t=0;t<150;++t) {
-      frame(0);int y=eagle_word(g_ram+d+8),dx=abs((int)eagle_word(g_ram+d+5)-x0);
+      frame(SNES_PAD_RIGHT);int y=eagle_word(g_ram+d+8),dx=abs((int)eagle_word(g_ram+d+5)-x0);
       if(y<min_y)min_y=y;if(dx>max_dx)max_dx=dx;
     }
     fprintf(stderr,"VS jump boss=%u height=%d horizontal=%d\n",boss,y0-min_y,max_dx);
     check(min_y<y0-8 && max_dx>=8,"native directional jump moves the boss without walking");
+    for(unsigned seat=0;seat<2;++seat) {
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"air steering fixture restores");
+      unsigned object=MmxBossRushGetState().bosses[seat].object;
+      int ground=eagle_word(g_ram+object+8);
+      frame(SNES_PAD_B<<(seat*12));
+      for(unsigned t=0;t<80 && eagle_word(g_ram+object+8)>=ground-12;++t)frame(0);
+      int air_y=eagle_word(g_ram+object+8),before=eagle_word(g_ram+object+5);
+      for(unsigned t=0;t<4;++t)frame(SNES_PAD_RIGHT<<(seat*12));
+      int right=eagle_word(g_ram+object+5);
+      for(unsigned t=0;t<4;++t)frame(SNES_PAD_LEFT<<(seat*12));
+      int left=eagle_word(g_ram+object+5);
+      zero_replay(4);int stopped=eagle_word(g_ram+object+5);
+      fprintf(stderr,"VS air steering boss=%u seat=%u y=%d x=%d/%d/%d/%d\n",boss,seat,air_y,before,right,left,stopped);
+      check(air_y<ground-8 && right>before+2 && left<right-2 && abs(stopped-left)<=2,
+          "both seats can start, reverse and stop horizontal motion after takeoff");
+    }
+  }
+  if(boss==0) {
+    for(unsigned seat=0;seat<2;++seat) {
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Penguin slide fixture restores");
+      unsigned object=MmxBossRushGetState().bosses[seat].object;
+      int before=eagle_word(g_ram+object+5),distance=0;
+      for(unsigned t=0;t<60;++t) {
+        frame((t<16?SNES_PAD_X:0)<<(seat*12));
+        int dx=abs((int)eagle_word(g_ram+object+5)-before);if(dx>distance)distance=dx;
+      }
+      fprintf(stderr,"VS Penguin slide seat=%u distance=%d\n",seat,distance);
+      check(distance>=24,"Special button produces Penguin's native stomach slide on both seats");
+    }
   }
   if(boss==1 || boss==5) {
     check(RtlLoadSnapshotFromMemory(snapshot,size),"ceiling fixture restores");

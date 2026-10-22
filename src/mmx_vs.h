@@ -22,6 +22,7 @@ typedef struct MmxVsState {
   MmxVsFighter fighters[2];
   uint16_t input[2], release[2], ticks;
   uint8_t phase, first, picker, locked, cursor[2], winner, paused, pause_choice, advance, shake_ticks, exit_requested;
+  uint8_t menu_ready, menu_opening;
   uint8_t projected, proxy, proxy_seat, proxy_hp, proxy_row;
   uint16_t proxy_source;
   uint8_t attack_class[128];
@@ -43,7 +44,7 @@ void MmxVsNextRound(void);
 unsigned MmxVsAttackClass(unsigned boss, unsigned action, bool projectile);
 bool MmxVsPickVisible(const MmxVsState *state, unsigned viewer, unsigned seat, bool online);
 
-/* ROM runtime. true freezes the guest world for selection/results/pause. */
+/* ROM runtime. true freezes results/VS pause; selection runs the native menu. */
 bool MmxVsFrame(uint8_t ram[0x20000], uint16_t p1, uint16_t p2);
 void MmxVsAfterFrame(uint8_t ram[0x20000]);
 void MmxVsHostFrame(void);
@@ -54,3 +55,8 @@ void MmxVsSpawned(uint8_t ram[0x20000], unsigned seat);
 void MmxVsChildAllocated(const uint8_t ram[0x20000], unsigned object, unsigned parent, unsigned seat);
 bool MmxVsNativeHook(struct CpuState *cpu, uint32_t pc);
 const char *MmxVsBossName(unsigned boss);
+unsigned MmxVsWeaponSlot(unsigned boss);
+unsigned MmxVsSlotBoss(unsigned slot);
+bool MmxVsFrameBegin(uint32_t *inputs);
+void MmxVsFrameEnd(void);
+void MmxVsRunSetupFrame(uint32_t inputs);

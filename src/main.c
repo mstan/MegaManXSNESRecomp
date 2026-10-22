@@ -129,6 +129,14 @@ static void MmxEndFrame(const uint8_t *field, unsigned number) {
   if (capture && number == (unsigned)(after ? atoi(after) : 1))
     MmxRendererSaveCapture(capture);
 }
+void MmxVsRunSetupFrame(uint32_t inputs) {
+  MmxBeforeFrame();
+  RtlRunFrame(inputs);
+  PpuBeginDrawing(g_ppu,g_ppu->renderBuffer,256*4,0);
+  MmxBeginFrame((unsigned)snes_frame_counter);
+  MmxDrawPpuFrame();
+  MmxEndFrame(g_ppu->renderBuffer,(unsigned)snes_frame_counter);
+}
 static int MmxDrawFrame(uint8_t *dst, size_t pitch, const uint8_t *field,
                         int w, int h, double alpha) {
   (void)alpha;

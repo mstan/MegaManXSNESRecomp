@@ -410,6 +410,9 @@ bool MmxReplayBegin(uint32_t *inputs) {
   if(timed) snes_netplay_note_slow_operation("replay_begin",(uint32_t)SDL_GetTicks()-started);
   return true; /* Optional recording failures never stop the player's game. */
 }
+void MmxReplayInternalFramesComplete(void) {
+  if(pending)next_frame=(unsigned)snes_frame_counter+1;
+}
 void MmxReplayEnd(void) {
   if(!pending || failed || finished) return;
   bool timed=!playing && snes_netplay_active();
