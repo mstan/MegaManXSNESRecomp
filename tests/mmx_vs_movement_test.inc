@@ -1,3 +1,4 @@
+#include "mmx_boss_rush_audio.h"
 static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
   check(RtlLoadSnapshotFromMemory(snapshot,size),"movement fixture restores");
   MmxBossRushState rush=MmxBossRushGetState();unsigned d=rush.bosses[0].object;
@@ -13,7 +14,15 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
     for(unsigned seat=0;seat<2;++seat)for(unsigned attacking=0;attacking<2;++attacking) {
       check(RtlLoadSnapshotFromMemory(snapshot,size),"Eagle four-direction fixture restores");
       unsigned object=MmxBossRushGetState().bosses[seat].object;
-      check(MmxVsGetState().fighters[seat].flying,"Eagle begins the fight ready to fly");
+      check(!MmxVsGetState().fighters[seat].flying && MmxVsGetState().fighters[seat].grounded,
+          "Eagle starts grounded on his own side");
+      unsigned quiet=MmxBossRushAudioGetState().sequence;zero_replay(120);
+      check(MmxBossRushAudioGetState().sequence==quiet && g_ram[object+0x38]==0,
+          "grounded idle Eagle has neither wing-flap cues nor the flight animation");
+      frame(SNES_PAD_B<<(seat*12));frame(0);
+      check(MmxVsGetState().fighters[seat].flying,"Jump enables Eagle flight from the floor");
+      for(unsigned t=0;t<40;++t)frame(SNES_PAD_UP<<(seat*12));
+      check(MmxBossRushAudioGetState().sequence>quiet,"airborne Eagle retains his native wing-flap cues");
       for(unsigned dir=0;dir<4;++dir) {
         int bx=eagle_word(g_ram+object+5),by=eagle_word(g_ram+object+8);
         for(unsigned t=0;t<10;++t)frame((directions[dir]|(attacking && t==0?SNES_PAD_Y:0))<<(seat*12));
@@ -25,6 +34,33 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
       frame(0);frame(SNES_PAD_B<<(seat*12));zero_replay(80);
       check(!MmxVsGetState().fighters[seat].flying && eagle_word(g_ram+object+8)==MmxVsGetState().fighters[seat].ground_y,
           "Eagle lands on the arena floor after flight is released");
+      quiet=MmxBossRushAudioGetState().sequence;zero_replay(120);
+      check(MmxBossRushAudioGetState().sequence==quiet && g_ram[object+0x38]==0,
+          "landing stops further wing-flap cues on both seats");
+    }
+    for(unsigned seat=0;seat<2;++seat) {
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Eagle full dive fixture restores");
+      if(!seat)check(RtlSaveSnapshot("vs-eagle-ready.sav"),"private Eagle rollback fixture saves");
+      unsigned object=MmxBossRushGetState().bosses[seat].object;
+      int min_y=32767,max_y=0,min_x=32767,max_x=0;bool dive=false,recovered=false,hit=false;
+      for(unsigned t=0;t<520;++t) {
+        frame((t==0?SNES_PAD_X:0)<<(seat*12));
+        int x=eagle_word(g_ram+object+5),y=eagle_word(g_ram+object+8);
+        if(y<min_y)min_y=y;if(y>max_y)max_y=y;if(x<min_x)min_x=x;if(x>max_x)max_x=x;
+        dive|=g_ram[object+0x16]==0x8a;hit|=MmxVsGetState().fighters[seat^1].hp<32;
+        if(dive && MmxVsGetState().fighters[seat].action==MMX_VS_IDLE) {recovered=true;break;}
+        if(!seat && g_ram[object+0x16]==0x8a && y>rush.camera_y+96 && y<rush.camera_y+104)
+          rush_visual_bmp("vs-eagle-native-dive.bmp");
+      }
+      fprintf(stderr,"VS Eagle dive seat=%u bounds=%d..%d,%d..%d dive=%u recovered=%u hit=%u\n",seat,min_x,max_x,min_y,max_y,dive,recovered,hit);
+      check(min_y<rush.camera_y-32 && max_y>rush.camera_y+256 && max_x-min_x>160 && dive,
+          "both Eagles leave through the ceiling and complete the native across-screen dive");
+      check(hit && recovered && MmxVsGetState().fighters[seat].flying,
+          "one Special hits the opponent and returns Eagle to controllable flight");
+      int before=eagle_word(g_ram+object+5);
+      unsigned direction=before>rush.camera_x+184?SNES_PAD_LEFT:SNES_PAD_RIGHT;
+      for(unsigned t=0;t<8;++t)frame(direction<<(seat*12));
+      check(abs((int)eagle_word(g_ram+object+5)-before)>=12,"Eagle responds to directions after the full dive");
     }
   } else {
     frame(SNES_PAD_B|SNES_PAD_RIGHT);
@@ -65,16 +101,31 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
     }
   }
   if(boss==1) {
-    check(RtlLoadSnapshotFromMemory(snapshot,size),"ceiling fixture restores");
-    frame(boss==1?SNES_PAD_A:SNES_PAD_UP|SNES_PAD_B);
-    bool attached=false;
-    for(unsigned t=0;t<180;++t) {frame(0);attached|=MmxVsGetState().fighters[0].attached!=0;if(attached)break;}
-    fprintf(stderr,"VS ceiling boss=%u attached=%u y=%u\n",boss,attached,eagle_word(g_ram+d+8));
-    check(attached,"ceiling action reaches and attaches to the neutral arena ceiling");
-    x0=eagle_word(g_ram+d+5);for(unsigned t=0;t<16;++t)frame(SNES_PAD_RIGHT);
-    check((int)eagle_word(g_ram+d+5)>x0+8,"attached boss traverses the ceiling under directional control");
-    frame(0);frame(boss==1?SNES_PAD_A:SNES_PAD_B);frame(0);
-    check(!MmxVsGetState().fighters[0].attached,"ceiling attachment releases on its action button");
+    for(unsigned seat=0;seat<2;++seat) {
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"ceiling fixture restores");
+      unsigned d=MmxBossRushGetState().bosses[seat].object;
+      frame(SNES_PAD_A<<(seat*12));
+      bool attached=false;
+      for(unsigned t=0;t<180;++t) {frame(0);attached|=MmxVsGetState().fighters[seat].attached!=0;if(attached)break;}
+      fprintf(stderr,"VS ceiling boss=%u attached=%u y=%u\n",boss,attached,eagle_word(g_ram+d+8));
+      check(attached,"ceiling action reaches and attaches to the neutral arena ceiling");
+      zero_replay(60);int hanging_x=eagle_word(g_ram+d+5),hanging_y=eagle_word(g_ram+d+8);bool still=true;
+      for(unsigned t=0;t<90;++t) {frame(0);still&=(g_ram[d+0x17]&127)==0x12;}
+      check(still,"stationary Mandrill holds the native hanging pose");
+      check(eagle_word(g_ram+d+5)==hanging_x && eagle_word(g_ram+d+8)==hanging_y,"idle hanging does not drift");
+      char image[80];snprintf(image,sizeof(image),"vs-mandrill-hang-idle-%u.bmp",seat);rush_visual_bmp(image);
+      for(unsigned dir=0;dir<2;++dir) {
+        int before=eagle_word(g_ram+d+5);
+        for(unsigned t=0;t<12;++t)frame((dir?SNES_PAD_RIGHT:SNES_PAD_LEFT)<<(seat*12));
+        int after=eagle_word(g_ram+d+5);
+        check(dir?after>before+8:after<before-8,"attached boss traverses the ceiling in either direction");
+        check(((g_ram[d+0x11]&64)!=0)==(dir!=0),"ceiling movement flips Mandrill's native sprite facing");
+        snprintf(image,sizeof(image),"vs-mandrill-hang-%u-%u.bmp",seat,dir);rush_visual_bmp(image);
+        zero_replay(30);check((g_ram[d+0x17]&127)==0x12,"releasing directions returns to the still hanging pose");
+      }
+      frame(SNES_PAD_A<<(seat*12));frame(0);
+      check(!MmxVsGetState().fighters[seat].attached,"ceiling attachment releases on its action button");
+    }
   }
   if(boss==5) {
     for(unsigned seat=0;seat<2;++seat) {

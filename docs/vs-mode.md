@@ -30,7 +30,8 @@ Buster, Escape, lives and Sub Tanks are removed. Player 1
 chooses first in round one; later rounds give the winner first choice.
 Checkpoint, door and boss entrance scripts finish in an unpresented batch:
 the arena opens with both fighters ready, without the hidden X walk or its
-sound effects. X fires the original title selection shot before the selector
+sound effects. Both players start on separate sides; Eagle starts grounded.
+X fires the original title selection shot before the selector
 opens. Results wait at **PRESS START FOR NEXT ROUND**.
 
 ## Controls
@@ -52,15 +53,20 @@ layout), independently of Jump and his ice shot.
 | Launch Octopus | Hop/jump | Missiles | Homing fish | Vortex/drain |
 | Boomer Kuwanger | Direction+Ability teleport | Boomerang | Horn grab/throw | Teleport |
 | Sting Chameleon | Tap Jump for a short jump; hold for height | Stings | Tongue | Hold to cling at the current position; release to fall |
-| Storm Eagle | Starts flying; Jump toggles flight/landing; D-pad steers in all four directions | Tornado | Dive | Egg |
+| Storm Eagle | Jump toggles flight/landing; D-pad steers in all four directions | Tornado | One full dive and return | Egg |
 | Flame Mammoth | Directional jump; hold Jump for more height | Fire | Oil | Unassigned |
 
 Kuwanger teleports 96 pixels on an axis (68 on each diagonal), clamped to the
 arena; releasing the direction after pressing Ability keeps that destination.
 Mandrill can traverse the ceiling with Left/Right and release with Ability.
+He turns toward movement and holds his still hanging pose when stationary.
 Chameleon remains visible and can attack while holding his cling position.
-Eagle retains directional flight control while attacking; Up+Primary uses his
-native wind flap. Armadillo guards only while Ability is held: standing,
+Eagle retains directional flight control while casting; Up+Primary uses his
+native wind flap. Special takes off through the ceiling, performs the native
+diagonal dive across the opponent, leaves below the screen and returns to
+controllable flight. The attack's native path can leave the arena bounds;
+normal flight remains bounded. Grounded idle has no wing-flap animation or
+sound. Armadillo guards only while Ability is held: standing,
 jumping and rolling do not provide passive armor protection. Special again
 cancels his roll immediately, including in midair.
 Mammoth takes off immediately: tap for a small jump, hold for a higher jump
@@ -128,6 +134,10 @@ discarded under the audio lock. The host's normal volume is preserved.
   Armadillo's roll reaches 8 horizontal pixels per frame, ricochets at arena
   boundaries, deals contact damage and cancels on a second Special press.
   Rolling Armadillo accepts actual opposing energy-shot damage.
+  Both Eagles' full native dives leave above/below the screen, hit the
+  opponent and return to directional control. Idle ground/landing audio
+  checks distinguish silence from retained airborne flap cues. Both Mandrills
+  turn during ceiling movement and hold pose `$12` while stationary.
   A sustained Armadillo guard blocks actual opposing shots; release restores
   vulnerability and the native standing animation.
 - All eight signature weakness pairings produce 3 HP per accepted hit.

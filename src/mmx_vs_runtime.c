@@ -200,12 +200,14 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
       unsigned d=rush.bosses[i].object;
       s.fighters[i].grounded=1;s.fighters[i].facing=(uint8_t)!i;
       s.fighters[i].ground_y=(int16_t)word(r+d+8);
+      /* Entrances such as Eagle's replace their assigned X with a stock-room
+       * constant. Restore the two seats after both entrances have finished. */
+      put(r+d+5,rush.camera_x+MMX_RUSH_ARENA_CENTER_X-64+i*128);
       if(s.fighters[i].boss==6) {
         /* Eagle finishes his entrance hovering. That is not the floor:
          * his standing arrangement extends 27 pixels below its origin. */
         s.fighters[i].ground_y=(int16_t)(rush.camera_y+192-27);
-        s.fighters[i].flying=1;s.fighters[i].grounded=0;
-        put(r+d+8,rush.camera_y+96);
+        put(r+d+8,s.fighters[i].ground_y);r[d+0x2f]=0;
       }
       r[d+0x11]=(r[d+0x11]&~64u)|(i?0:64);r[d+0x27]=0xa0;
     }
@@ -219,7 +221,7 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     if(s.phase!=MMX_VS_FIGHT)continue;
     unsigned d=rush.bosses[i].object;
     f->frame_x=(int16_t)word(r+d+5);f->frame_y=(int16_t)word(r+d+8);
-    if(f->boss==6 && (f->pressed&SNES_PAD_B) && !f->stun && !f->captured) {
+    if(f->boss==6 && f->action!=MMX_VS_SPECIAL && (f->pressed&SNES_PAD_B) && !f->stun && !f->captured) {
       f->flying^=1;f->motion_ticks=f->flying?0:60;f->vy=f->vx=0;
       if(f->action==MMX_VS_IDLE)f->started=0;
     }
@@ -260,7 +262,8 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     }
     if(f->action && f->ticks<240)++f->ticks;
     if(f->action && f->ticks>=240 && !f->attached &&
-        !(f->boss==2 && (f->action==MMX_VS_ABILITY || f->action==MMX_VS_SPECIAL))) {
+        !(f->boss==2 && (f->action==MMX_VS_ABILITY || f->action==MMX_VS_SPECIAL)) &&
+        !(f->boss==6 && f->action==MMX_VS_SPECIAL)) {
       f->action=MMX_VS_IDLE;f->started=0;r[d+2]=r[d+3]=0;f->lockout=12;
     }
     if((f->action==MMX_VS_IDLE || (f->boss==5 && f->action==MMX_VS_JUMP)) && !f->stun && !f->lockout) {
@@ -427,11 +430,18 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
     if(f->pressed&release) {
       f->attached=0;f->action=MMX_VS_JUMP;f->started=0;f->ticks=0;idle=false;
     } else {
-      if(f->native_sub==1) {
-        f->native_sub=0;MmxVsSetState(&s);cpu->A=f->boss==1?7:0;call_long(cpu,pc,0x848f07);return;
+      int x=word(g_ram+d+5),dx=(f->input&SNES_PAD_LEFT)?-2:(f->input&SNES_PAD_RIGHT)?2:0;
+      x+=dx;if(dx)f->facing=dx>0;
+      g_ram[d+0x11]=(g_ram[d+0x11]&~64u)|(f->facing?64:0);
+      if(!dx) {
+        /* Mandrill animation 7 ends on the still two-handed hanging pose.
+         * Hold that native command; animation 8 is his swinging traversal. */
+        put(g_ram+d+0x14,0xdf68);g_ram[d+0x13]=24;
+        g_ram[d+0xf]=0;g_ram[d+0x17]=0x92;f->native_sub=0;
+      } else if(!f->native_sub) {
+        f->native_sub=1;put(g_ram+d+5,x);MmxVsSetState(&s);
+        cpu->A=8;call_long(cpu,pc,0x848f07);return;
       }
-      int x=word(g_ram+d+5);
-      if(f->input&SNES_PAD_LEFT)x-=2;if(f->input&SNES_PAD_RIGHT)x+=2;
       put(g_ram+d+5,x);MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
     }
   }
@@ -449,6 +459,14 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
      * outer state. Finish at its landing boundary rather than repeating it. */
     f->action=MMX_VS_IDLE;f->started=0;f->lockout=24;g_ram[d+2]=g_ram[d+3]=0;
     MmxVsSetState(&s);cpu->A=4;call_long(cpu,pc,0x848f07);return;
+  }
+  if(f->boss==6 && f->action==MMX_VS_SPECIAL && f->started &&
+      g_ram[d+3]==10 && g_ram[d+0x34]<=1) {
+    /* One native dive per press, including its off-screen wait and return.
+     * Stop before DE1F chooses another autonomous attack (possibly itself). */
+    f->action=MMX_VS_IDLE;f->started=0;f->lockout=8;f->flying=1;
+    g_ram[d+2]=g_ram[d+3]=0;
+    idle=true;
   }
   if(!idle && f->started && g_ram[d+2]!=f->native_action) {
     /* Hurt states retain their own native recovery; a completed voluntary
@@ -470,6 +488,11 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
       g_ram[d+2]=f->native_action=2;
     if(f->boss==6 && f->action==MMX_VS_PRIMARY && (f->input&SNES_PAD_UP))
       g_ram[d+2]=f->native_action=0;
+    if(f->boss==6 && f->action==MMX_VS_SPECIAL) {
+      /* Retail repeats a random six to nine dives. A playable Special is
+       * one full pass, with the native takeoff, dive and return intact. */
+      g_ram[d+0x36]=1;f->flying=1;f->motion_ticks=0;
+    }
     if(f->action==MMX_VS_JUMP || f->action==MMX_VS_CEILING) {
       f->target_y=(int16_t)word(g_ram+d+8);f->jump_peak=f->target_y;
     }
@@ -501,7 +524,8 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
     MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
   }
   if(f->boss==6 && f->action==MMX_VS_IDLE && !f->started) {
-    f->started=1;MmxVsSetState(&s);cpu->A=f->flying?5:0;call_long(cpu,pc,0x848f07);return;
+    f->started=1;g_ram[d+0x38]=f->flying?5:0;
+    MmxVsSetState(&s);cpu->A=g_ram[d+0x38];call_long(cpu,pc,0x848f07);return;
   }
   if(idle) {
     MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
@@ -573,13 +597,15 @@ void MmxVsAfterFrame(uint8_t *r) {
     MmxVsFighter *f=&s.fighters[i];unsigned d=rush.bosses[i].object;if(!d)continue;
     f->hp=rush.bosses[i].health;
     int x=word(r+d+5),y=word(r+d+8),left=rush.camera_x+32,right=rush.camera_x+336;
-    if(x<left)x=left;if(x>right)x=right;
-    if(y<rush.camera_y+32)y=rush.camera_y+32;
-    if(y>f->ground_y)y=f->ground_y;
     int dx=(f->input&SNES_PAD_LEFT)?-2:(f->input&SNES_PAD_RIGHT)?2:0;
     int dy=(f->input&SNES_PAD_UP)?-2:(f->input&SNES_PAD_DOWN)?2:0;
     bool free=!f->stun && !f->captured;
-    if(f->boss==5 && f->attached && free) {
+    bool diving=f->boss==6 && f->action==MMX_VS_SPECIAL && free;
+    if(diving) {
+      /* The retail attack ascends above the camera, dives below it and then
+       * returns. Arena clipping prevents every one of those transitions. */
+      r[d+0x2f]=255;
+    } else if(f->boss==5 && f->attached && free) {
       x=f->target_x;y=f->target_y;put(r+d+0x1a,0);put(r+d+0x1c,0);
     } else if(f->boss==5 && f->flying && free) {
       x=f->frame_x+dx;y=f->frame_y-f->vy/256;
@@ -614,8 +640,10 @@ void MmxVsAfterFrame(uint8_t *r) {
     if(free && f->frame_y<f->ground_y && !f->attached && f->action!=MMX_VS_TELEPORT &&
         !(f->boss==2 && f->action==MMX_VS_SPECIAL) && !(f->boss==6 && f->flying))
       x=f->frame_x+dx;
-    if(x<left)x=left;if(x>right)x=right;
-    if(y<rush.camera_y+32)y=rush.camera_y+32;if(y>f->ground_y)y=f->ground_y;
+    if(!diving) {
+      if(x<left)x=left;if(x>right)x=right;
+      if(y<rush.camera_y+32)y=rush.camera_y+32;if(y>f->ground_y)y=f->ground_y;
+    }
     put(r+d+5,x);put(r+d+8,y);
     if(f->action==MMX_VS_TELEPORT && f->ticks>=16) {
       put(r+d+5,f->target_x);put(r+d+8,f->target_y);put(r+d+0x1a,0);put(r+d+0x1c,0);r[d+0xe]=1;
@@ -635,7 +663,7 @@ void MmxVsAfterFrame(uint8_t *r) {
     if(f->boss==1 && f->action==MMX_VS_ABILITY && !f->attached) {
       if(f->ticks==1)put(r+d+0x1c,0x880);
       if(y<=rush.camera_y+56 || (r[d+0x2b]&8)) {
-        f->attached=1;f->native_sub=1;put(r+d+0x1a,0);put(r+d+0x1c,0);put(r+d+8,rush.camera_y+56);
+        f->attached=1;f->native_sub=0;put(r+d+0x1a,0);put(r+d+0x1c,0);put(r+d+8,rush.camera_y+56);
       }
     }
     bool grounded=(r[d+0x2b]&4)!=0 || y>=f->ground_y;
@@ -645,7 +673,7 @@ void MmxVsAfterFrame(uint8_t *r) {
       if(s.fighters[i^1].grounded)s.fighters[i^1].stun=18;
     }
     f->grounded=(uint8_t)grounded;
-    if(f->attached)f->grounded=0;
+    if(f->attached || diving)f->grounded=0;
     if(f->boss==5 && !f->effect_ticks && r[d+0x37]) {
       r[d+0x37]=0;MmxBossRushVisualState v=MmxBossRushVisualGetState();v.initialized[i]=0;MmxBossRushVisualSetState(&v);
     }

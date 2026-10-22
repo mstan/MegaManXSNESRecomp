@@ -136,6 +136,9 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
     check(g_ram[r.bosses[0].object+0x16]==(a==6?0x89:a==7?6:a==0?0x67:a==1?0x91:a==2?0x62:a==3?0x76:a==4?0x75:0x23),
         "native body animation group matches its menu preview resource");
     check(MmxVsGetState().phase==MMX_VS_FIGHT,"ordered pair completes both entrances");
+    check(eagle_word(g_ram+r.bosses[0].object+5)==r.camera_x+MMX_RUSH_ARENA_CENTER_X-64 &&
+        eagle_word(g_ram+r.bosses[1].object+5)==r.camera_x+MMX_RUSH_ARENA_CENTER_X+64,
+        "all pairings start on separated, assigned sides after native entrances");
     zero_replay(30);check(MmxVsGetState().phase==MMX_VS_FIGHT,"idle pair remains alive");
     check(MmxVsGetState().fighters[0].hp==32 && MmxVsGetState().fighters[1].hp==32,
         "idle pair takes no autonomous attack or contact damage");
