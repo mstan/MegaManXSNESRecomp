@@ -9,11 +9,23 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
     fprintf(stderr,"VS teleport x=%d expected=%d\n",eagle_word(g_ram+d+5),expected);
     check(abs((int)eagle_word(g_ram+d+5)-expected)<=1,"Kuwanger teleports one fixed step and remains there");
   } else if(boss==6) {
-    for(unsigned t=0;t<20;++t)frame(SNES_PAD_B*(t==0)|SNES_PAD_UP|SNES_PAD_RIGHT);
-    check((int)eagle_word(g_ram+d+5)>x0+8 && (int)eagle_word(g_ram+d+8)<y0-8,"Eagle steers horizontally and vertically in flight");
-    frame(0);frame(SNES_PAD_B);zero_replay(80);
-    check(!MmxVsGetState().fighters[0].flying && eagle_word(g_ram+d+8)==MmxVsGetState().fighters[0].ground_y,
-        "Eagle lands after flight is released");
+    static const unsigned directions[]={SNES_PAD_RIGHT,SNES_PAD_DOWN,SNES_PAD_LEFT,SNES_PAD_UP};
+    for(unsigned seat=0;seat<2;++seat)for(unsigned attacking=0;attacking<2;++attacking) {
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Eagle four-direction fixture restores");
+      unsigned object=MmxBossRushGetState().bosses[seat].object;
+      check(MmxVsGetState().fighters[seat].flying,"Eagle begins the fight ready to fly");
+      for(unsigned dir=0;dir<4;++dir) {
+        int bx=eagle_word(g_ram+object+5),by=eagle_word(g_ram+object+8);
+        for(unsigned t=0;t<10;++t)frame((directions[dir]|(attacking && t==0?SNES_PAD_Y:0))<<(seat*12));
+        int ax=eagle_word(g_ram+object+5),ay=eagle_word(g_ram+object+8);
+        fprintf(stderr,"VS Eagle seat=%u attacking=%u dir=%u xy=%d,%d -> %d,%d ground=%d\n",seat,attacking,dir,bx,by,ax,ay,MmxVsGetState().fighters[seat].ground_y);
+        check(dir==0?ax>=bx+16:dir==1?ay>=by+16:dir==2?ax<=bx-16:ay<=by-16,
+            "both Eagles steer in all four directions, including downward during attacks");
+      }
+      frame(0);frame(SNES_PAD_B<<(seat*12));zero_replay(80);
+      check(!MmxVsGetState().fighters[seat].flying && eagle_word(g_ram+object+8)==MmxVsGetState().fighters[seat].ground_y,
+          "Eagle lands on the arena floor after flight is released");
+    }
   } else {
     frame(SNES_PAD_B|SNES_PAD_RIGHT);
     for(unsigned t=0;t<150;++t) {
@@ -52,7 +64,7 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
       check(distance>=24,"Special button produces Penguin's native stomach slide on both seats");
     }
   }
-  if(boss==1 || boss==5) {
+  if(boss==1) {
     check(RtlLoadSnapshotFromMemory(snapshot,size),"ceiling fixture restores");
     frame(boss==1?SNES_PAD_A:SNES_PAD_UP|SNES_PAD_B);
     bool attached=false;
@@ -64,7 +76,68 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
     frame(0);frame(boss==1?SNES_PAD_A:SNES_PAD_B);frame(0);
     check(!MmxVsGetState().fighters[0].attached,"ceiling attachment releases on its action button");
   }
+  if(boss==5) {
+    for(unsigned seat=0;seat<2;++seat) {
+      int heights[2]={0,0};
+      unsigned object=MmxBossRushGetState().bosses[seat].object;
+      for(unsigned held=0;held<2;++held) {
+        check(RtlLoadSnapshotFromMemory(snapshot,size),"Chameleon jump-height fixture restores");
+        int ground=eagle_word(g_ram+object+8),peak=ground;
+        for(unsigned t=0;t<120;++t) {
+          frame((t<(held?16:1)?SNES_PAD_B:0)<<(seat*12));
+          int y=eagle_word(g_ram+object+8);if(y<peak)peak=y;
+        }
+        heights[held]=ground-peak;
+      }
+      fprintf(stderr,"VS Chameleon heights seat=%u tap=%d held=%d\n",seat,heights[0],heights[1]);
+      check(heights[0]>=24 && heights[1]>heights[0]+12,"Chameleon tap/hold Jump produces distinct jump heights on both seats");
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Chameleon cling fixture restores");
+      frame(SNES_PAD_B<<(seat*12));zero_replay(7);frame(SNES_PAD_A<<(seat*12));
+      int cling_x=eagle_word(g_ram+object+5),cling_y=eagle_word(g_ram+object+8);
+      for(unsigned t=0;t<90;++t)frame((SNES_PAD_A|SNES_PAD_RIGHT|(t==8?SNES_PAD_Y:0))<<(seat*12));
+      check(MmxVsGetState().fighters[seat].attached && eagle_word(g_ram+object+5)==cling_x && eagle_word(g_ram+object+8)==cling_y,
+          "holding Ability clings at the exact midair location while attacking");
+      check(!g_ram[object+0x37] && !MmxBossRushVisualGetState().initialized[seat],"Chameleon remains visible while clinging");
+      rush_visual_bmp(seat?"vs-chameleon-cling-p2.bmp":"vs-chameleon-cling-p1.bmp");
+      frame(SNES_PAD_LEFT<<(seat*12));zero_replay(80);
+      check(!MmxVsGetState().fighters[seat].attached && !MmxVsGetState().fighters[seat].flying &&
+          eagle_word(g_ram+object+8)==MmxVsGetState().fighters[seat].ground_y,
+          "releasing Ability drops Chameleon and returns him to the floor");
+    }
+  }
   if(boss==2) {
+    for(unsigned seat=0;seat<2;++seat) {
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Armadillo ricochet fixture restores");
+      unsigned object=MmxBossRushGetState().bosses[seat].object;
+      frame(SNES_PAD_X<<(seat*12));
+      int previous=eagle_word(g_ram+object+5),speed=0,ricochets=0,direction=MmxVsGetState().fighters[seat].vx;
+      for(unsigned t=0;t<180;++t) {
+        frame(0);int x=eagle_word(g_ram+object+5),vx=MmxVsGetState().fighters[seat].vx;
+        int delta=abs(x-previous);if(delta>speed)speed=delta;
+        if((vx<0)!=(direction<0))++ricochets;
+        check(x>=rush.camera_x+32 && x<=rush.camera_x+336,"rolling stays inside both walls");
+        previous=x;direction=vx;
+      }
+      fprintf(stderr,"VS Armadillo roll seat=%u speed=%d ricochets=%d\n",seat,speed,ricochets);
+      check(speed>=8 && ricochets>=3,"both Armadillos roll quickly and ricochet consistently");
+      frame(SNES_PAD_X<<(seat*12));frame(0);
+      check(MmxVsGetState().fighters[seat].action!=MMX_VS_SPECIAL && g_ram[object+0x16]==0x62,
+          "Special again immediately cancels roll and restores the native standing body");
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Armadillo rolling vulnerability fixture restores");
+      for(unsigned t=0;t<150 && MmxVsGetState().fighters[seat].hp==32;++t) {
+        for(unsigned shot=0x1428;shot<0x1628;shot+=64)if(g_ram[shot] && MmxBossRushOwner(shot)==(int)(seat^1)) {
+          memcpy(g_ram+shot+5,g_ram+object+5,2);memcpy(g_ram+shot+8,g_ram+object+8,2);
+        }
+        frame(((t==0?SNES_PAD_X:0)<<(seat*12))|((t<16?SNES_PAD_Y:0)<<((seat^1)*12)));
+      }
+      check(MmxVsGetState().fighters[seat].hp<32,"rolling armor does not block an actual opposing energy shot");
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Armadillo roll contact fixture restores");
+      frame(SNES_PAD_X<<(seat*12));unsigned target=MmxBossRushGetState().bosses[seat^1].object;
+      for(unsigned t=0;t<60 && MmxVsGetState().fighters[seat^1].hp==32;++t) {
+        memcpy(g_ram+target+5,g_ram+object+5,2);memcpy(g_ram+target+8,g_ram+object+8,2);frame(0);
+      }
+      check(MmxVsGetState().fighters[seat^1].hp<32,"the native ball body inflicts real roll contact damage on both seats");
+    }
     check(RtlLoadSnapshotFromMemory(snapshot,size),"Armadillo guard fixture restores");
     check(RtlSaveSnapshot("vs-guard-ready.sav"),"private guard netplay fixture saves");
     for(unsigned t=0;t<360;++t)frame(SNES_PAD_A);

@@ -814,7 +814,7 @@ bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path) return false;
   FILE *f = fopen(path, "wb");
   if (!f) return false;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 27 : 26,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 29 : 28,
       sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
       (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) + sizeof(frame_rush_visual)+sizeof(frame_bounds)+sizeof(frame_vs)};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 && fwrite(&frame, sizeof(frame), 1, f) == 1 &&
@@ -857,7 +857,7 @@ bool MmxRendererLoadCapture(const char *path) {
        (h[1] == 14 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
        ((h[1] == 15 || h[1] == 17) && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) + sizeof(frame_coop)) ||
        (h[1] == 16 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
-       ((h[1]>=18 && h[1]<=27 && h[1]!=24 && h[1]!=25) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0)+(h[1]>=22?sizeof(frame_bounds):0)+(h[1]>=26?sizeof(frame_vs):0))) &&
+       ((h[1]>=18 && h[1]<=29 && (h[1]<24 || h[1]>=28)) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0)+(h[1]>=22?sizeof(frame_bounds):0)+(h[1]>=28?sizeof(frame_vs):0))) &&
       fread(&frame, sizeof(frame), 1, f) == 1 &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES && frame.valid;
   size_t zero_size = h[1] == 3 ? MMX_ZERO_LEGACY_STATE_SIZE :
@@ -890,7 +890,7 @@ bool MmxRendererLoadCapture(const char *path) {
       }
     }
   }
-  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21 || h[1]==23 || h[1]==27)) {
+  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21 || h[1]==23 || h[1]==29)) {
     MmxCoopState coop;
     if (h[1] == 13) {
       uint8_t legacy[MMX_COOP_LEGACY_STATE_SIZE];
@@ -907,7 +907,7 @@ bool MmxRendererLoadCapture(const char *path) {
   if(ok && h[1]>=20) ok=fread(&frame_rush_visual,sizeof(frame_rush_visual),1,f)==1 && MmxBossRushVisualValidState(&frame_rush_visual);
   if(ok && h[1]>=22) ok=fread(&frame_bounds,sizeof(frame_bounds),1,f)==1 && MmxCoopViewsValidBoundsState(&frame_bounds);
   memset(&frame_vs,0,sizeof(frame_vs));
-  if(ok && h[1]>=26)ok=fread(&frame_vs,sizeof(frame_vs),1,f)==1 && MmxVsValidState(&frame_vs);
+  if(ok && h[1]>=28)ok=fread(&frame_vs,sizeof(frame_vs),1,f)==1 && MmxVsValidState(&frame_vs);
   ok = ok && fgetc(f) == EOF;
   fclose(f); frame.valid = ok; return ok;
 }
@@ -2505,6 +2505,11 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   }
   if(vs_weapon_menu()) {
     vs_menu_labels(out,view);
+    for(unsigned y=22;y<32;++y) {
+      uint32_t blank=out[y*view.width+view.extra+40];
+      for(unsigned x=64;x<192;++x)out[y*view.width+view.extra+x]=blank;
+    }
+    rush_native_text(out,view,view.width/2-56,24,frame_vs.picker?"P2 BOSS SELECT":"P1 BOSS SELECT",9);
     if(!vs_menu_visible()) {
       /* Do not expose an opponent's live cursor or preview over netplay. */
       memset(out,0,(size_t)view.width*224*sizeof(*out));

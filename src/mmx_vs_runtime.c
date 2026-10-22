@@ -22,7 +22,7 @@ static unsigned step(unsigned d) {return d<0x1628?64:d<0x1928?48:32;}
 static bool setup_batch;
 static bool setup_pending(void) {
   MmxVsState s=MmxVsGetState();
-  return (s.phase==MMX_VS_SELECT && !s.menu_ready) ||
+  return (s.phase==MMX_VS_SELECT && !s.menu_ready && MmxBossRushGetState().stage_started) ||
       s.phase==MMX_VS_LOADING || s.phase==MMX_VS_ENTRANCE;
 }
 bool MmxVsFrameBegin(uint32_t *inputs) {
@@ -200,6 +200,13 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
       unsigned d=rush.bosses[i].object;
       s.fighters[i].grounded=1;s.fighters[i].facing=(uint8_t)!i;
       s.fighters[i].ground_y=(int16_t)word(r+d+8);
+      if(s.fighters[i].boss==6) {
+        /* Eagle finishes his entrance hovering. That is not the floor:
+         * his standing arrangement extends 27 pixels below its origin. */
+        s.fighters[i].ground_y=(int16_t)(rush.camera_y+192-27);
+        s.fighters[i].flying=1;s.fighters[i].grounded=0;
+        put(r+d+8,rush.camera_y+96);
+      }
       r[d+0x11]=(r[d+0x11]&~64u)|(i?0:64);r[d+0x27]=0xa0;
     }
   }
@@ -211,6 +218,39 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     if(f->captured && ++f->capture_ticks>=120) {f->captured=0;f->capture_ticks=0;f->stun=0;f->invulnerable=30;s.proxy_source=0;}
     if(s.phase!=MMX_VS_FIGHT)continue;
     unsigned d=rush.bosses[i].object;
+    f->frame_x=(int16_t)word(r+d+5);f->frame_y=(int16_t)word(r+d+8);
+    if(f->boss==6 && (f->pressed&SNES_PAD_B) && !f->stun && !f->captured) {
+      f->flying^=1;f->motion_ticks=f->flying?0:60;f->vy=f->vx=0;
+      if(f->action==MMX_VS_IDLE)f->started=0;
+    }
+    if(f->boss==2 && f->action==MMX_VS_SPECIAL && (f->pressed&SNES_PAD_X)) {
+      if(f->started)put(r+d+0x20,(uint16_t)f->target_x);
+      f->action=MMX_VS_IDLE;f->started=0;f->native_sub=2;f->lockout=0;
+      f->pressed&=~SNES_PAD_X;
+      f->vx=f->vy=0;if(f->frame_y<f->ground_y)f->motion_ticks=60;
+      r[d+2]=r[d+3]=0;r[d+0x37]&=~0x81u;put(r+d+0x1a,0);put(r+d+0x1c,0);
+    }
+    if(f->boss==5) {
+      /* Cling is an independent held movement state; attacks remain usable.
+       * Camouflage has no place in the two-player controller. */
+      r[d+0x37]=0;f->effect_ticks=0;
+      MmxBossRushVisualState v=MmxBossRushVisualGetState();v.initialized[i]=0;MmxBossRushVisualSetState(&v);
+      if(!f->stun && !f->captured) {
+        if((value&SNES_PAD_A) && !f->attached) {
+          f->attached=1;f->flying=0;f->target_x=f->frame_x;f->target_y=f->frame_y;
+          f->motion_ticks=0;f->vx=f->vy=0;f->action=MMX_VS_IDLE;f->started=0;
+        } else if(!(value&SNES_PAD_A) && f->attached) {
+          f->attached=0;f->flying=1;f->motion_ticks=60;f->vy=0;
+          f->action=MMX_VS_JUMP;f->ticks=0;f->started=0;
+        }
+      }
+    }
+    if(!f->stun && !f->captured && f->frame_y<f->ground_y && !f->attached &&
+        !(f->boss==2 && f->action==MMX_VS_SPECIAL)) {
+      f->vx=(value&SNES_PAD_LEFT)?-512:(value&SNES_PAD_RIGHT)?512:0;
+      if(f->vx)f->facing=f->vx>0;
+      r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
+    }
     if((f->action==MMX_VS_JUMP || f->action==MMX_VS_CEILING) &&
         !f->attached && !f->stun && !f->captured) {
       f->vx=(value&SNES_PAD_LEFT)?-512:(value&SNES_PAD_RIGHT)?512:0;
@@ -219,24 +259,25 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
       r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
     }
     if(f->action && f->ticks<240)++f->ticks;
-    if(f->action && f->ticks>=240 && !f->attached && !(f->boss==2 && f->action==MMX_VS_ABILITY)) {
+    if(f->action && f->ticks>=240 && !f->attached &&
+        !(f->boss==2 && (f->action==MMX_VS_ABILITY || f->action==MMX_VS_SPECIAL))) {
       f->action=MMX_VS_IDLE;f->started=0;r[d+2]=r[d+3]=0;f->lockout=12;
     }
-    if(f->action==MMX_VS_IDLE && !f->stun && !f->lockout) {
+    if((f->action==MMX_VS_IDLE || (f->boss==5 && f->action==MMX_VS_JUMP)) && !f->stun && !f->lockout) {
+      unsigned previous_action=f->action;
       if(value&SNES_PAD_LEFT)f->facing=0;else if(value&SNES_PAD_RIGHT)f->facing=1;
       r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
       if(f->pressed&SNES_PAD_Y)f->action=MMX_VS_PRIMARY;
       else if(f->pressed&SNES_PAD_X)f->action=MMX_VS_SPECIAL;
-      else if((f->pressed&SNES_PAD_A) && f->boss!=7)f->action=f->boss==4?MMX_VS_TELEPORT:MMX_VS_ABILITY;
+      else if((f->pressed&SNES_PAD_A) && f->boss!=7 && f->boss!=5)f->action=f->boss==4?MMX_VS_TELEPORT:MMX_VS_ABILITY;
       else if((f->pressed&SNES_PAD_B) && f->boss!=4) {
-        if(f->boss==6) {
-          f->flying^=1;f->started=0;
-          f->motion_ticks=f->flying?0:60;f->vy=f->vx=0;
+        if(f->boss!=6 && (f->boss!=5 || (!f->flying && !f->attached))) {
+          f->action=MMX_VS_JUMP;
+          if(f->boss==5) {f->flying=1;f->motion_ticks=60;f->vy=0x400;}
         }
-        else f->action=(f->boss==5 && (value&SNES_PAD_UP))?MMX_VS_CEILING:MMX_VS_JUMP;
       }
-      if(f->action) {
-        f->ticks=0;f->started=0;
+      if(f->action && f->action!=previous_action) {
+        f->ticks=0;f->started=0;f->native_sub=0;
         if(f->action==MMX_VS_JUMP || f->action==MMX_VS_CEILING)
           f->vx=(value&SNES_PAD_LEFT)?-512:(value&SNES_PAD_RIGHT)?512:0;
         if(f->action==MMX_VS_TELEPORT) {
@@ -308,6 +349,7 @@ static bool overlaps(CpuState *cpu,unsigned a,unsigned b) {
   int dx=ax-bx,dy=ay-by;return dx>=-(int)w && dx<=(int)w && dy>=-(int)h && dy<=(int)h;
 }
 static bool contact_attack(const MmxVsFighter *f) {
+  if(f->boss==2)return f->action==MMX_VS_SPECIAL && f->started;
   if(f->boss==4)return (f->action==MMX_VS_SPECIAL && f->ticks>=6) || (f->action==MMX_VS_TELEPORT && f->ticks>=16 && f->ticks<20);
   if(f->boss==3)return f->action==MMX_VS_ABILITY && f->ticks>=12;
   if(f->boss==7)return f->action==MMX_VS_JUMP && !f->grounded && f->ticks>=6;
@@ -339,7 +381,8 @@ static bool receive(CpuState *cpu,unsigned seat,uint32_t pc) {
   s.proxy=1;s.proxy_seat=(uint8_t)seat;s.proxy_source=(uint16_t)source;s.proxy_hp=g_ram[cpu->D+0x27]&127;
   static const uint8_t rows[8]={9,13,11,7,10,6,8,12};
   s.proxy_row=g_ram[cpu->D+0x28];
-  if(s.proxy_row>=6)g_ram[cpu->D+0x28]=rows[victim->boss];
+  bool rolling_armor=victim->boss==2 && !(victim->action==MMX_VS_ABILITY && (victim->input&SNES_PAD_A));
+  if(s.proxy_row>=6 || rolling_armor)g_ram[cpu->D+0x28]=rows[victim->boss];
   MmxVsSetState(&s);cpu->X=0x1228;cpu->x_flag=0;cpu->P&=~0x10u;
   interp_bridge_pre_opcode_redirect(0x849e15);(void)pc;return true;
 }
@@ -358,7 +401,28 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
   if(g_ram[d+2]==reaction && !f->invulnerable) {
     g_ram[d+2]=g_ram[d+3]=0;f->action=MMX_VS_IDLE;f->started=0;idle=true;
   }
-  if(f->attached) {
+  if(f->boss==2 && f->native_sub==2 && f->action==MMX_VS_IDLE) {
+    f->native_sub=0;MmxVsSetState(&s);cpu->A=0;call_short(cpu,pc,0x83b9c8);return;
+  }
+  if(f->boss==2 && f->action==MMX_VS_SPECIAL && !f->stun && !f->captured) {
+    if(!f->started) {
+      f->started=1;f->native_action=0;f->target_x=(int16_t)word(g_ram+d+0x20);
+      f->vx=f->facing?0x800:-0x800;f->vy=0x400;
+      g_ram[d+2]=0;g_ram[d+3]=4;g_ram[d+0x37]&=~0x81u;
+      put(g_ram+d+0x20,0xc945);put(g_ram+d+0x1a,0);put(g_ram+d+0x1c,0);
+      MmxVsSetState(&s);cpu->A=11;call_short(cpu,pc,0x83b9c8);return;
+    }
+    MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
+  }
+  if(f->boss==5 && !f->stun && !f->captured && (f->attached || f->flying) &&
+      (f->action==MMX_VS_IDLE || f->action==MMX_VS_JUMP)) {
+    if(!f->started) {
+      f->started=1;g_ram[d+2]=g_ram[d+3]=0;
+      MmxVsSetState(&s);cpu->A=f->attached?0:1;call_long(cpu,pc,0x848f07);return;
+    }
+    MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
+  }
+  if(f->attached && f->boss!=5) {
     unsigned release=f->boss==1?SNES_PAD_A:SNES_PAD_B;
     if(f->pressed&release) {
       f->attached=0;f->action=MMX_VS_JUMP;f->started=0;f->ticks=0;idle=false;
@@ -390,7 +454,13 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
     /* Hurt states retain their own native recovery; a completed voluntary
      * action cannot fall through into autonomous selection on this frame. */
     unsigned hit=f->boss==0?10:f->boss==1?10:f->boss==2?8:f->boss==3?8:f->boss==4?8:f->boss==5?10:255;
-    if(g_ram[d+2]!=hit) {f->action=MMX_VS_IDLE;f->started=0;f->lockout=8;idle=true;}
+    if(g_ram[d+2]!=hit) {
+      if((f->action==MMX_VS_JUMP || f->action==MMX_VS_CEILING) &&
+          word(g_ram+d+8)<f->ground_y && !f->flying && !f->attached) {
+        f->motion_ticks=60;f->vy=(int16_t)word(g_ram+d+0x1c);
+      }
+      f->action=MMX_VS_IDLE;f->started=0;f->lockout=8;idle=true;
+    }
   }
   if(!idle && !f->started) {
     unsigned index=f->action==MMX_VS_PRIMARY?0:f->action==MMX_VS_SPECIAL?1:
@@ -410,7 +480,6 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
       put(g_ram+d+0x1a,f->vx);put(g_ram+d+0x1c,0x400);g_ram[d+0x1e]=0x30;
       MmxVsSetState(&s);cpu->A=1;call_long(cpu,pc,0x848f07);return;
     }
-    if(f->boss==5 && f->action==MMX_VS_ABILITY)f->effect_ticks=180;
     if(f->boss==2 && f->action==MMX_VS_ABILITY) {
       /* Native guard normally waits for an X projectile. Enter its guard
        * substate directly, using its own animation/profile initializer. */
@@ -420,18 +489,16 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
       put(g_ram+d+0x3a,f->target_x);g_ram[d+0x39]=0;
     }
   }
+  if(f->boss==6 && f->flying && f->action==MMX_VS_PRIMARY) {
+    /* Let the native tornado/flap cast complete at the chosen altitude,
+     * rather than waiting forever for its autonomous landing approach. */
+    g_ram[d+0x2f]=0;
+  }
   if(f->action==MMX_VS_TELEPORT && f->ticks>=16) {
     if(!f->native_sub) {
       f->native_sub=1;MmxVsSetState(&s);cpu->A=0;call_long(cpu,pc,0x848f07);return;
     }
     MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
-  }
-  /* Flying is intentional motion independent of the native attack chooser. */
-  if(f->boss==6 && f->flying && !f->stun) {
-    int x=word(g_ram+d+5),y=word(g_ram+d+8);
-    if(f->input&SNES_PAD_LEFT)x-=2;if(f->input&SNES_PAD_RIGHT)x+=2;
-    if(f->input&SNES_PAD_UP)y-=2;if(f->input&SNES_PAD_DOWN)y+=2;
-    put(g_ram+d+5,x);put(g_ram+d+8,y);
   }
   if(f->boss==6 && f->action==MMX_VS_IDLE && !f->started) {
     f->started=1;MmxVsSetState(&s);cpu->A=f->flying?5:0;call_long(cpu,pc,0x848f07);return;
@@ -509,11 +576,46 @@ void MmxVsAfterFrame(uint8_t *r) {
     if(x<left)x=left;if(x>right)x=right;
     if(y<rush.camera_y+32)y=rush.camera_y+32;
     if(y>f->ground_y)y=f->ground_y;
-    if(f->motion_ticks) {
+    int dx=(f->input&SNES_PAD_LEFT)?-2:(f->input&SNES_PAD_RIGHT)?2:0;
+    int dy=(f->input&SNES_PAD_UP)?-2:(f->input&SNES_PAD_DOWN)?2:0;
+    bool free=!f->stun && !f->captured;
+    if(f->boss==5 && f->attached && free) {
+      x=f->target_x;y=f->target_y;put(r+d+0x1a,0);put(r+d+0x1c,0);
+    } else if(f->boss==5 && f->flying && free) {
+      x=f->frame_x+dx;y=f->frame_y-f->vy/256;
+      if(f->motion_ticks)--f->motion_ticks;
+      f->vy-=48;
+      if(f->motion_ticks>49 && f->vy>0 && (f->input&SNES_PAD_B))f->vy+=40;
+      if(y>=f->ground_y) {
+        y=f->ground_y;f->flying=0;f->motion_ticks=0;f->vy=0;
+        if(f->action==MMX_VS_JUMP) {f->action=MMX_VS_IDLE;f->started=0;}
+      }
+      put(r+d+0x1a,0);put(r+d+0x1c,0);r[d+0x2f]=f->flying?255:0;
+    } else if(f->boss==6 && f->flying && free) {
+      /* Read flight directions every simulation tick, even while attacking.
+       * Only the explicitly requested dive retains native attack velocity. */
+      x=(f->action==MMX_VS_SPECIAL?x:f->frame_x)+dx;
+      y=(f->action==MMX_VS_SPECIAL?y:f->frame_y)+dy;
+      r[d+0x2f]=255;
+      if(f->action!=MMX_VS_SPECIAL) {put(r+d+0x1a,0);put(r+d+0x1c,0);}
+    } else if(f->boss==2 && f->action==MMX_VS_SPECIAL && f->started && free) {
+      x=f->frame_x+f->vx/256;y=f->frame_y-f->vy/256;
+      if(x<left) {x=left*2-x;f->vx=(int16_t)abs(f->vx);}
+      if(x>right) {x=right*2-x;f->vx=(int16_t)-abs(f->vx);}
+      int top=rush.camera_y+32;
+      if(y<top) {y=top*2-y;f->vy=(int16_t)-abs(f->vy);}
+      if(y>f->ground_y) {y=f->ground_y*2-y;f->vy=(int16_t)abs(f->vy);}
+      f->facing=f->vx>0;r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
+      put(r+d+0x1a,0);put(r+d+0x1c,0);
+    } else if(f->motion_ticks && !f->captured) {
       --f->motion_ticks;x+=f->vx/256;y-=f->vy/256;f->vy-=64;
       if(y>=f->ground_y) {y=f->ground_y;f->motion_ticks=0;f->stun=0;}
     }
+    if(free && f->frame_y<f->ground_y && !f->attached && f->action!=MMX_VS_TELEPORT &&
+        !(f->boss==2 && f->action==MMX_VS_SPECIAL) && !(f->boss==6 && f->flying))
+      x=f->frame_x+dx;
     if(x<left)x=left;if(x>right)x=right;
+    if(y<rush.camera_y+32)y=rush.camera_y+32;if(y>f->ground_y)y=f->ground_y;
     put(r+d+5,x);put(r+d+8,y);
     if(f->action==MMX_VS_TELEPORT && f->ticks>=16) {
       put(r+d+5,f->target_x);put(r+d+8,f->target_y);put(r+d+0x1a,0);put(r+d+0x1c,0);r[d+0xe]=1;
@@ -530,18 +632,11 @@ void MmxVsAfterFrame(uint8_t *r) {
       put(r+d+0x1a,f->vx);
     if(f->boss==7 && f->action==MMX_VS_JUMP && f->ticks>1 && f->ticks<12 && (f->input&SNES_PAD_B))
       put(r+d+0x1c,word(r+d+0x1c)+40);
-    if(((f->boss==1 && f->action==MMX_VS_ABILITY) ||
-        (f->boss==5 && f->action==MMX_VS_CEILING)) && !f->attached) {
+    if(f->boss==1 && f->action==MMX_VS_ABILITY && !f->attached) {
       if(f->ticks==1)put(r+d+0x1c,0x880);
       if(y<=rush.camera_y+56 || (r[d+0x2b]&8)) {
         f->attached=1;f->native_sub=1;put(r+d+0x1a,0);put(r+d+0x1c,0);put(r+d+8,rush.camera_y+56);
       }
-    }
-    if(f->boss==2 && f->action==MMX_VS_SPECIAL && r[d+0x16]==0x63) {
-      int vx=(int16_t)word(r+d+0x1a),speed=vx<0?-vx:vx;
-      if(f->input&SNES_PAD_LEFT)vx=-speed;else if(f->input&SNES_PAD_RIGHT)vx=speed;
-      if(x<=left)vx=speed;if(x>=right)vx=-speed;
-      put(r+d+0x1a,vx);f->facing=vx>0;r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
     }
     bool grounded=(r[d+0x2b]&4)!=0 || y>=f->ground_y;
     if(f->action==MMX_VS_JUMP && y<f->jump_peak)f->jump_peak=(int16_t)y;

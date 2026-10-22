@@ -369,7 +369,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 24u /* native VS selector/setup state */
+#define MMX_SAV_CHUNK_VERSION 25u /* per-tick Maverick motion origins */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -593,8 +593,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       sli->func(sli,&g_load_view_bounds,sizeof(g_load_view_bounds));
       if(!MmxCoopViewsValidBoundsState(&g_load_view_bounds)) g_load_chunk_ok=0;
     }
-    if(g_load_chunk_ok && g_load_chunk.version==23)g_load_chunk_ok=0;
-    if(g_load_chunk_ok && g_load_chunk.version>=24) {
+    if(g_load_chunk_ok && (g_load_chunk.version==23 || g_load_chunk.version==24))g_load_chunk_ok=0;
+    if(g_load_chunk_ok && g_load_chunk.version>=25) {
       sli->func(sli,&g_load_vs,sizeof(g_load_vs));
       if(!MmxVsValidState(&g_load_vs))g_load_chunk_ok=0;
     }

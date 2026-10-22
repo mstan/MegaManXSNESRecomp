@@ -10,7 +10,7 @@ enum { MMX_VS_IDLE, MMX_VS_PRIMARY, MMX_VS_SPECIAL, MMX_VS_ABILITY,
 enum { MMX_VS_NO_WINNER=2, MMX_VS_HP=32 };
 typedef struct MmxVsFighter {
   uint16_t input, pressed, ticks, invulnerable, stun, lockout;
-  int16_t target_x, target_y, jump_peak, ground_y, vx, vy;
+  int16_t target_x, target_y, jump_peak, ground_y, vx, vy, frame_x, frame_y;
   uint16_t effect_ticks, capture_ticks, motion_ticks;
   uint8_t boss, hp, action, native_action, native_sub, started;
   uint8_t facing, grounded, flying, attached, armor_broken, captured;

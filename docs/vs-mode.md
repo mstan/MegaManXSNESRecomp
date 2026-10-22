@@ -25,11 +25,13 @@ whose move timings and balance are intended for playtest tuning.
 
 Round selection uses X's original pause-menu task and artwork. The original
 eight weapon cells contain the boss names and a native sprite preview of the
-current choice. Buster, Escape, lives and Sub Tanks are removed. Player 1
+current choice. The heading identifies **P1 Boss Select** or **P2 Boss Select**.
+Buster, Escape, lives and Sub Tanks are removed. Player 1
 chooses first in round one; later rounds give the winner first choice.
 Checkpoint, door and boss entrance scripts finish in an unpresented batch:
 the arena opens with both fighters ready, without the hidden X walk or its
-sound effects.
+sound effects. X fires the original title selection shot before the selector
+opens. Results wait at **PRESS START FOR NEXT ROUND**.
 
 ## Controls
 
@@ -37,7 +39,8 @@ Default actions are B Jump, Y Primary, X Special and A Ability. Native
 shoot/jump/dash remapping also maps Primary/Jump/Ability; X is independently
 bindable in the host Controls page. Directions face the boss and guide its
 movement action. Left/Right can start, reverse and stop horizontal movement
-after jump takeoff. These bosses do not acquire synthetic walking animations.
+after jump takeoff, including during airborne attacks and falls. These bosses
+do not acquire synthetic walking animations.
 Penguin slides with Special (SNES X, the top face button on the default Xbox
 layout), independently of Jump and his ice shot.
 
@@ -45,18 +48,21 @@ layout), independently of Jump and his ice shot.
 | --- | --- | --- | --- | --- |
 | Chill Penguin | Directional jump, stomach slide | Ice shot | Slide | Ice statues; Up+Ability requests the handle/blizzard sequence |
 | Spark Mandrill | Jump, dash punch, ceiling movement | Electric spark | Dash punch | Ceiling sequence |
-| Armored Armadillo | Roll/bounce and jump | Energy shot | Roll | Guard |
+| Armored Armadillo | Fast diagonal roll with wall/floor/ceiling ricochets; jump | Energy shot | Roll; press again to cancel | Hold to guard |
 | Launch Octopus | Hop/jump | Missiles | Homing fish | Vortex/drain |
 | Boomer Kuwanger | Direction+Ability teleport | Boomerang | Horn grab/throw | Teleport |
-| Sting Chameleon | Jump; Up+Jump ceiling sequence | Stings | Tongue | Camouflage |
-| Storm Eagle | Jump toggles flight; directions steer | Tornado | Dive | Egg |
+| Sting Chameleon | Tap Jump for a short jump; hold for height | Stings | Tongue | Hold to cling at the current position; release to fall |
+| Storm Eagle | Starts flying; Jump toggles flight/landing; D-pad steers in all four directions | Tornado | Dive | Egg |
 | Flame Mammoth | Directional jump; hold Jump for more height | Fire | Oil | Unassigned |
 
 Kuwanger teleports 96 pixels on an axis (68 on each diagonal), clamped to the
 arena; releasing the direction after pressing Ability keeps that destination.
-Mandrill and Chameleon can traverse the ceiling with Left/Right and release
-with their ceiling-action button. Eagle's Jump toggles flight and landing;
-Up+Primary uses his native wind flap. Armadillo guards while Ability is held.
+Mandrill can traverse the ceiling with Left/Right and release with Ability.
+Chameleon remains visible and can attack while holding his cling position.
+Eagle retains directional flight control while attacking; Up+Primary uses his
+native wind flap. Armadillo guards only while Ability is held: standing,
+jumping and rolling do not provide passive armor protection. Special again
+cancels his roll immediately, including in midair.
 Mammoth takes off immediately: tap for a small jump, hold for a higher jump
 whose landing briefly stuns grounded opponents. Grabs have a finite escape
 bound, and every round clears attacks, captures, effects and damaged armor.
@@ -87,7 +93,7 @@ Boss damage uses a temporary player-projectile proxy through `$84:9E15`.
 The source actor retains its identity; native damage rows, immunity and boss
 reactions remain responsible for accepted hits. The original proxy storage
 and hidden player target are snapshot-owned until the actor returns. New
-game snapshots use chunk 24. Old build snapshots are disposable; no migration
+game snapshots use chunk 25. Old build snapshots are disposable; no migration
 is required. Native SRAM is unaffected.
 
 ## Development validation
@@ -117,7 +123,11 @@ discarded under the audio lock. The host's normal volume is preserved.
 - All 64 native roster pairings and entrances, including mirrors; idle contact
   remains harmless. All assigned action buttons reach native controllers on
   both seats. Directional jumps, fixed teleport, ceiling traversal/release,
-  flight/landing and Mammoth's two jump heights/quake pass focused checks.
+  four-direction flight during attacks, Chameleon's jump heights/held cling,
+  and Mammoth's two jump heights/quake pass focused checks on both seats.
+  Armadillo's roll reaches 8 horizontal pixels per frame, ricochets at arena
+  boundaries, deals contact damage and cancels on a second Special press.
+  Rolling Armadillo accepts actual opposing energy-shot damage.
   A sustained Armadillo guard blocks actual opposing shots; release restores
   vulnerability and the native standing animation.
 - All eight signature weakness pairings produce 3 HP per accepted hit.

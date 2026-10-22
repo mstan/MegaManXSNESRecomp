@@ -11,10 +11,18 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
   check(MmxBossRushGetState().selection==4,"fifth title option selects VS");
   rush_visual_bmp("vs-title-entry.bmp");
   frame(SNES_PAD_Y);frame(0);
+  check(!MmxVsGetState().menu_ready,"VS title confirmation leaves time for X's native selection shot");
+  bool title_shot=false;
+  for(unsigned t=0;t<180 && !MmxVsGetState().menu_ready;++t) {
+    frame(0);title_shot|=g_ram[0x1229]==2 && g_ram[0x123e]==0x0e;
+    if(t==8)rush_visual_bmp("vs-title-confirm-shot.bmp");
+  }
+  check(title_shot,"X actually fires the native selection shot before the boss selector opens");
   check(MmxVsGetState().phase==MMX_VS_SELECT,"VS opens character selection");
   check(MmxVsGetState().menu_ready && g_ram[0x1ec9]==4 && g_ram[0x1f10]==6,
       "first selection is the fully initialized native pause menu within one host tick");
   rush_visual_bmp("vs-native-first-selection.bmp");
+  check(MmxRendererSaveCapture("vs-native-menu.cap"),"native menu capture saves");
   {
     MmxVsState menu=MmxVsGetState();
     static uint32_t native[256*224],versus[256*224];
@@ -23,7 +31,7 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
     check(MmxRendererDraw(native,(MmxRenderView){256,0,4.0/3.0},true),"unmodified pause reference renders from the same native frame");
     unsigned compared=0;bool identical=true;
     for(unsigned y=0;y<224;++y)for(unsigned x=0;x<256;++x) {
-      bool changed=(y>=39 && y<56 && x>=32 && x<128) ||
+      bool changed=(y>=22 && y<32 && x>=64 && x<192) || (y>=39 && y<56 && x>=32 && x<128) ||
           (y>=103 && y<120 && x>=136 && x<232) ||
           (y>=39 && y<120 && ((x>=56 && x<128)||(x>=160 && x<232))) ||
           (y>=128 && y<200 && x>=24 && x<232);
@@ -184,7 +192,7 @@ static void vs_runtime_checks(uint8_t *start,uint8_t *expected,uint8_t *actual,s
         unsigned children=0,acted=0,accepted=0;
         for(unsigned t=0;t<150;++t) {
           frame((t<16?buttons[action]:0)<<(seat*12));
-          MmxVsFighter f=MmxVsGetState().fighters[seat];acted|=f.action!=MMX_VS_IDLE;
+          MmxVsFighter f=MmxVsGetState().fighters[seat];acted|=f.action!=MMX_VS_IDLE || (a==5 && f.attached);
           accepted|=f.started || (a==6 && f.flying);
           for(unsigned d=0xe68;d<0x1d08;d+=32)if(g_ram[d] && MmxBossRushOwner(d)==(int)seat && d!=r.bosses[seat].object)children++;
           if(!seat && t==30) {char image[96];snprintf(image,sizeof(image),"vs-action-%u-%u.bmp",a,action);rush_visual_bmp(image);}
