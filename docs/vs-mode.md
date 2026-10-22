@@ -2,6 +2,11 @@
 
 Tracking: `beads-vcvk`. Development branch: `feat/maverick-vs`.
 
+**Status: parked work in progress.** Character interactions have not been
+thoroughly audited. Interaction edge cases, remaining behavior and balance
+tuning are TBD and require further focused playtesting. The checks below
+cover specific implementation behaviors, not a comprehensive combat audit.
+
 VS is a separate, opt-in Game Modes package (`megaman-x.mode.vs`). Select
 **VS Mode** on the title screen after enabling it. It uses the owner's X1
 USA ROM and does not require X3 character assets.
