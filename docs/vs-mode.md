@@ -51,13 +51,16 @@ layout), independently of Jump and his ice shot.
 | Spark Mandrill | Jump, dash punch, ceiling movement | Electric spark | Dash punch | Ceiling sequence |
 | Armored Armadillo | Fast diagonal roll with wall/floor/ceiling ricochets; jump | Energy shot | Roll; press again to cancel | Hold to guard |
 | Launch Octopus | Hop/jump | Missiles | Homing fish | Vortex/drain |
-| Boomer Kuwanger | Direction+Ability teleport | Boomerang | Horn grab/throw | Teleport |
+| Boomer Kuwanger | Hold Direction+Ability for longer teleports; tap for short hops | Boomerang | Lunging horn grab/throw | Teleport; no direction blinks in place |
 | Sting Chameleon | Tap Jump for a short jump; hold for height | Stings | Tongue | Hold to cling at the current position; release to fall |
 | Storm Eagle | Jump toggles flight/landing; D-pad steers in all four directions | Tornado | One full dive and return | Egg |
 | Flame Mammoth | Directional jump; hold Jump for more height | Fire | Oil | Unassigned |
 
-Kuwanger teleports 96 pixels on an axis (68 on each diagonal), clamped to the
-arena; releasing the direction after pressing Ability keeps that destination.
+Kuwanger's teleport starts at 16 pixels for a tap and grows during the native
+vanish windup to 96 pixels on an axis (68 on each diagonal), clamped to the
+arena. Releasing Ability locks the last held direction and distance. With no
+direction held, he teleports in place. His horn grab lunges forward up to
+64 pixels, stops at grab range and then uses the native capture/throw.
 Mandrill can traverse the ceiling with Left/Right and release with Ability.
 He turns toward movement and holds his still hanging pose when stationary.
 Chameleon remains visible and can attack while holding his cling position.
@@ -138,6 +141,10 @@ discarded under the audio lock. The host's normal volume is preserved.
   opponent and return to directional control. Idle ground/landing audio
   checks distinguish silence from retained airborne flap cues. Both Mandrills
   turn during ceiling movement and hold pose `$12` while stationary.
+  Both Kuwangers' tap/medium/full teleports travel 16/51/96 pixels; directionless
+  teleports remain in place and full diagonals retain the 68-pixel limit per
+  axis. Lunging horn grabs reach an opponent initially 80 pixels away and
+  retain native capture, throw and ability-specific damage.
   A sustained Armadillo guard blocks actual opposing shots; release restores
   vulnerability and the native standing animation.
 - All eight signature weakness pairings produce 3 HP per accepted hit.

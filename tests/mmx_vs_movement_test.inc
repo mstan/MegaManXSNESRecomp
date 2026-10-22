@@ -4,11 +4,38 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
   MmxBossRushState rush=MmxBossRushGetState();unsigned d=rush.bosses[0].object;
   int x0=eagle_word(g_ram+d+5),y0=eagle_word(g_ram+d+8),min_y=y0,max_dx=0;
   if(boss==4) {
-    frame(SNES_PAD_A|SNES_PAD_RIGHT);
-    for(unsigned t=0;t<60;++t)frame(0);
-    int expected=x0+96;if(expected>rush.camera_x+336)expected=rush.camera_x+336;
-    fprintf(stderr,"VS teleport x=%d expected=%d\n",eagle_word(g_ram+d+5),expected);
-    check(abs((int)eagle_word(g_ram+d+5)-expected)<=1,"Kuwanger teleports one fixed step and remains there");
+    for(unsigned seat=0;seat<2;++seat) {
+      unsigned object=rush.bosses[seat].object;
+      int distances[3]={0};
+      for(unsigned mode=0;mode<5;++mode) {
+        check(RtlLoadSnapshotFromMemory(snapshot,size),"variable teleport fixture restores");
+        int bx=eagle_word(g_ram+object+5),by=eagle_word(g_ram+object+8);
+        unsigned held=mode==0?1:mode==1?8:40;
+        unsigned direction=mode==3?0:(seat?SNES_PAD_LEFT:SNES_PAD_RIGHT)|(mode==4?SNES_PAD_UP:0);
+        for(unsigned t=0;t<(mode==4?20:60);++t)frame((t<held?SNES_PAD_A|direction:0)<<(seat*12));
+        int dx=abs((int)eagle_word(g_ram+object+5)-bx),dy=by-eagle_word(g_ram+object+8);
+        fprintf(stderr,"VS Kuwanger teleport seat=%u mode=%u displacement=%d,%d\n",seat,mode,dx,dy);
+        if(mode<3)distances[mode]=dx;
+        if(mode==3)check(!dx && !dy,"Ability without a direction teleports in place on both seats");
+        if(mode==4)check(dx==68 && dy==68,"fully held diagonal teleport retains the existing diagonal maximum");
+      }
+      check(distances[0]==16 && distances[0]<distances[1] && distances[1]<distances[2] && distances[2]==96,
+          "tap, medium and full holds produce increasing teleport distances capped at the old maximum");
+      check(RtlLoadSnapshotFromMemory(snapshot,size),"Kuwanger horn lunge fixture restores");
+      if(!seat)check(RtlSaveSnapshot("vs-kuwanger-ready.sav"),"private Kuwanger rollback fixture saves");
+      unsigned target=rush.bosses[seat^1].object;
+      int before=eagle_word(g_ram+object+5);eagle_putword(g_ram+target+5,before+(seat?-80:80));
+      int farthest=0;bool captured=false,thrown=false;
+      for(unsigned t=0;t<180;++t) {
+        frame((t==0?SNES_PAD_X:0)<<(seat*12));
+        int distance=abs((int)eagle_word(g_ram+object+5)-before);if(distance>farthest)farthest=distance;
+        captured|=MmxVsGetState().fighters[seat^1].captured!=0;
+        thrown|=MmxVsGetState().fighters[seat^1].motion_ticks!=0;
+      }
+      fprintf(stderr,"VS Kuwanger horn lunge seat=%u travel=%d captured=%u thrown=%u hp=%u\n",seat,farthest,captured,thrown,MmxVsGetState().fighters[seat^1].hp);
+      check(farthest>=32 && farthest<=64 && captured && thrown && MmxVsGetState().fighters[seat^1].hp<32,
+          "both horn grabs lunge forward and damage/capture/throw an initially out-of-range opponent");
+    }
   } else if(boss==6) {
     static const unsigned directions[]={SNES_PAD_RIGHT,SNES_PAD_DOWN,SNES_PAD_LEFT,SNES_PAD_UP};
     for(unsigned seat=0;seat<2;++seat)for(unsigned attacking=0;attacking<2;++attacking) {

@@ -284,16 +284,25 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
         if(f->action==MMX_VS_JUMP || f->action==MMX_VS_CEILING)
           f->vx=(value&SNES_PAD_LEFT)?-512:(value&SNES_PAD_RIGHT)?512:0;
         if(f->action==MMX_VS_TELEPORT) {
-          int dx=(value&SNES_PAD_LEFT)?-96:(value&SNES_PAD_RIGHT)?96:0;
-          int dy=(value&SNES_PAD_UP)?-96:(value&SNES_PAD_DOWN)?96:0;
-          if(!dx && !dy)dx=f->facing?96:-96;
-          if(dx && dy) {dx=dx<0?-68:68;dy=dy<0?-68:68;}
-          int x=(int)word(r+d+5)+dx,y=(int)word(r+d+8)+dy;
-          int left=rush.camera_x+32,right=rush.camera_x+336;
-          if(x<left)x=left;if(x>right)x=right;
-          if(y<rush.camera_y+32)y=rush.camera_y+32;if(y>f->ground_y)y=f->ground_y;
-          f->target_x=(int16_t)x;f->target_y=(int16_t)y;f->native_sub=0;
+          f->target_x=f->frame_x;f->target_y=f->frame_y;
         }
+      }
+    }
+    if(f->action==MMX_VS_TELEPORT && !f->native_sub && f->ticks<=16) {
+      /* The native vanish windup is the charge window. Freeze the last held
+       * direction/distance on release; no direction means blink in place.
+       * substate 2 latches an early release, 1 is the arrival animation. */
+      if(!(value&SNES_PAD_A))f->native_sub=2;
+      else {
+        int distance=16+5*f->ticks;
+        int dx=(value&SNES_PAD_LEFT)?-distance:(value&SNES_PAD_RIGHT)?distance:0;
+        int dy=(value&SNES_PAD_UP)?-distance:(value&SNES_PAD_DOWN)?distance:0;
+        if(dx && dy) {int diagonal=(distance*181+128)/256;dx=dx<0?-diagonal:diagonal;dy=dy<0?-diagonal:diagonal;}
+        int x=f->frame_x+dx,y=f->frame_y+dy;
+        int left=rush.camera_x+32,right=rush.camera_x+336;
+        if(x<left)x=left;if(x>right)x=right;
+        if(y<rush.camera_y+32)y=rush.camera_y+32;if(y>f->ground_y)y=f->ground_y;
+        f->target_x=(int16_t)x;f->target_y=(int16_t)y;
       }
     }
   }
@@ -353,7 +362,7 @@ static bool overlaps(CpuState *cpu,unsigned a,unsigned b) {
 }
 static bool contact_attack(const MmxVsFighter *f) {
   if(f->boss==2)return f->action==MMX_VS_SPECIAL && f->started;
-  if(f->boss==4)return (f->action==MMX_VS_SPECIAL && f->ticks>=6) || (f->action==MMX_VS_TELEPORT && f->ticks>=16 && f->ticks<20);
+  if(f->boss==4)return (f->action==MMX_VS_SPECIAL && f->ticks>=8 && f->native_sub!=2) || (f->action==MMX_VS_TELEPORT && f->ticks>=16 && f->ticks<20);
   if(f->boss==3)return f->action==MMX_VS_ABILITY && f->ticks>=12;
   if(f->boss==7)return f->action==MMX_VS_JUMP && !f->grounded && f->ticks>=6;
   return (f->boss==0 || f->boss==1 || f->boss==2 || f->boss==6) && f->action==MMX_VS_SPECIAL && f->ticks>=8;
@@ -403,6 +412,18 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
   }
   if(g_ram[d+2]==reaction && !f->invulnerable) {
     g_ram[d+2]=g_ram[d+3]=0;f->action=MMX_VS_IDLE;f->started=0;idle=true;
+  }
+  if(f->boss==4 && f->action==MMX_VS_SPECIAL && !f->stun && !f->captured) {
+    if(f->ticks<8) {
+      if(f->native_sub!=2) {
+        /* Approach in his native dash pose before opening the horn grab's
+         * short collision window. A distant target must not end it early. */
+        f->native_sub=2;f->started=1;f->native_action=6;g_ram[d+2]=6;g_ram[d+3]=0;
+        MmxVsSetState(&s);cpu->A=1;call_short(cpu,pc,0x8790b1);return;
+      }
+      MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
+    }
+    if(f->native_sub==2) {f->native_sub=1;f->started=0;}
   }
   if(f->boss==2 && f->native_sub==2 && f->action==MMX_VS_IDLE) {
     f->native_sub=0;MmxVsSetState(&s);cpu->A=0;call_short(cpu,pc,0x83b9c8);return;
@@ -518,7 +539,7 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
     g_ram[d+0x2f]=0;
   }
   if(f->action==MMX_VS_TELEPORT && f->ticks>=16) {
-    if(!f->native_sub) {
+    if(f->native_sub!=1) {
       f->native_sub=1;MmxVsSetState(&s);cpu->A=0;call_long(cpu,pc,0x848f07);return;
     }
     MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
@@ -640,6 +661,17 @@ void MmxVsAfterFrame(uint8_t *r) {
     if(free && f->frame_y<f->ground_y && !f->attached && f->action!=MMX_VS_TELEPORT &&
         !(f->boss==2 && f->action==MMX_VS_SPECIAL) && !(f->boss==6 && f->flying))
       x=f->frame_x+dx;
+    if(free && f->boss==4 && f->action==MMX_VS_SPECIAL && f->started &&
+        f->ticks<8 && !s.fighters[i^1].captured) {
+      int gap=((int)word(r+rush.bosses[i^1].object+5)-f->frame_x)*(f->facing?1:-1),stride=8;
+      /* Do not dash through a nearby opponent before the horn opens. */
+      if(gap>=0 && gap<32)stride=gap>24?gap-24:0;
+      x=f->frame_x+(f->facing?stride:-stride);
+    }
+    if(free && f->action==MMX_VS_TELEPORT && f->ticks<16) {
+      /* Keep the charge origin stationary until the native blink arrives. */
+      x=f->frame_x;y=f->frame_y;put(r+d+0x1a,0);put(r+d+0x1c,0);
+    }
     if(!diving) {
       if(x<left)x=left;if(x>right)x=right;
       if(y<rush.camera_y+32)y=rush.camera_y+32;if(y>f->ground_y)y=f->ground_y;
