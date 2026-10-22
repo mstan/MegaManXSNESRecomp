@@ -35,6 +35,30 @@ static void vs_movement_checks(unsigned boss,uint8_t *snapshot,size_t size) {
     frame(0);frame(boss==1?SNES_PAD_A:SNES_PAD_B);frame(0);
     check(!MmxVsGetState().fighters[0].attached,"ceiling attachment releases on its action button");
   }
+  if(boss==2) {
+    check(RtlLoadSnapshotFromMemory(snapshot,size),"Armadillo guard fixture restores");
+    check(RtlSaveSnapshot("vs-guard-ready.sav"),"private guard netplay fixture saves");
+    for(unsigned t=0;t<360;++t)frame(SNES_PAD_A);
+    check(MmxVsGetState().fighters[0].action==MMX_VS_ABILITY && (g_ram[d+0x37]&1),
+        "Armadillo can sustain guard beyond the ordinary action timeout");
+    for(unsigned t=0;t<150;++t) {
+      for(unsigned shot=0x1428;shot<0x1628;shot+=64)if(g_ram[shot] && MmxBossRushOwner(shot)==1) {
+        memcpy(g_ram+shot+5,g_ram+d+5,2);memcpy(g_ram+shot+8,g_ram+d+8,2);
+      }
+      frame(SNES_PAD_A|((t<16?SNES_PAD_Y:0)<<12));
+    }
+    check(MmxVsGetState().fighters[0].hp==32,"held guard blocks an actual opposing energy shot");
+    zero_replay(24);
+    check(!(g_ram[d+0x37]&1) && MmxVsGetState().fighters[0].action!=MMX_VS_ABILITY,
+        "releasing a long guard clears its native immunity flag");
+    for(unsigned t=0;t<150 && MmxVsGetState().fighters[0].hp==32;++t) {
+      for(unsigned shot=0x1428;shot<0x1628;shot+=64)if(g_ram[shot] && MmxBossRushOwner(shot)==1) {
+        memcpy(g_ram+shot+5,g_ram+d+5,2);memcpy(g_ram+shot+8,g_ram+d+8,2);
+      }
+      frame((t<16?SNES_PAD_Y:0)<<12);
+    }
+    check(MmxVsGetState().fighters[0].hp<32,"released guard takes damage from an actual opposing shot");
+  }
   if(boss==7) {
     int heights[2]={0,0};bool quake[2]={false,false};
     for(unsigned held=0;held<2;++held) {

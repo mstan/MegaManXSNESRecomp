@@ -100,6 +100,8 @@ Windows x64 validation for the initial playtest:
   remains harmless. All assigned action buttons reach native controllers on
   both seats. Directional jumps, fixed teleport, ceiling traversal/release,
   flight/landing and Mammoth's two jump heights/quake pass focused checks.
+  A sustained Armadillo guard blocks actual opposing shots; release restores
+  vulnerability and the native standing animation.
 - All eight signature weakness pairings produce 3 HP per accepted hit.
   Kuwanger's horn captures Chameleon, deals 3 HP and throws him. Freeze and
   armor-break reactions recover and accept the next attack.

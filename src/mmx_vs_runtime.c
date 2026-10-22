@@ -29,6 +29,11 @@ static void call_long(CpuState *cpu,uint32_t pc,uint32_t target) {
   cpu_write8(cpu,0,cpu->S--,(uint8_t)(pc+2));
   interp_bridge_pre_opcode_redirect(target);
 }
+static void call_short(CpuState *cpu,uint32_t pc,uint32_t target) {
+  cpu_write8(cpu,0,cpu->S--,(uint8_t)((pc+2)>>8));
+  cpu_write8(cpu,0,cpu->S--,(uint8_t)(pc+2));
+  interp_bridge_pre_opcode_redirect(target);
+}
 static void clear_round(uint8_t *r) {
   MmxBossRushState rush=MmxBossRushGetState();
   for(unsigned d=0xe68;d<0x1d08;) {
@@ -154,7 +159,9 @@ bool MmxVsFrame(uint8_t *r,uint16_t p1,uint16_t p2) {
     if(s.phase!=MMX_VS_FIGHT)continue;
     unsigned d=rush.bosses[i].object;
     if(f->action && f->ticks<240)++f->ticks;
-    if(f->action && f->ticks>=240 && !f->attached) {f->action=MMX_VS_IDLE;f->started=0;r[d+2]=r[d+3]=0;f->lockout=12;}
+    if(f->action && f->ticks>=240 && !f->attached && !(f->boss==2 && f->action==MMX_VS_ABILITY)) {
+      f->action=MMX_VS_IDLE;f->started=0;r[d+2]=r[d+3]=0;f->lockout=12;
+    }
     if(f->action==MMX_VS_IDLE && !f->stun && !f->lockout) {
       if(value&SNES_PAD_LEFT)f->facing=0;else if(value&SNES_PAD_RIGHT)f->facing=1;
       r[d+0x11]=(r[d+0x11]&~64u)|(f->facing?64:0);
@@ -307,7 +314,8 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
   if(f->boss==2 && f->action==MMX_VS_ABILITY) {
     if(!(f->input&SNES_PAD_A) || g_ram[d+0x33]) {
       g_ram[d+0x37]&=~1u;g_ram[d+2]=g_ram[d+3]=0;
-      f->action=MMX_VS_IDLE;f->started=0;idle=true;
+      f->action=MMX_VS_IDLE;f->started=0;
+      MmxVsSetState(&s);cpu->A=0;call_short(cpu,pc,0x83b9c8);return;
     } else if(g_ram[d+0x37]&1) {
       MmxVsSetState(&s);call_long(cpu,pc,0x848eea);return;
     }
@@ -343,6 +351,11 @@ static void control_dispatch(CpuState *cpu,unsigned seat,uint32_t pc) {
       MmxVsSetState(&s);cpu->A=1;call_long(cpu,pc,0x848f07);return;
     }
     if(f->boss==5 && f->action==MMX_VS_ABILITY)f->effect_ticks=180;
+    if(f->boss==2 && f->action==MMX_VS_ABILITY) {
+      /* Native guard normally waits for an X projectile. Enter its guard
+       * substate directly, using its own animation/profile initializer. */
+      g_ram[d+3]=4;MmxVsSetState(&s);call_short(cpu,pc,0x83b61b);return;
+    }
     if(f->action==MMX_VS_TELEPORT) {
       put(g_ram+d+0x3a,f->target_x);g_ram[d+0x39]=0;
     }
