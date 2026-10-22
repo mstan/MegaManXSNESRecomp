@@ -4,6 +4,7 @@
 #include "snes/interp_bridge.h"
 #include "mmx_password_save.h"
 #include "mmx_netplay.h"
+#include "mmx_vs.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -14,7 +15,7 @@ static int active;
 /* Used by both the interpreter callback and generated native blocks. Never
  * change registers, flags, cycles, control flow, or guest cartridge memory. */
 void MmxPasswordHook(CpuState *cpu, uint32_t pc) {
-  if (!active || cpu->D != 0x1e48) return;
+  if (!active || MmxVsActive() || cpu->D != 0x1e48) return;
   switch (pc & 0x7fffff) {
     case 0x00ef25: MmxPasswordPrefill(g_ram); break;
     case 0x00f05e: MmxPasswordCapture(g_ram); break;

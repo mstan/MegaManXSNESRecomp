@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.mode.vs"
+version = "0.1.0"
+name = "Maverick VS"
+author = "mstan"
+description = "Two players control the eight Mavericks in local or online rounds."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "requires-same-mods"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "vs"
+name = "Maverick VS"
+description = "Adds VS Mode to the title menu. Both players choose a Maverick each round; the winner chooses first next round."
+group = "Game Modes"
+default_enabled = false
+
+[[plugin]]
+feature = "vs"
+id = "megaman-x.vs"

@@ -300,6 +300,7 @@ if(BUILD_TESTING)
     add_executable(mmx_saber_renderer_draw_test
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/saber/mmx_saber_renderer_draw_test.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_renderer.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_vs.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_render_assets.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_display.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_wide_policy.c"

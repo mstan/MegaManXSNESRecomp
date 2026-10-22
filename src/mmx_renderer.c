@@ -8,6 +8,7 @@
 #include "mmx_weapon_combat.h"
 #include "mmx_coop_view.h"
 #include "mmx_boss_rush.h"
+#include "mmx_vs.h"
 #include "mmx_boss_rush_score.h"
 #include <math.h>
 
@@ -21,6 +22,7 @@ typedef struct Raster {
 } Raster;
 static MmxBossRushState frame_rush;
 static MmxBossRushVisualState frame_rush_visual;
+static MmxVsState frame_vs;
 typedef struct Piece {
   int16_t x, y; uint16_t attr; uint8_t size, animation;
   /* Palette occupies bits 1..3; the five spare bits retain charged-shot
@@ -500,6 +502,7 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
   unsigned debug_rect_count = 0;
   reset_pilot_overlay_alignment();
   frame_rush=MmxBossRushGetState();
+  frame_vs=MmxVsGetState();
   frame_rush_visual=MmxBossRushVisualGetState();
   memset(&frame_coop,0,sizeof(frame_coop));
   memset(&frame_partner_overlay, 0, sizeof(frame_partner_overlay));
@@ -811,9 +814,9 @@ bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path) return false;
   FILE *f = fopen(path, "wb");
   if (!f) return false;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 23 : 22,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 25 : 24,
       sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
-      (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) + sizeof(frame_rush_visual)+sizeof(frame_bounds)};
+      (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) + sizeof(frame_rush_visual)+sizeof(frame_bounds)+sizeof(frame_vs)};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 && fwrite(&frame, sizeof(frame), 1, f) == 1 &&
       fwrite(&frame_zero, sizeof(frame_zero), 1, f) == 1 &&
       fwrite(&frame_weapons, sizeof(frame_weapons), 1, f) == 1 &&
@@ -822,6 +825,7 @@ bool MmxRendererSaveCapture(const char *path) {
   if(ok) ok=fwrite(&frame_rush,sizeof(frame_rush),1,f)==1;
   if(ok) ok=fwrite(&frame_rush_visual,sizeof(frame_rush_visual),1,f)==1;
   if(ok) ok=fwrite(&frame_bounds,sizeof(frame_bounds),1,f)==1;
+  if(ok) ok=fwrite(&frame_vs,sizeof(frame_vs),1,f)==1;
   return fclose(f) == 0 && ok;
 }
 bool MmxRendererLoadCapture(const char *path) {
@@ -853,7 +857,7 @@ bool MmxRendererLoadCapture(const char *path) {
        (h[1] == 14 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
        ((h[1] == 15 || h[1] == 17) && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) + sizeof(frame_coop)) ||
        (h[1] == 16 && h[2] == sizeof(frame) + sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat)) ||
-       ((h[1]>=18 && h[1]<=23) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0)+(h[1]>=22?sizeof(frame_bounds):0))) &&
+       ((h[1]>=18 && h[1]<=25) && h[2]==sizeof(frame)+sizeof(frame_zero)+sizeof(frame_weapons)+sizeof(frame_weapon_combat)+sizeof(frame_rush)+((h[1]&1)?sizeof(frame_coop):0)+(h[1]>=20?sizeof(frame_rush_visual):0)+(h[1]>=22?sizeof(frame_bounds):0)+(h[1]>=24?sizeof(frame_vs):0))) &&
       fread(&frame, sizeof(frame), 1, f) == 1 &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES && frame.valid;
   size_t zero_size = h[1] == 3 ? MMX_ZERO_LEGACY_STATE_SIZE :
@@ -886,7 +890,7 @@ bool MmxRendererLoadCapture(const char *path) {
       }
     }
   }
-  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21 || h[1]==23)) {
+  if (ok && (h[1] == 13 || h[1] == 15 || h[1] == 17 || h[1]==19 || h[1]==21 || h[1]==23 || h[1]==25)) {
     MmxCoopState coop;
     if (h[1] == 13) {
       uint8_t legacy[MMX_COOP_LEGACY_STATE_SIZE];
@@ -902,6 +906,8 @@ bool MmxRendererLoadCapture(const char *path) {
   if(ok && h[1]>=18) ok=fread(&frame_rush,sizeof(frame_rush),1,f)==1 && MmxBossRushValidState(&frame_rush);
   if(ok && h[1]>=20) ok=fread(&frame_rush_visual,sizeof(frame_rush_visual),1,f)==1 && MmxBossRushVisualValidState(&frame_rush_visual);
   if(ok && h[1]>=22) ok=fread(&frame_bounds,sizeof(frame_bounds),1,f)==1 && MmxCoopViewsValidBoundsState(&frame_bounds);
+  memset(&frame_vs,0,sizeof(frame_vs));
+  if(ok && h[1]>=24)ok=fread(&frame_vs,sizeof(frame_vs),1,f)==1 && MmxVsValidState(&frame_vs);
   ok = ok && fgetc(f) == EOF;
   fclose(f); frame.valid = ok; return ok;
 }
@@ -1066,11 +1072,15 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
   if(!stage && layer==2 && frame_rush.menu && (frame_rush.mode==MMX_RUSH_OFF ||
       (frame_rush.mode==MMX_RUSH_LOADING && !frame_rush.stage_started))) {
     /* Native title lettering is ASCII-indexed BG3 CHR. Keep its spacing,
-     * cyan/orange palettes, raster brightness and priority for all four rows. */
+     * cyan/orange palettes, raster brightness and priority for added rows. */
     if((ty==20 || ty==22 || ty==24) && tx>=10 && tx<21)
       tile=(uint16_t)((tile&~0x1c00)|(((ty-20)/2==frame_rush.selection)?0x400:0));
-    if(ty==26 && tx>=10 && tx<19)
-      tile=(uint16_t)(0x2000|(frame_rush.selection==3?0x400:0)|"BOSS RUSH"[tx-10]);
+    if(ty==26 && tx>=10 && tx<19) {
+      const char *label=MmxVsEnabled() && !MmxBossRushEnabled()?"VS MODE  ":"BOSS RUSH";
+      tile=(uint16_t)(0x2000|(frame_rush.selection==3?0x400:0)|label[tx-10]);
+    }
+    if(MmxVsEnabled() && MmxBossRushEnabled() && ty==27 && tx>=10 && tx<17)
+      tile=(uint16_t)(0x2000|(frame_rush.selection==4?0x400:0)|"VS MODE"[tx-10]);
   }
   if (layer == 0 && !stage) {
     int icon = weapon_menu_icon(x, y);
@@ -1868,7 +1878,7 @@ static void rush_hud_row(const Ppu *p,const Raster *r,int y,MmxRenderView view,
                          uint16_t *objects,int *colors) {
   for(unsigned i=0;i<2;++i) {
     const MmxBossRushBoss *b=&frame_rush.bosses[i];if(!b->phase) continue;
-    int x=view.width-view.extra-40+(int)i*16;
+    int x=frame_rush.versus?(i?view.width-24:8):view.width-view.extra-40+(int)i*16;
     coop_meter_row(p,r,y,view,objects,colors,x,b->health,32,2,NULL,80,false);
     /* $D94A's native boss footer, rather than the player's X badge. */
     sprite(p,r,x,80,0x34aa,16,y,view,objects,false,NULL,0xaa,colors,true,false,false);
@@ -1897,12 +1907,66 @@ static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const 
     }
   }
 }
+static void vs_rect(uint32_t *out,MmxRenderView view,int x,int y,int w,int h,uint32_t color) {
+  for(int row=y;row<y+h;++row)for(int col=x;col<x+w;++col)
+    if(row>=0 && row<224 && col>=0 && col<view.width)out[row*view.width+col]=color;
+}
 bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if (!out || !frame.valid || view.width < 256 || view.width > MMX_RENDER_MAX_WIDTH ||
       view.extra != (view.width - 256) / 2 || (view.width & 1)) return false;
   memset(&stats, 0, sizeof(stats)); stats.pieces = frame.piece_count;
   memset(door_cache, 0, sizeof(door_cache));
   memset(out, 0, (size_t)view.width * 224 * sizeof(*out));
+  if(frame_vs.phase==MMX_VS_LOADING) {
+    rush_native_text(out,view,view.width/2-60,64,"PREPARING ARENA",8);
+    rush_native_text(out,view,view.width/2-48,104,MmxVsBossName(frame_vs.fighters[0].boss),9);
+    rush_native_text(out,view,view.width/2-8,128,"VS",8);
+    rush_native_text(out,view,view.width/2-48,152,MmxVsBossName(frame_vs.fighters[1].boss),9);return true;
+  }
+  if(frame_vs.phase==MMX_VS_SELECT || frame_vs.phase==MMX_VS_RESULT || frame_vs.paused) {
+    char text[80];int center=view.width/2;
+    if(frame_vs.phase==MMX_VS_SELECT) {
+      /* The pause menu's green panel and blue/white inset framing, with the
+       * eight weapon slots occupied by Maverick names instead of energy. */
+      vs_rect(out,view,center-122,30,244,174,0xffd8dce0);
+      vs_rect(out,view,center-120,32,240,170,0xff2838a0);
+      vs_rect(out,view,center-116,36,232,162,0xff16804a);
+      vs_rect(out,view,center-114,55,228,2,0xff2838a0);
+      vs_rect(out,view,center-114,157,228,2,0xff2838a0);
+    }
+    snprintf(text,sizeof(text),"P1 %u      VS      P2 %u",frame_vs.score[0],frame_vs.score[1]);
+    rush_native_text(out,view,center-(int)strlen(text)*4,16,text,8);
+    if(frame_vs.paused) {
+      rush_native_text(out,view,center-24,80,"PAUSED",8);
+      rush_native_text(out,view,center-24,120,"RESUME",frame_vs.pause_choice?8:9);
+      rush_native_text(out,view,center-36,144,"MAIN MENU",frame_vs.pause_choice?9:8);
+    } else if(frame_vs.phase==MMX_VS_RESULT) {
+      snprintf(text,sizeof(text),frame_vs.winner<2?"PLAYER %u WINS":"DOUBLE KO",frame_vs.winner+1);
+      rush_native_text(out,view,center-(int)strlen(text)*4,88,text,9);
+      rush_native_text(out,view,center-76,152,"START - NEXT ROUND",8);
+    } else {
+      bool online=MmxCoopViewsOnline() && peer_seat>=0;
+      unsigned viewer=online?(unsigned)peer_seat:frame_vs.picker;
+      snprintf(text,sizeof(text),"ROUND %u - P%u CHOOSE",frame_vs.round,frame_vs.picker+1);
+      rush_native_text(out,view,center-(int)strlen(text)*4,40,text,9);
+      bool visible=MmxVsPickVisible(&frame_vs,viewer,frame_vs.picker,online);
+      for(unsigned i=0;i<8;++i) {
+        bool selected=visible && frame_vs.cursor[frame_vs.picker]==i;
+        int x=center-104+(int)(i/4)*112,y=68+(int)(i%4)*24;
+        if(selected)vs_rect(out,view,x-7,y-4,110,18,0xff202864);
+        rush_native_text(out,view,x,y,MmxVsBossName(i),selected?9:8);
+        if(selected)rush_native_text(out,view,x-8,y,">",9);
+      }
+      for(unsigned i=0;i<2;++i) {
+        bool locked=(frame_vs.locked&(1u<<i))!=0;
+        const char *name=locked && MmxVsPickVisible(&frame_vs,viewer,i,online)?MmxVsBossName(frame_vs.fighters[i].boss):
+            locked?"READY":frame_vs.picker==i?"CHOOSING":"WAITING";
+        snprintf(text,sizeof(text),"P%u: %s",i+1,name);rush_native_text(out,view,center-100,166+(int)i*16,text,8);
+      }
+      rush_native_text(out,view,center-96,208,visible?"START / A - CONFIRM":"WAITING FOR OPPONENT",8);
+    }
+    return true;
+  }
   if(frame_rush.mode==MMX_RUSH_FINISHED) {
     /* Own the whole page so native death flashes, HUD badges and the world
      * cannot bleed through the options-style results screen. */
@@ -1928,6 +1992,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   bool stage = MmxWidePolicy_IsStageScene(frame.ram) && !menu;
   bool rush_hud = stage && frame_rush.loaded;
   view_dx=view_dy=0;
+  if(stage && frame_rush.versus) {
+    int target;
+    if(peer_seat>=0 && MmxCoopViewsOnline())target=word(frame.ram,frame_rush.bosses[peer_seat].object+5)-128;
+    else target=(word(frame.ram,frame_rush.bosses[0].object+5)+word(frame.ram,frame_rush.bosses[1].object+5))/2-128;
+    int left=frame_rush.camera_x,right=left+MMX_RUSH_MAMMOTH_SCROLL;
+    if(target<left)target=left;if(target>right)target=right;
+    view_dx=target-(int)word(frame.ram,0x1e4d);
+    if(frame_vs.shake_ticks)view_dy=(frame_vs.shake_ticks&2)?2:-2;
+  }
   if(stage && peer_seat>=0 && frame_coop.initialized && MmxCoopViewsOnline()) {
     MmxCoopView camera=MmxCoopViewWithBounds(frame.ram,&frame_coop,(unsigned)peer_seat,&frame_bounds);
     view_dx=camera.x-(int)word(frame.ram,0x1e4d);
@@ -2004,10 +2077,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   const MmxSpriteAsset *storm_platform = storm_count ?
       MmxRenderAssetsResource(5, frame.ram[0x1f08], 0x5a) : NULL;
   const MmxSpriteAsset *piece_assets[MAX_PIECES] = {0};
-  MmxSpriteAsset camouflage_art;
+  MmxSpriteAsset camouflage_art[2];
   MmxSpriteAsset rush_flash_art[2];
   bool rush_flash_ready[2]={false,false};
-  bool camouflage_ready=false;
+  bool camouflage_ready[2]={false,false};
   if ((stage || frame_rush.mode==MMX_RUSH_PLAYING) && g_mmx_render_asset_repairs) for (unsigned i = 0; i < piece_count; ++i) {
     const Piece *s = &pieces[i];
     const MmxSpriteAsset *a = stage ? MmxRenderAssetsObjectSprite(frame.ram, s->object, s->animation) : NULL;
@@ -2025,15 +2098,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
             frame_rush.bosses[seat].id==5 && s->animation==0x23 &&
             frame_rush_visual.initialized[seat] &&
             frame_rush_visual.generation[seat]==frame_rush.bosses[seat].generation) {
-          if(!camouflage_ready) {
-            camouflage_art=*private;
-            memcpy(camouflage_art.colors,frame_rush_visual.colors[seat],sizeof(camouflage_art.colors));
+          if(!camouflage_ready[seat]) {
+            camouflage_art[seat]=*private;
+            memcpy(camouflage_art[seat].colors,frame_rush_visual.colors[seat],sizeof(camouflage_art[seat].colors));
             /* $C1 is entry 24 in the per-actor scene flags. */
             if(frame_rush.bosses[seat].globals[24]==2)
-              for(unsigned c=0;c<16;++c) camouflage_art.colors[c]|=0x8000;
-            camouflage_ready=true;
+              for(unsigned c=0;c<16;++c) camouflage_art[seat].colors[c]|=0x8000;
+            camouflage_ready[seat]=true;
           }
-          a=&camouflage_art;
+          a=&camouflage_art[seat];
         }
         /* Keep private CHR, but let the native palette-zero hit flash use
          * live CGRAM. Mammoth's trunk copies its parent's $11 at $82:9665. */
@@ -2143,6 +2216,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       }
       if(frame_rush.mode==MMX_RUSH_PLAYING && !frame.expand && s.object>=0xe68 && s.object<0x1d08 &&
           frame_rush.owner[(s.object-0xe68)/32] && !oam_match) continue;
+      if(stage && frame_rush.versus && s.object>=0xba8 && s.object<0xe18)continue;
       /* Match original OAM before reprojection. HUD and native script panels
        * keep screen coordinates; world pieces use the selected peer origin. */
       if(stage) {s.x-=view_dx;s.y-=view_dy;}
@@ -2283,7 +2357,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     static const int sizes[8][2] = {{8,16},{8,32},{8,64},{16,32},{16,64},{32,64},{16,32},{16,32}};
     bool coop_hud=stage && frame_coop.initialized && r->oam[0]==0x5008 && r->oam[1]==0x3486;
     for (int slot = 127; slot >= 0; --slot) {
-      if(coop_hud && slot<16) continue;
+      if((coop_hud || (stage && frame_rush.versus)) && slot<16) continue;
       if (replaced[slot]) continue;
       unsigned pos = r->oam[slot * 2], attr = r->oam[slot * 2 + 1];
       unsigned hi = r->high_oam[slot / 4] >> (slot % 4 * 2);
@@ -2394,7 +2468,13 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     }
     MmxBossRushDraw(out,view.width,view.extra,&draw_rush);
   }
-  if(rush_hud && frame_rush.mode==MMX_RUSH_PLAYING) {
+  if(rush_hud && frame_rush.mode==MMX_RUSH_PLAYING && frame_rush.versus) {
+    char score[64];snprintf(score,sizeof(score),"P1 %u       P2 %u",frame_vs.score[0],frame_vs.score[1]);
+    rush_native_text(out,view,view.width/2-(int)strlen(score)*4,208,score,7);
+    static const char *const initials[]={"CP","SM","AA","LO","BK","SC","SE","FM"};
+    for(unsigned i=0;i<2;++i)rush_native_text(out,view,i?view.width-24:8,96,initials[frame_vs.fighters[i].boss],7);
+  }
+  if(rush_hud && frame_rush.mode==MMX_RUSH_PLAYING && !frame_rush.versus) {
     char count[32];snprintf(count,sizeof(count),"DEFEATED %u",frame_rush.defeated);
     rush_native_text(out,view,view.width/2-(int)strlen(count)*4,208,count,7);
     static const char *const labels[]={"CP","SM","AA","LO","BK","SC","SE","FM"};

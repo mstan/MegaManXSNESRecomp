@@ -24,7 +24,7 @@ typedef struct MmxBossRushState {
   uint32_t random, defeated, generation;
   MmxBossRushBoss bosses[2];
   uint8_t queue[8], queued, mode, coop, loaded;
-  uint8_t stage_started, return_title;
+  uint8_t stage_started, return_title, versus;
   uint16_t input, menu_input;
   uint8_t menu, selection, result_selection, actor;
   uint16_t actor_object, actor_s;

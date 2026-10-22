@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 
 MARKER = '/*MMX-RUSH*/'
+VS_TARGETS = {0x01812e, 0x04aca5, 0x01b629, 0x089d6e, 0x03b2e8,
+              0x01c53a, 0x078c1a, 0x08870a, 0x07d9a1, 0x079303}
 TARGETS = {0x01b516, 0x078a7e, 0x01c433, 0x03b144, 0x0791a7,
            0x07d85c, 0x08853e, 0x089be1, 0x049feb, 0x04a003,
            0x04aadd, 0x04a677, 0x049b03, 0x049b43, 0x00dc36,
@@ -17,7 +19,9 @@ TARGETS = {0x01b516, 0x078a7e, 0x01c433, 0x03b144, 0x0791a7,
            0x0088a2, 0x0088cd, 0x049f19, 0x049f2a, 0x049f2f, 0x049f7e,
            0x088dab, 0x088e0f, 0x088d79, 0x088d2f, 0x02827d, 0x03b151,
            0x0498fa, 0x049908, 0x07efa5, 0x01b7a7, 0x01b7eb, 0x00c93c,
-           0x00c67f}
+           0x00c67f, 0x01812e, 0x04aca5,
+           0x01b629, 0x089d6e, 0x03b2e8, 0x01c53a,
+           0x078c1a, 0x08870a, 0x07d9a1, 0x079303}
 # The USA dispatch has no compiled body for these entries. They already
 # execute in LLE; every other boundary must be routed by this pass.
 INTERPRETED = {0x0094d1, 0x00d345, 0x00d4ea, 0x00d507, 0x00d1ed}
@@ -36,7 +40,8 @@ def apply(source):
             address = int(entry[1], 16)
             pc = address if address & 0x7fffff in TARGETS else 0
         if pc and 'g_cpu_entry_s[g_recomp_stack_top - 1] = _entry_s;' in line:
-            output.append(f'  {MARKER} {{ extern bool MmxBossRushActive(void); if (MmxBossRushActive()) {{ RecompReturn r = interp_tier_dispatch_bank_miss(cpu, 0x{pc:06x}u, _entry_s, _hrv); RecompStackPop(); return r; }} }}\n')
+            predicate = 'MmxVsActive' if pc & 0x7fffff in VS_TARGETS else 'MmxBossRushActive'
+            output.append(f'  {MARKER} {{ extern bool {predicate}(void); if ({predicate}()) {{ RecompReturn r = interp_tier_dispatch_bank_miss(cpu, 0x{pc:06x}u, _entry_s, _hrv); RecompStackPop(); return r; }} }}\n')
             found.add(pc & 0x7fffff)
             pc = 0
     return ''.join(output), found

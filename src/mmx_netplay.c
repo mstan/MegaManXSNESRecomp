@@ -3,6 +3,7 @@
 #include "mod_runtime.h"
 #include "mmx_coop.h"
 #include "mmx_weapons.h"
+#include "mmx_vs.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -12,6 +13,7 @@
 static const char *const kCoop = "megaman-x.coop";
 static const char *const kZero = "megaman-x.character.zero";
 static const char *const kWide = "megaman-x.enhancement.widescreen";
+static const char *const kVs = "megaman-x.mode.vs";
 static const RecompLauncherCModProvider *s_mods;
 static const RecompLauncherCNetplayCallbacks *s_net;
 static RecompLauncherCModProvider s_provider;
@@ -22,6 +24,7 @@ static char s_error[512];
 int MmxNetplayActive(void) { return s_active; }
 
 int MmxNetplayReady(char *reason, size_t cap) {
+  if(MmxVsEnabled())return 1;
   if (!MmxCoopEnabled()) {
     snprintf(reason, cap, "X + Zero co-op could not load. Check the selected X3 ROM and cache directory.");
     return 0;
@@ -66,7 +69,8 @@ static void mode_changed(int enabled) {
   }
   s_active = 1;
   s_mods->feature_enable(s_mods->ctx, kZero, "zero", 0);
-  if (!s_mods->feature_enable(s_mods->ctx, kCoop, "coop", 1))
+  int vs=snes_mod_runtime_feature_enabled_c(kVs,"vs");
+  if (!s_mods->feature_enable(s_mods->ctx, kCoop, "coop", !vs))
     fail("The X + Zero co-op mod is missing. Restore the bundled mods.");
   /* Preserve an existing fixed choice; Adaptive becomes 16:9 in this
    * temporary plan only. Disabled widescreen remains the native view. */
@@ -77,13 +81,16 @@ static void mode_changed(int enabled) {
 }
 
 static int validate_plan(void) {
-  if (!s_active || !snes_mod_runtime_feature_enabled_c(kCoop, "coop"))
+  int vs=snes_mod_runtime_feature_enabled_c(kVs,"vs");
+  if (!s_active || (!vs && !snes_mod_runtime_feature_enabled_c(kCoop, "coop")))
     return fail("Netplay requires X + Zero co-op. Reopen Netplay to prepare the room.");
+  if(vs && snes_mod_runtime_feature_enabled_c(kCoop,"coop"))
+    return fail("Choose Maverick VS or X / Zero co-op for this room.");
   if (snes_mod_runtime_feature_enabled_c(kZero, "zero"))
     return fail("Character switching must be off during co-op netplay.");
   char cameras[32] = {0};
   snes_mod_runtime_feature_option_value_c(kCoop, "coop", "cameras", cameras, sizeof(cameras));
-  if (strcmp(cameras, "independent") && strcmp(cameras, "unified"))
+  if (!vs && strcmp(cameras, "independent") && strcmp(cameras, "unified"))
     return fail("Choose Independent or Unified netplay cameras. Restore the bundled co-op mod if this option is missing.");
   if (snes_mod_runtime_feature_enabled_c(kWide, "widescreen")) {
     char aspect[32] = {0};
@@ -97,12 +104,21 @@ static int validate_plan(void) {
 
 static int feature_enable(void *ctx, const char *pkg, const char *feature, int enabled) {
   s_error[0] = 0;
-  if (s_active && ((!strcmp(pkg, kCoop) && !enabled) || (!strcmp(pkg, kZero) && enabled)))
+  int vs=snes_mod_runtime_feature_enabled_c(kVs,"vs");
+  if(s_active && vs && !strcmp(pkg,kCoop) && enabled)
+    return fail("Disable Maverick VS before selecting X / Zero co-op.");
+  if(s_active && !strcmp(pkg,kVs)) {
+    if(!s_mods->feature_enable(ctx,pkg,feature,enabled))return 0;
+    return s_mods->feature_enable(ctx,kCoop,"coop",!enabled);
+  }
+  if (s_active && ((!vs && !strcmp(pkg, kCoop) && !enabled) || (!strcmp(pkg, kZero) && enabled)))
     return fail("Netplay requires X / Zero Co-op; Add Zero is unavailable.");
   return s_mods->feature_enable(ctx, pkg, feature, enabled);
 }
 static int set_enabled(void *ctx, const char *pkg, int enabled) {
-  if (s_active && ((!strcmp(pkg, kCoop) && !enabled) || (!strcmp(pkg, kZero) && enabled)))
+  if(s_active && !strcmp(pkg,kVs))return feature_enable(ctx,pkg,"vs",enabled);
+  int vs=snes_mod_runtime_feature_enabled_c(kVs,"vs");
+  if (s_active && ((!vs && !strcmp(pkg, kCoop) && !enabled) || (!strcmp(pkg, kZero) && enabled)))
     return fail("Netplay requires X + Zero co-op.");
   s_error[0] = 0;
   return s_mods->set_enabled(ctx, pkg, enabled);
@@ -115,7 +131,7 @@ static int feature_get(void *ctx, int index, RecompLauncherCModFeature *out) {
       if (!strcmp(option.id, "cameras")) --out->option_count;
   }
   if (s_active && !strcmp(out->package_id, kZero)) out->hidden = 1;
-  if (s_active && !strcmp(out->package_id, kCoop) && !out->has_error)
+  if (s_active && !snes_mod_runtime_feature_enabled_c(kVs,"vs") && !strcmp(out->package_id, kCoop) && !out->has_error)
     snprintf(out->status, sizeof(out->status), "Required for netplay");
   return 1;
 }

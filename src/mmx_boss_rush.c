@@ -54,7 +54,7 @@ bool MmxBossRushCoop(void) {return state.mode==MMX_RUSH_OFF || state.coop!=0;}
 MmxBossRushState MmxBossRushGetState(void) {return state;}
 bool MmxBossRushValidState(const MmxBossRushState *s) {
   if(!s || s->mode>MMX_RUSH_PREPARING || s->coop>1 || s->loaded>MMX_RUSH_MUSIC_PENDING || s->queued>8 ||
-      s->menu>2 || s->selection>3 || s->result_selection>1 || s->actor>2 ||
+      s->menu>2 || s->selection>4 || s->result_selection>1 || s->actor>2 || s->versus>1 ||
       s->stage_started>1 || s->return_title>1) return false;
   if(s->mode!=MMX_RUSH_OFF && !s->random) return false;
   if(s->loaded==MMX_RUSH_MUSIC_PENDING && s->mode!=MMX_RUSH_PREPARING) return false;
@@ -73,7 +73,7 @@ bool MmxBossRushValidState(const MmxBossRushState *s) {
     if(b->phase && (b->object<0xe68 || b->object>=0x1228 || (b->object-0xe68)%64)) return false;
   }
   if(s->bosses[0].phase && s->bosses[1].phase &&
-      (s->bosses[0].id==s->bosses[1].id || s->bosses[0].object==s->bosses[1].object)) return false;
+      ((!s->versus && s->bosses[0].id==s->bosses[1].id) || s->bosses[0].object==s->bosses[1].object)) return false;
   for(unsigned i=0;i<128;++i) if(s->owner[i]>2 || s->occupied[i]>1) return false;
   return true;
 }
@@ -82,7 +82,7 @@ bool MmxBossRushSetState(const MmxBossRushState *s) {
   state=*s;return true;
 }
 bool MmxBossRushConveyorRunning(const MmxBossRushState *s) {
-  if(!s || s->mode!=MMX_RUSH_PLAYING) return false;
+  if(!s || s->versus || s->mode!=MMX_RUSH_PLAYING) return false;
   for(unsigned i=0;i<2;++i) {
     const MmxBossRushBoss *b=&s->bosses[i];
     if(b->id==7 && b->phase && b->phase!=MMX_RUSH_DYING && b->health) return true;
@@ -122,7 +122,7 @@ int MmxBossRushNextBoss(void) {
   return -1;
 }
 bool MmxBossRushAssign(unsigned slot,unsigned id,uint16_t object) {
-  if(slot>=2 || id>=8 || state.bosses[slot].phase || present(id) ||
+  if(slot>=2 || id>=8 || state.bosses[slot].phase || (!state.versus && present(id)) ||
       object<0xe68 || object>=0x1228 || (object-0xe68)%64 ||
       (state.bosses[slot^1].phase && state.bosses[slot^1].object==object)) return false;
   state.bosses[slot]=(MmxBossRushBoss){.object=object,.id=(uint8_t)id,
@@ -133,7 +133,7 @@ bool MmxBossRushDefeat(unsigned slot) {
   if(slot>=2 || state.bosses[slot].phase!=MMX_RUSH_FIGHTING) return false;
   state.bosses[slot].phase=MMX_RUSH_DYING;state.bosses[slot].ticks=0;
   state.bosses[slot].health=0;
-  if(state.defeated!=UINT32_MAX) ++state.defeated;
+  if(!state.versus && state.defeated!=UINT32_MAX) ++state.defeated;
   return true;
 }
 void MmxBossRushFinish(void) {state.mode=MMX_RUSH_FINISHED;state.actor=0;}

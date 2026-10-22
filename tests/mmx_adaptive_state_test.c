@@ -63,6 +63,8 @@ static void zero_capture(const char *base, const char *suffix) {
 #include "mmx_coop_replay_test.inc"
 #include "mmx_diagnostic_replay_test.inc"
 #include "mmx_boss_rush_runtime_test.inc"
+#include "mmx_vs_runtime_test.inc"
+#include "mmx_vs_netplay_test.inc"
 #include "mmx_magic_carpet_test.inc"
 #include "mmx_zero_blocks_test.inc"
 static void zero_motion_checks(const char *fixture) {
@@ -1954,6 +1956,12 @@ int main(int argc, char **argv) {
   MkDir("saves");
   size_t cap = 2u * 1024u * 1024u;
   uint8 *start = malloc(cap), *expected = malloc(cap), *actual = malloc(cap);
+#if defined(SNES_HAS_LOBBY_CLIENT)
+  if(getenv("MMX_VS_NET_ROOT")) {
+    vs_netplay_checks(getenv("MMX_VS_NET_ROOT"),argv[1],getenv("MMX_VS_NET_FIXTURE"),getenv("MMX_VS_NET_GUEST")!=NULL);return 0;
+  }
+#endif
+  if(getenv("MMX_VS_TEST")) {vs_runtime_checks(start,expected,actual,cap);return 0;}
   if(getenv("MMX_ZERO_BLOCKS_TEST")) {zero_blocks_checks(getenv("MMX_ZERO_TEST_ASSETS"));return 0;}
   if(getenv("MMX_MAGIC_CARPET_TEST")) {magic_carpet_checks(getenv("MMX_MAGIC_CARPET_TEST"),start,expected,actual,cap);return 0;}
   if(getenv("MMX_BOSS_RUSH_TEST")) {rush_runtime_checks(start,expected,actual,cap);return 0;}

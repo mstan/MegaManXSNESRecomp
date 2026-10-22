@@ -1,10 +1,18 @@
-# X / Zero netplay
+# X / Zero and Maverick VS netplay
 
 Tracking: `beads-8wg.1.54`. Initial implementation: `feat/netplay-coop`,
 first stable release 1.7.0.
 USA Rev 1 only; the Japanese edition remains unchanged.
 
 ## Playing
+
+For competitive play, enable **Game Modes → Maverick VS** before opening
+Netplay, then select **VS Mode** on the game's title screen. Both players
+need the same build and their own X1 USA Rev 1 ROM; VS does not require X3.
+Each peer configures local Player 1 input and receives an independent view.
+Choices are sequential and hidden from the opponent until both confirm.
+The [VS reference](vs-mode.md) lists controls, round order and weaknesses.
+The X / Zero co-op setup below applies when Maverick VS is disabled.
 
 1. Both players use the same build and supply their own X1 USA Rev 1 and X3
    USA ROMs. Select the X3 ROM in Mods; co-op, Zero, and X3 weapons share that
@@ -35,7 +43,8 @@ USA Rev 1 only; the Japanese edition remains unchanged.
    subtank, camera, and cutscene rules. Either player can use **Start** for
    their equipment menu. P2 Select withdrawal/rejoin still works.
 
-Netplay forces co-op and excludes single-player Select exchange. Leaving the
+Netplay selects co-op when Maverick VS is disabled, and excludes single-player
+Select exchange. Leaving the
 netplay flow restores offline mod selections. ROM paths selected while
 preparing a room remain local preferences; they are never sent to the peer.
 Neither source ROMs nor extracted graphics are distributed.

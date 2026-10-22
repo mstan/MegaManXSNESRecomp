@@ -1,4 +1,5 @@
 #include "mmx_boss_rush.h"
+#include "mmx_vs.h"
 #include "mmx_boss_rush_audio.h"
 #include "mmx_boss_rush_score.h"
 #include "host_paths.h"
@@ -63,11 +64,15 @@ static void actor_hook(CpuState *cpu,uint32_t pc) {
   if(returning) {
     if(!s.actor || s.actor_object!=cpu->D || s.actor_s!=cpu->S) return;
     unsigned owner=s.actor-1;
+    if(s.versus)MmxVsActorEnd(g_ram,owner);
     for(unsigned d=0xe68;d<0x1d08;) {
       if(d==0x1228) {d=0x1428;continue;}
       unsigned n=(d-0xe68)/32;
       if(!g_ram[d]) s.owner[n]=0;
-      else if(!s.occupied[n]) s.owner[n]=(uint8_t)(owner+1);
+      else if(!s.occupied[n]) {
+        s.owner[n]=(uint8_t)(owner+1);
+        if(s.versus)MmxVsChildAllocated(g_ram,d,s.actor_object,owner);
+      }
       d+=object_step(d);
     }
     for(unsigned i=0;i<sizeof(globals)/sizeof(*globals);++i) {
@@ -90,8 +95,10 @@ static void actor_hook(CpuState *cpu,uint32_t pc) {
   remember_objects(&s);
   put(g_ram+0x1f0e,s.bosses[owner].object);g_ram[0x1f26]=0;
   MmxBossRushSetState(&s);
+  if(s.versus)MmxVsActorBegin(g_ram,(unsigned)owner);
 }
 static void boss_hook(CpuState *cpu,uint32_t pc) {
+  if(MmxVsNativeHook(cpu,pc))return;
   MmxBossRushState s=MmxBossRushGetState();int owner=MmxBossRushOwner(cpu->D);
   unsigned at=pc&0x7fffff;
   if(at==0x00c6dd && (s.mode==MMX_RUSH_PREPARING || s.mode==MMX_RUSH_PLAYING)) {
@@ -355,7 +362,7 @@ void MmxBossRushHostFrame(void) {
 }
 static bool title(const uint8_t *r) {
   unsigned y=word(r+0xbb0);
-  return r[0xd1]==0 && r[0xba9]==2 && word(r+0xbad)==32 && y>=166 && y<=214;
+  return r[0xd1]==0 && r[0xba9]==2 && word(r+0xbad)==32 && y>=166 && y<=230;
 }
 static void equipment(uint8_t *r) {
   r[0x1f99]=0xff;r[0x1f9a]=32;r[0x1f98]=0x40;r[0xbcf]=0xa0;
@@ -405,7 +412,8 @@ static bool prepare(uint8_t *r) {
   r[0x1fa0]=0;
   equipment(r);
   MmxBossRushSetState(&s);
-  if(MmxCoopEnabled()) {
+  if(s.versus)MmxVsPrepareArena(r);
+  if(!s.versus && MmxCoopEnabled()) {
     MmxCoopInitialize(r);MmxCoopCapture(r);MmxCoopState c=MmxCoopGetState();
     c.stage_pending=0;c.scene_owner=c.scene_phase=0;c.enrolled=1;
     for(unsigned i=0;i<2;++i) {
@@ -472,7 +480,7 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
     }
   if(s.mode!=MMX_RUSH_OFF) MmxBossRushAudioTick();
   if(s.mode==MMX_RUSH_OFF) {
-    if(!MmxBossRushEnabled()) {
+    if(!MmxBossRushEnabled() && !MmxVsEnabled()) {
       /* A launcher edit can disable the fourth row while it is selected.
        * Return the native cursor to Option Mode before its three-row table
        * runs again. Keep input history consistent with ordinary frames. */
@@ -485,22 +493,30 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
     /* Old playtest snapshots may contain the removed mode submenu. */
     if(s.menu==2) s.selection=3;
     s.menu=1;
-    if(s.selection!=3) s.selection=(uint8_t)((word(r+0xbb0)-166)/16);
+    if(s.selection<3) s.selection=(uint8_t)((word(r+0xbb0)-166)/16);
     unsigned previous=s.selection;
+    unsigned last=MmxVsEnabled()?(MmxBossRushEnabled()?4:3):3;
+    if(s.selection>last)s.selection=(uint8_t)last;
     if(pressed&SNES_PAD_UP) {
-      if(previous==0) s.selection=3;
-      else if(previous==3) s.selection=2;
+      if(previous==0) s.selection=(uint8_t)last;
+      else if(previous>=3) s.selection=(uint8_t)(previous-1);
     } else if(pressed&(SNES_PAD_DOWN|SNES_PAD_SELECT)) {
-      if(previous==2) s.selection=3;
-      else if(previous==3) s.selection=0;
+      if(previous>=2)s.selection=(uint8_t)(previous==last?0:previous+1);
     }
-    if(previous==3 || s.selection==3) {
+    if(previous>=3 || s.selection>=3) {
       /* The native cursor table has three rows. Handle transitions touching
        * our fourth row here, and synchronize its index when leaving it. */
-      memset(r+0xac,0,4);r[0x3c]=s.selection==3?2:s.selection;
-      put(r+0xbb0,166+16*s.selection);
-      if(s.selection==3 && (pressed&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y))) {
-        MmxBossRushSetState(&s);load(r,MmxCoopEnabled());return;
+      memset(r+0xac,0,4);r[0x3c]=s.selection>=3?2:s.selection;
+      put(r+0xbb0,s.selection==4?222:166+16*s.selection);
+      if(s.selection>=3 && (pressed&(SNES_PAD_START|SNES_PAD_A|SNES_PAD_Y))) {
+        bool versus=MmxVsEnabled() && (s.selection==4 || !MmxBossRushEnabled());
+        MmxBossRushSetState(&s);load(r,!versus && MmxCoopEnabled());
+        if(versus) {
+          MmxVsStart();s=MmxBossRushGetState();s.versus=1;s.selection=(uint8_t)last;
+          MmxBossRushSetState(&s);put(r+0xbb0,last==4?222:166+16*last);
+          MmxVsState vs=MmxVsGetState();vs.input[0]=vs.release[0]=input;MmxVsSetState(&vs);
+        }
+        return;
       }
     }
     MmxBossRushSetState(&s);return;
@@ -525,10 +541,13 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
   }
   if(s.mode==MMX_RUSH_PREPARING) {camera(r);return;}
   camera(r);
-  if(r[0xd3]==4 && !r[0x1f19] && !MmxWeaponsMenuVisible(r) && !MmxCoopGetState().menu_owner) {
+  unsigned vs_phase=MmxVsGetState().phase;
+  if(r[0xd3]==4 && !r[0x1f19] && !MmxWeaponsMenuVisible(r) && !MmxCoopGetState().menu_owner &&
+      (!s.versus || (vs_phase>=MMX_VS_LOADING && vs_phase<=MMX_VS_FIGHT))) {
     for(unsigned i=0;i<2;++i) {
       s=MmxBossRushGetState();MmxBossRushBoss *b=&s.bosses[i];
       if(b->phase==MMX_RUSH_DYING) {
+        if(s.versus)continue;
         if(++b->ticks>=48) {
           for(unsigned d=0xe68;d<0x1d08;) {
             if(d==0x1228) {d=0x1428;continue;}
@@ -550,7 +569,7 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
         unsigned object=0;
         for(unsigned d=0xe68;d<0x1228;d+=64) if(!r[d]) {object=d;break;}
         if(!object) continue;
-        int id=MmxBossRushNextBoss();if(id<0) continue;
+        int id=s.versus?MmxVsGetState().fighters[i].boss:MmxBossRushNextBoss();if(id<0) continue;
         if(!MmxBossRushAssign(i,(unsigned)id,(uint16_t)object)) continue;
         s=MmxBossRushGetState();
         for(unsigned n=0;n<sizeof(globals)/sizeof(*globals);++n)
@@ -559,6 +578,7 @@ void MmxBossRushFrame(uint8_t *r,uint16_t input) {
         memset(r+object,0,64);r[object]=0x81;r[object+10]=kMmxBossRushBosses[id].kind;
         unsigned x=entry_x(r,i),y=s.camera_y+(id==4?43:96);
         put(r+object+5,x);put(r+object+8,y);put(r+object+0x22,x);put(r+object+0x24,y);
+        if(s.versus)MmxVsSpawned(r,i);
       }
     }
   }
@@ -615,6 +635,6 @@ void MmxBossRushAfterFrame(uint8_t *r) {
       death_complete&=p->status!=MMX_COOP_ALIVE || (p->body[2]==12 && p->body[3]>=6);
     }
   }
-  if(!alive && death_complete) MmxBossRushFinish();
+  if(!s.versus && !alive && death_complete) MmxBossRushFinish();
   camera(r);put(r+0x1f0e,0);
 }

@@ -27,6 +27,7 @@
 #include "mmx_replay.h"
 #include "desktop/sdl_compat.h"
 #include "mmx_boss_rush.h"
+#include "mmx_vs.h"
 #include "mmx_boss_rush_audio.h"
 #include "netplay/snes_netplay.h"
 #include "host_paths.h"
@@ -79,7 +80,7 @@ int MmxDisplay_GetCurrentFrameWidth(void) { return snesrecomp_desktop_frame_widt
 static void MmxBeforeFrame(void) {
   if(!MmxReplayPlaying()) {
 #if SNESRECOMP_NET
-  MmxCoopViewsSetOnline(snes_netplay_active() && MmxCoopEnabled() && MmxCoopViewsIndependent());
+  MmxCoopViewsSetOnline(snes_netplay_active() && (MmxVsActive() || (MmxCoopEnabled() && MmxCoopViewsIndependent())));
   MmxRendererSetPeerView(MmxCoopViewsOnline()?snes_netplay_local_slot():-1);
 #else
   MmxCoopViewsSetOnline(false);MmxRendererSetPeerView(-1);
@@ -92,6 +93,7 @@ static void MmxBeforeFrame(void) {
     MmxWeaponsCollisionRom(g_snes->cart->rom, g_snes->cart->romSize);
     MmxCoopHostFrame();
     MmxBossRushHostFrame();
+    MmxVsHostFrame();
   }
   MmxRendererHoldFrame(MmxCoopTransitionActive());
   if (g_mmx_custom_renderer) MmxRendererLatchSprites();
