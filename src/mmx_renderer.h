@@ -8,6 +8,15 @@ int MmxRendererGetPeerView(void);
 #include "mmx_display.h"
 #include "mmx_coop.h"
 
+#ifndef MMX_NATIVE_RASTER
+#define MMX_NATIVE_RASTER 0
+#endif
+
+/* A native producer claims only fully captured lines it can compose itself.
+ * Required PPU state/status work and unsupported output stay load-bearing. */
+bool MmxRendererClaimNativeLine(const Ppu *ppu, unsigned line);
+unsigned MmxRendererNativeLines(void);
+
 enum { MMX_RENDER_HEIGHT = 224, MMX_RENDER_MAX_WIDTH = 1024 };
 typedef enum MmxRenderAspect {
   MMX_ASPECT_ADAPTIVE, MMX_ASPECT_16_9, MMX_ASPECT_21_9, MMX_ASPECT_32_9

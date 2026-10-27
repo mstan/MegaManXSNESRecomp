@@ -901,7 +901,12 @@ void MmxDrawPpuFrame(void) {
   if (g_mmx_custom_renderer) MmxRendererBeginHardwareRaster(g_ppu);
   for (int i = 0; i <= 224; i++) {
     if (g_mmx_custom_renderer) MmxRendererCaptureLine(g_ppu, i);
-    ppu_runLine(g_ppu, i);
+#if MMX_NATIVE_RASTER
+    if (g_mmx_custom_renderer && MmxRendererClaimNativeLine(g_ppu, (unsigned)i))
+      ppu_runLineState(g_ppu, i);
+    else
+#endif
+      ppu_runLine(g_ppu, i);
     SimpleHdma_DoLine(&hdma_chans[0]);
     SimpleHdma_DoLine(&hdma_chans[1]);
     SimpleHdma_DoLine(&hdma_chans[2]);

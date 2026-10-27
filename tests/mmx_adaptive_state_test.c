@@ -1875,6 +1875,9 @@ int main(int argc, char **argv) {
     .native_widescreen = 0, .state_menu_hotkeys = 1,
     .prepare_frame = MmxPrepareFrame, .begin_sim_frame = MmxBeginFrame,
     .end_sim_frame = MmxEndFrame, .draw_frame = MmxDrawFrame,
+#if MMX_NATIVE_RASTER
+    .publish_native_field = MmxPublishNativeField,
+#endif
   };
   g_game = &game;
   ConfigUseStateMenuDefaults();

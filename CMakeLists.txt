@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
 project(MegaManXSNESRecomp VERSION 2.3.3 LANGUAGES C CXX)
+set(MMX_RASTER_IMPL "LLE" CACHE STRING "Raster production (LLE or NATIVE)")
+set_property(CACHE MMX_RASTER_IMPL PROPERTY STRINGS LLE NATIVE)
+if(NOT MMX_RASTER_IMPL MATCHES "^(LLE|NATIVE)$")
+    message(FATAL_ERROR "MMX_RASTER_IMPL must be LLE or NATIVE")
+endif()
+message(STATUS "MMX raster production: ${MMX_RASTER_IMPL}")
+set(MMX_RENDERER_SOURCE src/mmx_renderer.c)
+if(MMX_RASTER_IMPL STREQUAL "NATIVE")
+    set(MMX_RENDERER_SOURCE src/mmx_renderer_native.c)
+endif()
+set_property(SOURCE src/main.c src/mmx_rtl.c tests/mmx_adaptive_state_test.c
+    APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_NATIVE_RASTER=$<STREQUAL:${MMX_RASTER_IMPL},NATIVE>)
 set(CMAKE_C_STANDARD 11)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_package(Git QUIET)
@@ -58,7 +71,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         endif()
     endif()
     add_executable(${TARGET} ${SNESRECOMP_RUNNER_SOURCES}
-        src/main.c src/mmx_startup.c src/mmx_netplay.c src/mmx_display.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_wide_policy.c
+        src/main.c src/mmx_startup.c src/mmx_netplay.c src/mmx_display.c ${MMX_RENDERER_SOURCE} src/mmx_render_assets.c src/mmx_wide_policy.c
         src/mmx_00.c src/gen_stubs.c src/mmx_cpu_infra.c src/mmx_rtl.c
         src/mmx_spc_player.c src/mmx_replay.c src/mods/mmx_diagnostics_plugin.c
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
@@ -191,6 +204,24 @@ if(BUILD_TESTING)
     add_test(NAME mmx_custom_renderer COMMAND mmx_renderer_test)
     get_target_property(mmx_renderer_reference_sources mmx_renderer_test SOURCES)
     list(REMOVE_ITEM mmx_renderer_reference_sources src/mmx_renderer.c)
+    set(mmx_renderer_native_test_sources ${mmx_renderer_reference_sources})
+    list(REMOVE_ITEM mmx_renderer_native_test_sources tests/mmx_renderer_test.c)
+    add_executable(mmx_renderer_native_test ${mmx_renderer_native_test_sources}
+        tests/mmx_native_renderer_test.c src/mmx_boss_rush_score.cpp)
+    target_include_directories(mmx_renderer_native_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    target_compile_features(mmx_renderer_native_test PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(mmx_renderer_native_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_renderer_native_test PRIVATE -UNDEBUG)
+    endif()
+    if(NOT WIN32)
+        target_link_libraries(mmx_renderer_native_test PRIVATE m)
+    endif()
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-native")
+    add_test(NAME mmx_custom_renderer_native COMMAND mmx_renderer_native_test)
+    set_tests_properties(mmx_custom_renderer_native PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-native")
     foreach(reference FULLCOPY TRACE)
         string(TOLOWER "${reference}" reference_name)
         add_executable(mmx_renderer_${reference_name}_test

@@ -94,7 +94,12 @@ static void saber_perf_checks(const char *scene,uint8_t *start,uint8_t *expected
       uint64_t begin=SDL_GetPerformanceCounter();
       frame(keys);
       uint64_t middle=SDL_GetPerformanceCounter();
-      rendered&=MmxRendererDraw(pixels,g_mmx_custom_view,true);
+      /* Exercise the product's presenter. Native frame producers may have
+       * already composed the captured image; drawing it again here would
+       * charge a second composition that ordinary play does not perform. */
+      rendered &= s_render_valid && MmxDrawFrame((uint8_t *)pixels,
+          (size_t)g_mmx_custom_view.width * 4, g_my_pixels,
+          g_mmx_custom_view.width, 224, 0) != 0;
       uint64_t end=SDL_GetPerformanceCounter();
       double scale=1000.0/(double)SDL_GetPerformanceFrequency();
       times[i]=(end-begin)*scale;total+=times[i];sim+=(middle-begin)*scale;draw+=(end-middle)*scale;
