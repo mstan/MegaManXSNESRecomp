@@ -21,6 +21,7 @@ static void native_special_art_checks(const char *fixture) {
       check(MmxRendererDraw(control,(MmxRenderView){256,0,4.0/3.0},false),"original native arrangement renders");
       unsigned tick_changes=0;
       MmxCoopState c={0};c.initialized=1;c.players[0].status=MMX_COOP_ALIVE;
+      memcpy(c.players[0].energy,prior+0x1f87,sizeof(c.players[0].energy));
       memcpy(c.players[0].body,prior+0xba8,sizeof(c.players[0].body));
       memcpy(c.players[0].auxiliaries,prior+0xc38,sizeof(c.players[0].auxiliaries));
       memcpy(c.players[0].shots,prior+0x1228,sizeof(c.players[0].shots));
