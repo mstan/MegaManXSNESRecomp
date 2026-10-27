@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(MegaManXSNESRecomp VERSION 2.3.3 LANGUAGES C CXX)
-set(MMX_RASTER_IMPL "LLE" CACHE STRING "Raster production (LLE or NATIVE)")
+# Qualified Windows x64 default; retain explicit selections and other-target floors.
+set(_MMX_RASTER_IMPL_DEFAULT "LLE")
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _MMX_RASTER_IMPL_PROCESSOR)
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND
+   _MMX_RASTER_IMPL_PROCESSOR MATCHES "^(amd64|x86_64|x64)$")
+    set(_MMX_RASTER_IMPL_DEFAULT "NATIVE")
+endif()
+set(MMX_RASTER_IMPL "${_MMX_RASTER_IMPL_DEFAULT}" CACHE STRING "Raster production (LLE or NATIVE)")
 set_property(CACHE MMX_RASTER_IMPL PROPERTY STRINGS LLE NATIVE)
 if(NOT MMX_RASTER_IMPL MATCHES "^(LLE|NATIVE)$")
     message(FATAL_ERROR "MMX_RASTER_IMPL must be LLE or NATIVE")
