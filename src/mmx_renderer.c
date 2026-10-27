@@ -80,7 +80,7 @@ static bool raster_scene_owned(void);
  * them. This operates on immutable copies, never the live PPU or guest. */
 static bool read_stock_line(const void *context, unsigned y, SnesRasterImageLine *out) {
   (void)context;
-  if (!frame.valid || y >= frame.captured) return false;
+  if (y >= frame.captured) return false;
   const Raster *r = &frame.lines[y];
   *out = (SnesRasterImageLine){r->registers, r->high_oam, r->palette, r->oam, r->vram};
   return true;
@@ -882,7 +882,13 @@ void MmxRendererCaptureLine(const Ppu *p, unsigned line) {
     r->vram = SnesRasterSnapshotCapture(&vram_snapshots, p->vram, !MMX_RASTER_FULL_COPY);
   hardware_vram_writes = p->vramWriteCount;
   hardware_vram_uncertain = false;
-  if (!r->vram) { capture_failed = true; return; }
+  if (!r->vram) {
+#if MMX_NATIVE_RASTER
+    if (stock_image.count && !SnesRasterImageRecoverPrefix(&stock_image,
+        frame.stock, p, read_stock_line, NULL, frame.captured)) abort();
+#endif
+    capture_failed = true; return;
+  }
   ++frame.captured;
 }
 bool MmxRendererEndFrame(const uint32_t stock[256 * 224]) {
