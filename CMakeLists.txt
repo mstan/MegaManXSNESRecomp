@@ -14,6 +14,7 @@ set_property(SOURCE src/main.c src/mmx_rtl.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
     MMX_NATIVE_RASTER=$<STREQUAL:${MMX_RASTER_IMPL},NATIVE>)
 set(CMAKE_C_STANDARD 11)
+set(SNESRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp" CACHE PATH "snesrecomp checkout")
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_package(Git QUIET)
 execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -25,10 +26,8 @@ execute_process(COMMAND "${GIT_EXECUTABLE}" describe --always --dirty --abbrev=1
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     OUTPUT_VARIABLE MMX_REPLAY_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 execute_process(COMMAND "${GIT_EXECUTABLE}" describe --always --dirty --abbrev=12
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp"
+    WORKING_DIRECTORY "${SNESRECOMP_ROOT}"
     OUTPUT_VARIABLE MMX_REPLAY_ENGINE OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-set_property(SOURCE src/mmx_replay.c APPEND PROPERTY COMPILE_DEFINITIONS
-    MMX_REPLAY_REVISION="${MMX_REPLAY_REVISION}" MMX_REPLAY_ENGINE="${MMX_REPLAY_ENGINE}")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h"
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_x_weapon_tables.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/data/x_weapon_assets.json"
@@ -36,7 +35,6 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h"
     DEPENDS tools/generate_x_weapon_tables.py tools/data/x_weapon_assets.json VERBATIM)
 
 set(SNESRECOMP_BUILD_VERSION "${PROJECT_VERSION}" CACHE STRING "Release stamp for crash reports")
-set(SNESRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp" CACHE PATH "snesrecomp checkout")
 set(RECOMP_UI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui" CACHE PATH "recomp-ui checkout")
 option(MMX_RASTER_FULL_COPY "Use full-copy raster storage as the correctness/performance reference" OFF)
 option(MMX_STAGE_TILE_REUSE "Reuse exact stage-map lookups within one captured draw" ON)
@@ -48,6 +46,9 @@ set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL "Shared mod package runtime" FORCE)
 # keeps the unmodified Japanese edition and small unit tests independent.
 set(SNESRECOMP_NET_ICE ON CACHE BOOL "Internet netplay transport" FORCE)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
+string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}")
+set_property(SOURCE src/mmx_replay.c APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_REPLAY_REVISION="${MMX_REPLAY_REVISION}" MMX_REPLAY_ENGINE="${MMX_REPLAY_ENGINE}")
 include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
 
 # Embed the same defaults that are staged beside the executable. Never rewrite

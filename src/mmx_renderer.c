@@ -2,6 +2,7 @@
 #include "raster_snapshot.h"
 #include "mmx_display.h"
 #include "snes/raster_jobs.h"
+#include "snes/raster_image.h"
 #include "mmx_wide_policy.h"
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
@@ -70,43 +71,29 @@ typedef struct Frame {
 } Frame;
 static Frame frame;
 #if MMX_NATIVE_RASTER
-static Ppu stock_origin, stock_work;
-static bool stock_origin_valid, stock_missing[224], hardware_native_capture;
-static unsigned native_line_count;
+static SnesRasterImage stock_image;
+static bool hardware_native_capture;
 static bool raster_scene_owned(void);
 
 /* The ordinary stock-image API remains an independent reference. Produce
  * omitted colors only when a capture, test or diagnostic actually asks for
  * them. This operates on immutable copies, never the live PPU or guest. */
+static bool read_stock_line(const void *context, unsigned y, SnesRasterImageLine *out) {
+  (void)context;
+  if (!frame.valid || y >= frame.captured) return false;
+  const Raster *r = &frame.lines[y];
+  *out = (SnesRasterImageLine){r->registers, r->high_oam, r->palette, r->oam, r->vram};
+  return true;
+}
 static void materialize_stock(void) {
-  if (!frame.valid || !stock_origin_valid) return;
-  bool missing = false;
-  for (unsigned y=0; y<224; ++y) missing |= stock_missing[y];
-  if (!missing) return;
-  stock_work = stock_origin;
-  stock_work.renderBuffer = (uint8_t *)frame.stock;
-  stock_work.renderPitch = 256 * 4;
-  stock_work.mode7Hd.pixels = NULL;
-  stock_work.widescreenLineEnhancer = NULL;
-  stock_work.widescreenLineEnhancerContext = NULL;
-  memset(stock_work.overlayRenderBuffer, 0, sizeof(stock_work.overlayRenderBuffer));
-  ppu_drawCapturedLine(&stock_work, 0, false);
-  for (unsigned y=0; y<224; ++y) {
-    const Raster *r=&frame.lines[y];
-    memcpy(&stock_work, r->registers, sizeof(r->registers));
-    memcpy(stock_work.cgram, r->palette, sizeof(r->palette));
-    memcpy(stock_work.oam, r->oam, sizeof(r->oam));
-    memcpy(stock_work.highOam, r->high_oam, sizeof(r->high_oam));
-    memcpy(stock_work.vram, r->vram, 0x10000);
-    ppu_drawCapturedLine(&stock_work, (int)y+1, stock_missing[y]);
-    stock_missing[y]=false;
-  }
+  if (frame.valid && !SnesRasterImageMaterialize(&stock_image, frame.stock, read_stock_line, NULL))
+    abort();
 }
 #endif
 
 unsigned MmxRendererNativeLines(void) {
 #if MMX_NATIVE_RASTER
-  return native_line_count;
+  return stock_image.count;
 #else
   return 0;
 #endif
@@ -280,9 +267,8 @@ unsigned MmxRendererDebugRectSnapshot(MmxRenderDebugRect *out,
 }
 void MmxRendererReset(void) {
 #if MMX_NATIVE_RASTER
-  stock_origin_valid=false; native_line_count=0;
+  SnesRasterImageReset(&stock_image);
   hardware_native_capture=false;
-  memset(stock_missing,0,sizeof(stock_missing));
 #endif
   memset(&frame_zero, 0, sizeof(frame_zero));
   memset(&frame_player_overlay, 0, sizeof(frame_player_overlay));
@@ -844,9 +830,7 @@ void MmxRendererBeginHardwareRaster(const Ppu *p) {
    * picture. Only a fresh BeginFrame owns a new native image/capture. */
   hardware_native_capture=p && !frame.valid && !frame.captured;
   if (hardware_native_capture) {
-    stock_origin_valid=true; native_line_count=0;
-    memset(stock_missing,0,sizeof(stock_missing));
-    stock_origin=*p;
+    SnesRasterImageBegin(&stock_image,p);
   }
 #endif
   hardware_raster_ppu = p;
@@ -869,14 +853,10 @@ void MmxRendererEndHardwareRaster(void) {
 void MmxRendererHardwareVramChanged(void) { hardware_vram_uncertain = true; }
 bool MmxRendererClaimNativeLine(const Ppu *p, unsigned line) {
 #if MMX_NATIVE_RASTER
-  if (!p || !hardware_native_capture || !stock_origin_valid || capture_failed || line<1 || line>224 ||
+  if (!p || !hardware_native_capture || !stock_image.valid || capture_failed || line<1 || line>224 ||
       frame.captured!=line || !raster_scene_owned() || (p->bgmode&7)!=1 ||
-      (p->mosaic>>4) || (p->setini&3) || p->renderVram ||
-      p->mode7Hd.pixels || p->widescreenLineEnhancer) return false;
-  for (unsigned i=0;i<kPpuOverlaySource_Count;++i)
-    if (p->overlayRenderBuffer[i]) return false;
-  stock_missing[line-1]=true; ++native_line_count;
-  return true;
+      (p->mosaic>>4) || !SnesRasterImageCanDefer(p)) return false;
+  return SnesRasterImageClaim(&stock_image,line);
 #else
   (void)p; (void)line; return false;
 #endif
@@ -998,8 +978,7 @@ bool MmxRendererSaveCapture(const char *path) {
 }
 bool MmxRendererLoadCapture(const char *path) {
 #if MMX_NATIVE_RASTER
-  stock_origin_valid=false; native_line_count=0;
-  memset(stock_missing,0,sizeof(stock_missing));
+  SnesRasterImageReset(&stock_image);
 #endif
   if (!path) return false;
   FILE *f = fopen(path, "rb");
