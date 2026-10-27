@@ -153,8 +153,10 @@ const MmxSpriteAsset *MmxRenderAssetsNativeShot(const uint8_t ram[0x20000],
   const MmxSpriteAsset *base=MmxRenderAssetsWeaponX(weapon,false);
   if(!base) return NULL;
   unsigned table=ram_word(ram,object+0x31);
-  uint64_t key=((uint64_t)kind<<48)|((uint64_t)group<<40)|((uint64_t)table<<24)|
-      (pose<<8)|1;
+  unsigned base_tile=ram[object+24];
+  unsigned source_offset=ram_word(ram,0x18000+ram[object+16]*2);
+  uint64_t key=((uint64_t)source_offset<<48)|((uint64_t)base_tile<<40)|
+      ((uint64_t)kind<<32)|((uint64_t)table<<16)|((uint64_t)group<<8)|(pose<<1)|1;
   unsigned slot=(object-0x1228)/64;
   MmxSpriteAsset *art=&native_shots[seat][slot];
   if(native_shot_keys[seat][slot]==key) return art;
@@ -172,8 +174,11 @@ const MmxSpriteAsset *MmxRenderAssetsNativeShot(const uint8_t ram[0x20000],
         if(!range(list,5)) return NULL;
         unsigned count=rom[list]*16;
         if(!count) {complete=true;break;}
-        int dest=(rom[list+4]&127)*512-0xc000;
-        size_t source=lorom(word(list+1)|(rom[list+3]<<16));
+        /* $84:8FCA relocates both the resource source and the object's
+         * destination tile base. Tornado keeps its two muzzle tiles while
+         * streaming the traveling body at base $02. */
+        int dest=(rom[list+4]&127)*512+base_tile*32-0xc000;
+        size_t source=lorom(((word(list+1)+source_offset)&0xffff)|(rom[list+3]<<16));
         if(dest<0 || dest+(int)count>sizeof(art->tiles) || !range(source,count) || rom[list+3]==0x7f)
           return NULL;
         memcpy(art->tiles+dest,rom+source,count);

@@ -50,12 +50,10 @@ static MmxBossRushState frame_rush;
 static MmxBossRushVisualState frame_rush_visual;
 typedef struct Piece {
   int16_t x, y; uint16_t attr; uint8_t size, animation;
-  /* Palette occupies bits 1..3; the five spare bits retain native-shot
-   * pose 0..31 at submission, without changing the capture record size. */
-  uint8_t tile, palette_pose; uint16_t object;
+  uint8_t tile, palette_pose, pose; uint16_t object;
 } Piece;
 static unsigned piece_pose(const Piece *p) {
-  return (p->palette_pose&1)|((p->palette_pose>>3)&30);
+  return p->pose;
 }
 enum { MAX_PIECES = 2048 };
 typedef struct Frame {
@@ -291,9 +289,8 @@ static Piece make_piece(const uint8_t *p, int x, int y, unsigned flip,
   y += flip & 0x80 ? -(int8_t)p[2] - size : (int8_t)p[2];
   unsigned attr = (((p[4] & 0xce) | attributes) ^ flip) << 8;
   attr |= (p[3] + base) & 255;
-  unsigned retained_pose=object>=0x1228 && object<0x1428 ? pose&31 : 0;
   return (Piece){(int16_t)x, (int16_t)y, (uint16_t)attr, (uint8_t)size,
-      (uint8_t)animation, p[3], (uint8_t)((p[4]&14)|(retained_pose&1)|((retained_pose&30)<<3)), (uint16_t)object};
+      (uint8_t)animation, p[3], (uint8_t)(p[4]&14), (uint8_t)(pose&127), (uint16_t)object};
 }
 static const uint8_t *sprite_arrangement(unsigned animation, unsigned f) {
   const uint8_t *pointer = rom_at(0x8d8000 + animation * 3, 3);
@@ -908,6 +905,29 @@ const uint32_t *MmxRendererStockFrame(void) {
 #endif
   return frame.valid ? frame.stock : NULL;
 }
+static void capture_primary_weapon_pieces(Piece *pieces,unsigned *count) {
+  /* Visible native shots may be missing from the captured piece lists.
+   * Their slots still own authored arrangements. Keep those pieces
+   * available to private CHR replacement and the expanded renderer alike. */
+  for(unsigned d=0x1228;d<0x1428;d+=64) {
+    const uint8_t *r=frame.ram;unsigned kind=r[d+10];
+    if(!r[d] || !(r[d+14]&128) || !((kind>=1 && kind<=3) ||
+        (kind>=7 && kind<=14) || (kind>=16 && kind<=23)))continue;
+    bool found=false;for(unsigned i=0;i<*count;++i)found|=pieces[i].object==d;
+    if(found)continue;
+    unsigned group=r[d+22],pose=r[d+23]&127;
+    const uint8_t *layout=sprite_arrangement(group,pose);if(!layout)continue;
+    int x=(int16_t)(word(r,d+5)-word(r,0x1e4d));
+    int y=(int16_t)(word(r,d+8)+(int8_t)r[d+25]-word(r,0x1e50));
+    unsigned add=layout[0];if(add>MAX_PIECES-*count)continue;
+    unsigned at=0;while(at<*count && pieces[at].object!=0xba8 &&
+        !(pieces[at].object>=0xc38 && pieces[at].object<=0xc78))++at;
+    memmove(pieces+at+add,pieces+at,(*count-at)*sizeof(*pieces));
+    for(unsigned i=0;i<add;++i)pieces[at+i]=make_piece(layout+i*4,x,y,
+        r[d+17]&64,r[d+17]&63,r[d+24],group,d,pose);
+    *count+=add;
+  }
+}
 void MmxRendererCoopFrame(const MmxCoopState *s) {
   if (!s || !s->initialized) { memset(&frame_coop,0,sizeof(frame_coop)); return; }
   frame_coop = *s;
@@ -925,6 +945,10 @@ void MmxRendererCoopFrame(const MmxCoopState *s) {
       frame_player_overlay=overlay;
     else memset(&frame_player_overlay,0,sizeof(frame_player_overlay));
   }
+  if(!menu && MmxWidePolicy_IsStageScene(frame.ram)) {
+    capture_primary_weapon_pieces(frame.pieces,&frame.piece_count);
+    capture_primary_weapon_pieces(frame.expanded,&frame.expanded_count);
+  }
   memcpy(partner_ram,frame.ram,sizeof(partner_ram));
   memcpy(partner_ram+0xba8,s->players[s->current^1].body,sizeof(s->players[s->current^1].body));
   memcpy(partner_ram+0xc38,s->players[s->current^1].auxiliaries,sizeof(s->players[s->current^1].auxiliaries));
@@ -938,7 +962,7 @@ void MmxRendererCoopFrame(const MmxCoopState *s) {
       frame_partner_overlay=overlay;
   }
 }
-/* Capture files are build-specific. Version 24/25 records pointer-free frame
+/* Build-specific version 26/27 retains full native poses, pointer-free frame
  * metadata, image indices and only the distinct immutable VRAM images. */
 bool MmxRendererSaveCapture(const char *path) {
   if (!frame.valid || !path || !vram_snapshots.count ||
@@ -961,7 +985,7 @@ bool MmxRendererSaveCapture(const char *path) {
   FILE *f = fopen(path, "wb");
   if (!f) { free(saved); return false; }
   uint32_t count = vram_snapshots.count;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 25 : 24,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 27 : 26,
       (uint32_t)(sizeof(frame) + sizeof(count) + sizeof(indices) + count * 0x10000u +
       sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
       (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
@@ -1001,7 +1025,7 @@ bool MmxRendererLoadCapture(const char *path) {
   memset(&frame_rush, 0, sizeof(frame_rush));
   memset(&frame_rush_visual, 0, sizeof(frame_rush_visual));
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
-      (h[1] == 24 || h[1] == 25) && fread(&frame, sizeof(frame), 1, f) == 1;
+      (h[1] == 26 || h[1] == 27) && fread(&frame, sizeof(frame), 1, f) == 1;
   const bool valid = true;
   ok = ok && !memcmp(&frame.valid, &valid, sizeof(valid)) &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES;
@@ -1011,7 +1035,7 @@ bool MmxRendererLoadCapture(const char *path) {
   ok = ok && fread(&count, sizeof(count), 1, f) == 1 && count && count <= 224 &&
       h[2] == sizeof(frame) + sizeof(count) + sizeof(indices) + count * 0x10000u +
       sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
-      (h[1] == 25 ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
+      (h[1] == 27 ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
       sizeof(frame_rush_visual) + sizeof(frame_bounds) &&
       fread(indices, sizeof(indices), 1, f) == 1;
   for (unsigned line = 0; ok && line < 224; ++line) ok = indices[line] < count;
@@ -1025,7 +1049,7 @@ bool MmxRendererLoadCapture(const char *path) {
       fread(&frame_weapons, sizeof(frame_weapons), 1, f) == 1 && MmxWeaponsValidState(&frame_weapons) &&
       fread(&frame_weapon_combat, sizeof(frame_weapon_combat), 1, f) == 1 &&
       MmxWeaponsValidCombatState(&frame_weapon_combat);
-  if (ok && h[1] == 25) {
+  if (ok && h[1] == 27) {
     ok = fread(&frame_coop, sizeof(frame_coop), 1, f) == 1 &&
         frame_coop.initialized == 1 && frame_coop.current < 2;
     for (unsigned i = 0; ok && i < 2; ++i) ok =
@@ -2336,6 +2360,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
 #else
     bool replaced[128] = {false};
 #endif
+    const MmxSpriteAsset *slot_weapons[128] = {0};
     bool zero_drawn[2] = {false,false};
     for (int i = (int)piece_count - 1; i >= 0; --i) {
       Piece s = pieces[i]; const MmxSpriteAsset *asset = piece_assets[i];
@@ -2382,6 +2407,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           oam_match = true; center = true;
           native_replaced[0] |= binding->slots[0];
           native_replaced[1] |= binding->slots[1];
+          if(coop_special) for(unsigned slot=16;slot<128;++slot)
+            if(binding->slots[slot/64] & (UINT64_C(1)<<(slot%64))) slot_weapons[slot]=coop_special;
         }
 #else
         for (int slot = 16; slot < 128; ++slot) {
@@ -2390,10 +2417,14 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           if (ox == s.x && (pos >> 8) == ((unsigned)s.y & 255) && r->oam[slot * 2 + 1] == s.attr) {
             oam_match = true;
             replaced[slot] = true; center = true;
+            if(coop_special) slot_weapons[slot]=coop_special;
           }
         }
 #endif
       }
+      /* Substitute visible shots at their original OAM position. Drawing
+       * them ahead of the native pass changes overlap at the muzzle. */
+      if(coop_special && oam_match) continue;
       if(frame_rush.mode==MMX_RUSH_PLAYING && !frame.expand && s.object>=0xe68 && s.object<0x1d08 &&
           frame_rush.owner[(s.object-0xe68)/32] && !oam_match) continue;
       /* Match original OAM before reprojection. HUD and native script panels
@@ -2514,10 +2545,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
        * the boots. */
       if ((frame_zero.active_x || knc_bugfix) && weapon_colors && zero_actor(s.object, s.animation) &&
           (menu || ((attr & 0x0e00) == 0x0200 && (!x_charging(frame.ram) || knc_bugfix)))) asset = &x_weapon_palette;
-      if(coop_special) asset=coop_special;
+      if(coop_special) {asset=coop_special;attr=s.attr;}
       if(coop_buster) {
         const MmxSpriteAsset *beam=MmxRenderAssetsChargedBuster(s.animation,piece_pose(&s));
-        if(beam) asset=beam;
+        if(beam) {asset=beam;attr=s.attr;}
       }
       sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset,
           coop_special?s.attr&255:s.tile, object_colors, true, false, red_ready || red_death);
@@ -2537,9 +2568,9 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     for (int slot = 127; slot >= 0; --slot) {
       if(coop_hud && slot<16) continue;
 #if MMX_NATIVE_RASTER
-      if (native_replaced[slot / 64] & (UINT64_C(1) << (slot % 64))) continue;
+      if (!slot_weapons[slot] && (native_replaced[slot / 64] & (UINT64_C(1) << (slot % 64)))) continue;
 #else
-      if (replaced[slot]) continue;
+      if (replaced[slot] && !slot_weapons[slot]) continue;
 #endif
       unsigned pos = r->oam[slot * 2], attr = r->oam[slot * 2 + 1];
       unsigned hi = r->high_oam[slot / 4] >> (slot % 4 * 2);
@@ -2578,7 +2609,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         }
         continue;
       }
-      sprite(&p, r, x, sy, attr, size, y, view, objects, false, NULL, 0, object_colors, reprojected, zero_icon, false);
+      sprite(&p, r, x, sy, attr, size, y, view, objects, false, slot_weapons[slot], attr&255,
+          object_colors, reprojected, zero_icon, false);
     }
     if (charge && zero_drawn[0] && !swapping) {
       int zx=(int16_t)(word(frame.ram,0xbad)-view_camera(frame.ram,0x1e4d));

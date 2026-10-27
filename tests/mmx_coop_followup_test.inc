@@ -1,5 +1,71 @@
 /* Focused ROM regressions for the owner's October 3 playtest. */
 #include "mmx_render_assets.h"
+/* MMX_COOP_TEST=1 MMX_NATIVE_SPECIAL_ART_TEST=1, with the normal ground fixture:
+ * compare both facing directions against independent PPU output over startup
+ * and traveling phases, including native object overlap at the muzzle. */
+static void native_special_art_checks(const char *fixture) {
+  static uint8_t prior[0x20000];static uint32_t native[256*224],control[256*224],private_image[256*224];
+  for(unsigned facing=0;facing<2;++facing)for(unsigned weapon=2;weapon<=5;weapon+=3) {
+    check(RtlLoadSnapshot(fixture),"native special reference fixture loads");
+    MmxCoopDisable();MmxZeroDisable();MmxWeaponsDisable();
+    g_mmx_custom_renderer=true;g_mmx_expanded_sprites=false;g_mmx_render_asset_repairs=false;
+    for(unsigned w=1;w<=8;++w)g_ram[0x1f86+w*2]=0xc0|28;
+    for(unsigned w=0;w<weapon;++w) {frame(SNES_PAD_R);zero_replay(3);}
+    check(g_ram[0xbdb]==weapon*2,"native reference selects requested X1 special");
+    frame(facing?SNES_PAD_LEFT:SNES_PAD_RIGHT);
+    unsigned samples=0,differences=0,matched_pieces=0,presentation_changes=0,reference_differences=0;
+    for(unsigned tick=0;tick<32;++tick) {
+      memcpy(prior,g_ram,sizeof(prior));frame(tick?0:SNES_PAD_Y);
+      const uint32_t *stock=MmxRendererStockFrame();check(stock!=NULL,"native special PPU reference materializes");
+      memcpy(native,stock,sizeof(native));
+      check(MmxRendererDraw(control,(MmxRenderView){256,0,4.0/3.0},false),"original native arrangement renders");
+      unsigned tick_changes=0;
+      MmxCoopState c={0};c.initialized=1;c.players[0].status=MMX_COOP_ALIVE;
+      memcpy(c.players[0].body,prior+0xba8,sizeof(c.players[0].body));
+      memcpy(c.players[0].auxiliaries,prior+0xc38,sizeof(c.players[0].auxiliaries));
+      memcpy(c.players[0].shots,prior+0x1228,sizeof(c.players[0].shots));
+      MmxRendererCoopFrame(&c);
+      check(MmxRendererDraw(private_image,(MmxRenderView){256,0,4.0/3.0},false),"private special reference renders");
+      const uint8_t *rom=g_snes->cart->rom;
+      for(unsigned d=0x1228;d<0x1428;d+=64) {
+        const uint8_t *q=prior+d;if(!q[0] || !(q[14]&128))continue;
+        unsigned address=rom[0x68000+q[22]*3]|rom[0x68001+q[22]*3]<<8|rom[0x68002+q[22]*3]<<16;
+        unsigned offset=((address>>16)&127)*0x8000+(address&0x7fff)+(q[23]&127)*3;
+        address=rom[offset]|rom[offset+1]<<8|rom[offset+2]<<16;
+        const uint8_t *layout=rom+((address>>16)&127)*0x8000+(address&0x7fff);
+        int ox=(int16_t)(eagle_word(q+5)-eagle_word(prior+0x1e4d));
+        int oy=(int16_t)(eagle_word(q+8)+(int8_t)q[25]-eagle_word(prior+0x1e50));
+        for(unsigned i=0;i<layout[0];++i) {
+          const uint8_t *p=layout+1+i*4;unsigned size=p[3]&32?16:8;
+          int x=ox+((q[17]&64)?-(int8_t)p[0]-(int)size:(int8_t)p[0]);
+          int y=oy+(int8_t)p[1];
+          unsigned attr=((((p[3]&0xce)|(q[17]&63))^(q[17]&64))<<8)|((p[2]+q[24])&255);
+          bool found=false;
+          for(unsigned slot=16;slot<128;++slot) {
+            unsigned pos=g_ppu->oam[slot*2],high=g_ppu->highOam[slot/4]>>(slot%4*2);
+            int sx=(pos&255)|((high&1)<<8);if(sx>=256)sx-=512;
+            if(sx==x && (pos>>8)==((unsigned)y&255) && g_ppu->oam[slot*2+1]==attr)found=true;
+          }
+          if(!found)continue;++matched_pieces;
+          for(unsigned row=0;row<size;++row)for(unsigned col=0;col<size;++col) {
+            int px=x+(int)col,py=y+(int)row;if(px<0 || px>=256 || py<0 || py>=224)continue;
+            ++samples;differences+=native[py*256+px]!=private_image[py*256+px];
+            tick_changes+=control[py*256+px]!=private_image[py*256+px];
+            reference_differences+=control[py*256+px]!=native[py*256+px];
+          }
+        }
+      }
+      MmxRendererCoopFrame(NULL);
+      presentation_changes+=tick_changes;
+      if(tick_changes)fprintf(stderr,"SPECIAL_PHASE weapon=%u tick=%u changed=%u\n",weapon,tick,tick_changes);
+    }
+    fprintf(stderr,"NATIVE_SPECIAL facing=%u weapon=%u matched_pieces=%u samples=%u differences=%u control_differences=%u private_changes=%u\n",facing,weapon,matched_pieces,samples,differences,reference_differences,presentation_changes);
+    check(samples>128,"native weapon comparison covers submitted projectile pixels");
+    check(reference_differences==0,"native reference composition matches the PPU");
+    check(differences==0,"private Storm Tornado and Chameleon Sting match native pixels");
+  }
+  g_mmx_render_asset_repairs=true;puts("MMX NATIVE SPECIAL ART CHECKS COMPLETE");
+}
 static void modern_image(const char *suffix);
 static void coop_followup_fixture(const char *fixture);
 static void coop_dash_effect_checks(const char *fixture,uint8_t *start,uint8_t *expected,

@@ -1149,6 +1149,7 @@ static void coop_checks(const char *assets, const char *fixture,
   if(getenv("MMX_COOP_VIEWS_TEST")) {coop_view_checks(fixture,start,expected,actual,cap);return;}
   if(getenv("MMX_COOP_DASH_TEST")) {coop_dash_effect_checks(fixture,start,expected,actual,cap);return;}
   if(getenv("MMX_COOP_GRAPHICS_FOLLOWUP_TEST")) {coop_graphics_followup_checks(fixture);return;}
+  if(getenv("MMX_NATIVE_SPECIAL_ART_TEST")) {native_special_art_checks(fixture);return;}
   if(getenv("MMX_COOP_STORM_LANDING_TEST")) {coop_storm_landing_checks(fixture);return;}
   if(getenv("MMX_COOP_EAGLE_FIXTURES")) {coop_eagle_checks(getenv("MMX_COOP_EAGLE_FIXTURES"),start,expected,actual,cap);return;}
   if(getenv("MMX_COOP_X1_EFFECTS")) {coop_x1_effect_checks(fixture);return;}
