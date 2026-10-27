@@ -86,6 +86,9 @@ bool MmxDisplay_IsWidescreenActive(void) {
 int MmxDisplay_GetCurrentFrameWidth(void) { return snesrecomp_desktop_frame_width(); }
 
 static void MmxBeforeFrame(void) {
+#if SNESRECOMP_TRACE
+  MmxArmorDebugHostFrame();
+#endif
   if(!MmxReplayPlaying()) {
 #if SNESRECOMP_NET
   MmxCoopViewsSetOnline(snes_netplay_active() && MmxCoopEnabled() && MmxCoopViewsIndependent());
@@ -360,7 +363,18 @@ static const SnesRomRevision kMmxRomCatalog[] = {
 #undef MMX_X2_NOTE
 #undef MMX_X3_NOTE
 
+static void MmxConfigureLauncher(struct RecompLauncherCGameInfo *info) {
+  MmxArmorConfigureLauncher(info);
+  MmxNetplayConfigureLauncher(info);
+}
+static bool MmxArmorBusterSelected(void) {return !MmxWeaponsCombatActive();}
+static uint8_t *MmxArmorBody(uint8_t *ram) {
+  return MmxCoopEnabled()?MmxCoopCharacterBody(ram,MMX_COOP_X):MmxZeroActive()?NULL:ram+0xba8;
+}
 int MMX_DESKTOP_ENTRY(int argc, char **argv) {
+  MmxArmorSetBusterQuery(MmxArmorBusterSelected);
+  MmxArmorSetActorQuery(MmxCoopActorIsX);
+  MmxArmorSetBodyQuery(MmxArmorBody);
   MmxStartupLogging();
   for(int arg=1;arg+1<argc;++arg)
     if(!strcmp(argv[arg],"--config")) MmxReplaySetConfigPath(argv[arg+1]);
@@ -436,7 +450,7 @@ int MMX_DESKTOP_ENTRY(int argc, char **argv) {
     .window_base_width = MmxWindowWidth,
     .window_base_height = MmxDisplay_GetWindowBaseHeight,
     .after_config = MmxAfterConfig, .after_run_frame = MmxAfterFrame,
-    .configure_launcher = MmxNetplayConfigureLauncher,
+    .configure_launcher = MmxConfigureLauncher,
     .prepare_netplay = MmxNetplayPrepare,
     .netplay_ready = MmxNetplayReady,
     .on_shutdown = MmxShutdown,

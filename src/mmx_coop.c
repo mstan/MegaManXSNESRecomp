@@ -314,6 +314,12 @@ bool MmxCoopTransitionActive(void) {
 }
 
 bool MmxCoopEnabled(void) { return enabled; }
+uint8_t *MmxCoopCharacterBody(uint8_t *ram,unsigned character) {
+  if(!enabled || !state.initialized || !ram || character>MMX_COOP_ZERO)return NULL;
+  for(unsigned i=0;i<2;++i)if(state.players[i].character==character && state.players[i].status==MMX_COOP_ALIVE)
+    return i==state.current?ram+0xba8:state.players[i].body;
+  return NULL;
+}
 static void shot_ghost_reset(void);
 static void lift_reset(void);
 void MmxCoopReset(void) {
@@ -1794,6 +1800,11 @@ static uint8_t shot_ghost_lift[sizeof(lift)],shot_ghost_cart[sizeof(cart)];
 static uint8_t shot_ghost_ram[0x20000];
 static void shot_ghost_reset(void) { shot_ghost.pass=0; }
 static bool ghost_active(void) { return shot_ghost.pass==1; }
+bool MmxCoopActorIsX(void) {
+  if(!enabled || !state.initialized)return !MmxZeroActive();
+  unsigned seat=state.current^(ghost_active()?1:0);
+  return state.players[seat].character==MMX_COOP_X;
+}
 /* Shot replays keep position (with subpixels), velocity and the ground and
  * contact flags: a seat's shot pass also maintains that seat's own shot
  * count and firing state, which the other body must not inherit.
@@ -1820,7 +1831,7 @@ static bool shot_ghost_wanted(void) {
   if(!ghost_partner_ready()) return false;
   /* Native shots only: imported X2/X3 shots carry the port's +3E tag. */
   for(unsigned d=0x1228;d<0x1428;d+=64)
-    if(g_ram[d] && word(g_ram+d+0x3e)!=0x5758 && ghost_near(d,64)) return true;
+    if(g_ram[d] && word(g_ram+d+0x3e)!=0x5758 && word(g_ram+d+0x3e)!=0x414d && ghost_near(d,64)) return true;
   return false;
 }
 static bool lift_elevator(unsigned d);

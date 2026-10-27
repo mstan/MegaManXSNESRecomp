@@ -84,7 +84,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/mmx_spc_player.c src/mmx_replay.c src/mods/mmx_diagnostics_plugin.c
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
         src/mods/mmx_hadouken_plugin.c src/mods/mmx_password_plugin.c src/mods/mmx_boss_rush_plugin.c src/mmx_password_save.cpp
-        src/mods/mmx_zero_plugin.c src/mods/mmx_armor_plugin.c src/mmx_zero.c src/mmx_armor.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
+        src/mods/mmx_zero_plugin.c src/mods/mmx_armor_plugin.c src/mmx_zero.c src/mmx_armor.c src/mmx_armor_launcher.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
         src/mmx_hitbox_overlay.c
         src/mmx_boss_rush.c src/mmx_boss_rush_audio.c src/mmx_boss_rush_runtime.c src/mmx_boss_rush_draw.c src/mmx_boss_rush_score.cpp
         src/mmx_source_assets.cpp "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h")
@@ -174,6 +174,15 @@ add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(mmx_armor_launcher_test tests/mmx_armor_launcher_test.c src/mmx_armor_launcher.c)
+    target_include_directories(mmx_armor_launcher_test PRIVATE src ${RECOMP_UI_ROOT}/src)
+    target_compile_definitions(mmx_armor_launcher_test PRIVATE RECOMP_LAUNCHER=1)
+    if(MSVC)
+        target_compile_options(mmx_armor_launcher_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_armor_launcher_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME mmx_armor_launcher COMMAND mmx_armor_launcher_test)
     add_executable(mmx_armor_test tests/mmx_armor_test.c src/mmx_armor.c)
     target_include_directories(mmx_armor_test PRIVATE src)
     if(MSVC)
@@ -269,6 +278,12 @@ if(BUILD_TESTING)
         target_sources(${mmx_render} PRIVATE src/mmx_boss_rush_score.cpp)
         target_compile_features(${mmx_render} PRIVATE cxx_std_17)
     endforeach()
+    get_target_property(mmx_capture_native_sources mmx_render_capture SOURCES)
+    list(REMOVE_ITEM mmx_capture_native_sources src/mmx_renderer.c)
+    add_executable(mmx_render_capture_native ${mmx_capture_native_sources} src/mmx_renderer_native.c)
+    target_include_directories(mmx_render_capture_native PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    target_compile_features(mmx_render_capture_native PRIVATE cxx_std_17)
+    target_compile_definitions(mmx_render_capture_native PRIVATE MMX_NATIVE_RASTER=1)
     foreach(mmx_test mmx_boss_rush_test mmx_boss_rush_score_test mmx_msu1_test mmx_display_test mmx_wide_policy_test mmx_renderer_test mmx_password_save_test mmx_zero_test)
         if(MSVC)
             target_compile_options(${mmx_test} PRIVATE /UNDEBUG)
@@ -279,6 +294,7 @@ if(BUILD_TESTING)
     if(NOT WIN32)
         target_link_libraries(mmx_renderer_test PRIVATE m)
         target_link_libraries(mmx_render_capture PRIVATE m)
+        target_link_libraries(mmx_render_capture_native PRIVATE m)
     endif()
     # End to end through the real executable (#45: Reset must reboot). Needs
     # the ROM, so only where one is staged -- never in CI.

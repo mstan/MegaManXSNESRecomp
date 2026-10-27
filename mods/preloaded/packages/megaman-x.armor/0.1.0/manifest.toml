@@ -15,7 +15,7 @@ rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
 [[feature]]
 id = "armor"
 name = "X2 / X3 Armor (experimental)"
-description = "Start with the donor game's basic dash. X1's capsules grant the matching armor pieces. With X3 selected, the Hadouken capsule also grants Gold Armor. Supply the ROM for the selected armor."
+description = "Start with the donor game's basic dash. X1's capsules grant the matching armor pieces. L + R + Up uses the helmet's Item Tracer (X2) or radar (X3); release Jump, Dash, Start or Select to dismiss the radar. L + R + Down uses a full Giga Crush meter (X2 body) or toggles Hyper Charge (X3 Gold arms). The Hadouken capsule also grants X3 Gold Armor. Supply the ROM for the selected armor."
 group = "Characters"
 default_enabled = false
 

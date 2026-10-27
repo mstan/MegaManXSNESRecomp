@@ -1,12 +1,20 @@
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
 #include "mmx_weapons.h"
+#include "mmx_armor.h"
 #include "mmx_knc_bugfix.h"
 #include <stdio.h>
 
 /* KNC Bugfix */
 bool MmxKncBugfixActive(unsigned seat) { (void)seat;return false; }
 unsigned MmxKncBugfixPhase(void) { return 0; }
+
+#if MMX_NATIVE_RASTER
+/* File captures already contain the complete stock raster. */
+void ppu_drawCapturedLine(Ppu *p, int line, bool pixels) {
+  (void)p; (void)line; (void)pixels; abort();
+}
+#endif
 
 static bool bmp(const char *path, const uint32_t *pixels, int width) {
   FILE *f = fopen(path, "wb");
@@ -19,11 +27,12 @@ static bool bmp(const char *path, const uint32_t *pixels, int width) {
   return fclose(f) == 0 && ok;
 }
 int main(int argc, char **argv) {
-  if (argc < 6 || argc > 8) {
-    fprintf(stderr, "usage: mmx_render_capture capture rom aspect hud(0|1) output.bmp [zero-assets.bin] [x-weapons.bin]\n"); return 2;
+  if (argc < 6 || argc > 10 || argc == 9) {
+    fprintf(stderr, "usage: mmx_render_capture capture rom aspect hud(0|1) output.bmp [zero-assets.bin|-] [x-weapons.bin|-] [armor.bin game(2|3)]\n"); return 2;
   }
-  if (argc >= 7 && !MmxZeroLoad(argv[6])) return 2;
-  if (argc == 8 && !MmxWeaponsLoad(argv[7])) return 2;
+  if (argc >= 7 && strcmp(argv[6],"-") && !MmxZeroLoad(argv[6])) return 2;
+  if (argc >= 8 && strcmp(argv[7],"-") && !MmxWeaponsLoad(argv[7])) return 2;
+  if (argc == 10 && !MmxArmorLoad(argv[8],(unsigned)atoi(argv[9]))) return 2;
   FILE *f = fopen(argv[2], "rb");
   if (!f || fseek(f, 0, SEEK_END)) return 2;
   long size = ftell(f); rewind(f);

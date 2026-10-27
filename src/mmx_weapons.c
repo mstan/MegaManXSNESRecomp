@@ -1,5 +1,6 @@
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
+#include "mmx_armor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -198,6 +199,7 @@ void MmxWeaponsEnergyOverflow(uint8_t r[0x20000], unsigned index) {
   }
 }
 void MmxWeaponsRefill(void) {
+  MmxArmorRefill();
   if (MmxWeaponsEnabled()) { memset(state.energy,28,sizeof(state.energy)); memset(state.fraction,0,sizeof(state.fraction)); }
 }
 bool MmxWeaponsMenuVisible(const uint8_t r[0x20000]) {

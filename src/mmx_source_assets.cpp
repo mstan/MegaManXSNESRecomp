@@ -77,7 +77,8 @@ void bulk(const Rom& r,unsigned a,Tiles& t) {
   throw std::runtime_error("Unterminated source selection transfer.");
 }
 struct Pose { int left=0,top=0,width=0,height=0; Bytes pixels; };
-Pose pose(const Rom& r,unsigned group,unsigned number,const Tiles& t,bool zero=false) {
+Pose pose(const Rom& r,unsigned group,unsigned number,const Tiles& t,bool zero=false,
+          unsigned tile_base=0,int actor_palette=-1) {
   unsigned table=r.integer(0x8d8000+group*3,3),a=r.integer(table+number*3,3),n=r.integer(a,1);
   require(n<=64,"Invalid source sprite piece count.");
   Bytes pieces=r.at(a+1,n*4); Pose p;
@@ -93,7 +94,7 @@ Pose pose(const Rom& r,unsigned group,unsigned number,const Tiles& t,bool zero=f
   require(p.width<=256 && p.height<=256,"Source sprite exceeds extraction bounds.");
   p.pixels.resize(p.width*p.height);
   for (int i=int(n)-1;i>=0;--i) {
-    unsigned flags=pieces[i*4],tile=pieces[i*4+3],size=flags&32?16:8;
+    unsigned flags=pieces[i*4],tile=(pieces[i*4+3]+tile_base)&255,size=flags&32?16:8;
     int x=int8_t(pieces[i*4+1]),y=int8_t(pieces[i*4+2]);
     require(zero || !(flags&14),"Unexpected source weapon palette.");
     for (unsigned dy=0;dy<size;++dy) for (unsigned dx=0;dx<size;++dx) {
@@ -107,7 +108,7 @@ Pose pose(const Rom& r,unsigned group,unsigned number,const Tiles& t,bool zero=f
       if (color) {
         int px=x+int(dx)-p.left,py=y+int(dy)-p.top;
         require(px>=0 && py>=0 && px<p.width && py<p.height,"Source sprite exceeds canvas.");
-        if (zero) color+=(((flags>>1)&7)|(group>=0x6f?0:group==0x50?3:1))*16;
+        if (zero) color+=(((flags>>1)&7)|(actor_palette>=0?unsigned(actor_palette):group>=0x6f?0:group==0x50?3:1))*16;
         p.pixels[py*p.width+px]=uint8_t(color);
       }
     }
@@ -232,6 +233,31 @@ Bytes weapon_assets(const Rom& r,unsigned game) {
   }
   return out;
 }
+void cropped_pose(Bytes& out,const Pose& p) {
+  int l=128,top=128,right=0,bottom=0;
+  for(int y=0;y<128;++y) for(int x=0;x<128;++x)
+    if(p.pixels[y*128+x]) {l=std::min(l,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);}
+  if(right<=l || bottom<=top) {out.insert(out.end(),8,0);return;}
+  put(out,unsigned(l));put(out,unsigned(top));put(out,unsigned(right-l));put(out,unsigned(bottom-top));
+  for(int y=top;y<bottom;++y) out.insert(out.end(),p.pixels.begin()+y*128+l,p.pixels.begin()+y*128+right);
+}
+Bytes player_extended_animation(const Rom& r) {
+  /* X's extended directory precedes Zero's saber directory. Their offsets
+   * have different bases; the first offset is not a directory byte count. */
+  const unsigned base=0x3fd09e;
+  unsigned extent=138;
+  std::vector<unsigned> pending;std::set<unsigned> visited;
+  for(unsigned i=0;i<37;++i)pending.push_back(r.integer(base+i*2));
+  while(!pending.empty()) {
+    unsigned at=pending.back();pending.pop_back();if(!visited.insert(at).second)continue;
+    require(at>=138 && at<8192,"Invalid extended X animation offset.");
+    Bytes rec=r.at(base+at,3);require(rec[0] && rec[2]<48,"Invalid extended X animation record.");
+    unsigned end=at+3;
+    if(rec[1]&128) {pending.push_back(end+int16_t(r.integer(base+end)));extent=std::max(extent,end+2);}
+    else {pending.push_back(end);extent=std::max(extent,end);}
+  }
+  return r.at(base,extent);
+}
 Bytes armor_assets(const Rom& r,unsigned game) {
   /* The original player DMA includes all three separate armor planes. The
    * helmet switches the base-body arrangement; it is not a fourth overlay.
@@ -251,15 +277,63 @@ Bytes armor_assets(const Rom& r,unsigned game) {
   for (unsigned i=0;i<frames;++i) {
     transfer(r,dma,i,t);
     for (unsigned group : {0u,0x18u,0x5du,0x5eu,0x5fu}) {
-      Pose p=pose(r,group,i,t,true);
-      int l=128,top=128,right=0,bottom=0;
-      for(int y=0;y<128;++y) for(int x=0;x<128;++x)
-        if(p.pixels[y*128+x]) {l=std::min(l,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);}
-      if(right<=l || bottom<=top) {out.insert(out.end(),8,0);continue;}
-      put(out,unsigned(l));put(out,unsigned(top));put(out,unsigned(right-l));put(out,unsigned(bottom-top));
-      for(int y=top;y<bottom;++y) out.insert(out.end(),p.pixels.begin()+y*128+l,p.pixels.begin()+y*128+right);
+      cropped_pose(out,pose(r,group,i,t,true));
     }
   }
+  struct Extra {unsigned group,frames,dma,tile,palette,source=0;};
+  std::vector<Extra> extra;
+  if(game==3)for(unsigned group=0x33;group<=0x37;++group)extra.push_back({group,48,0x85d334,0,1});
+  extra.push_back({8,14,0,0,2});
+  extra.push_back({14,21,game==2?0x859bfcu:0x85dc19u,0,3});
+  extra.push_back({0x9e,game==2?12u:16u,game==2?0x859cc1u:0x85dc75u,0,3});
+  extra.push_back({0x54,game==2?13u:10u,game==2?0x859c58u:0x85dd2du,game==2?8u:0u,3});
+  if(game==2)extra.push_back({0x55,13,0x859c58,12,3,0x54});
+  /* X2's standard pilot DMA covers 36 arrangements; the remaining group
+   * entries belong to a separate Ride Chaser transfer table. */
+  extra.push_back({0x6a,game==2?36u:47u,game==2?0x859b46u:0x85d568u,0,1});
+  extra.push_back({0x6b,game==2?36u:47u,game==2?0x859b46u:0x85d568u,0,1});
+  if(game==3) {extra.push_back({0x3a,12,0x85dcf0,8,3});extra.push_back({0x65,13,0,0,2});}
+  append(out,Bytes{'A','R','F','X','0','0','0','1'});put(out,unsigned(extra.size()));put(out,0);
+  for(unsigned address : game==2?std::array<unsigned,3>{0x2b240,0x2b220,0x2b160}:
+                               std::array<unsigned,3>{0x63100,0x630e0,0x62460})append(out,r.raw(address,32));
+  for(const auto& g:extra) {
+    unsigned source=g.source?g.source:g.group;
+    Bytes a;
+    if(g.group==0x33)a=player_extended_animation(r);
+    else if(!((g.group>=0x34 && g.group<=0x37) || g.group==0x6a || g.group==0x6b))
+      a=animations(r,game,source,-1);
+    put(out,g.group);put(out,g.frames);put(out,unsigned(a.size()));
+    put(out,g.group==0x33?37:a.empty()?0:unsigned(a[0]|a[1]<<8)/2);
+    put(out,g.group==0x33?138:a.empty()?0:unsigned(a[0]|a[1]<<8));put(out,0);
+    append(out,a);
+    Tiles tiles;Bytes common=menu(r,game,0x0a);
+    require(common.size()==4096,"Unexpected common armor graphics size.");
+    std::copy(common.begin(),common.end(),tiles.bytes.begin()+0x1000);
+    std::fill(tiles.known.begin()+0x1000,tiles.known.end(),1);
+    for(unsigned i=0;i<g.frames;++i) {
+      if(g.dma)transfer(r,g.dma,i,tiles);
+      cropped_pose(out,pose(r,source,i,tiles,true,g.tile,int(g.palette)));
+    }
+  }
+  /* Small original data tables, retained only in the owner's verified cache.
+   * The host port uses these exact muzzle positions, bounds and segment
+   * velocities rather than approximating the charged shots with sine waves. */
+  append(out,Bytes{'A','R','C','F','0','0','0','1'});put(out,10);put(out,0);
+  auto config=[&](unsigned id,unsigned address,unsigned length) {
+    put(out,id);put(out,length);append(out,r.at(address,length));
+  };
+  if(game==2)config(1,0x86b5f6,256);
+  else {put(out,1);put(out,356);append(out,r.at(0x399000,100));append(out,r.at(0x399064,256));}
+  config(2,game==2?0x86ba4d:0x86bb1a,8);
+  config(3,game==2?0x86ba55:0x86bb22,game==2?92:117);
+  config(4,game==2?0x86f4c8:0x86e55d,36);
+  config(5,game==2?0x86b5da:0x86b7fb,4);
+  config(6,game==2?0x86ba4d:0x86bb98,game==2?4:64);
+  put(out,7);put(out,64);
+  append(out,r.raw(game==2?0x2c2a0:0x62f80,32));append(out,r.raw(game==2?0x2c2a0:0x625a0,32));
+  config(8,game==2?0x86b5de:0x86b7ff,24);
+  put(out,9);put(out,4);if(game==2)append(out,r.at(0x86b7ce,4));else put(out,0,4);
+  put(out,10);put(out,2);if(game==3)append(out,r.at(0x86b364,2));else put(out,0);
   return out;
 }
 void publish(const char *output,const Bytes& bytes) {

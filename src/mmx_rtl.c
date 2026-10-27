@@ -368,7 +368,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 23u /* donor X armor simulation */
+#define MMX_SAV_CHUNK_VERSION 24u /* donor X armor and charged projectiles */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -491,7 +491,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
-      g_load_chunk.version >= 1 && g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
+      g_load_chunk.version >= 1 && g_load_chunk.version != 23 && g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
     g_load_chunk_ok = 1;
   /* The adaptive playtest wrote a 464-byte v2 chunk, while the shared-host
    * branch used v2 with appended execution/CHR data. Only the latter has a
@@ -572,7 +572,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
         (g_load_chunk.version==18 && remaining==sizeof(g_load_zero_extension));
     bool rush=g_load_chunk.version>=21 || !extension;
     size_t expected=(extension?sizeof(g_load_zero_extension):0)+(rush?rush_bytes:0)+
-        (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0);
+        (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0)+
+        (g_load_chunk.version>=24?sizeof(g_load_armor):0);
     if(remaining!=expected) g_load_chunk_ok=0;
     if(g_load_chunk_ok && extension)
       sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
@@ -1073,6 +1074,17 @@ void RunOneFrameOfGame(void) {
     }
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2002, "before_Internal");
+  if(MmxArmorEnabled()) {
+    uint16_t pad=RtlGetPadState(0);bool available=!MmxZeroActive();
+    if(MmxCoopEnabled()) {
+      MmxCoopState coop=MmxCoopGetState();
+      if(coop.initialized) {
+        unsigned seat=coop.players[0].character==MMX_COOP_X?0:1;
+        pad=RtlGetPadState(seat);available=coop.players[seat].status==MMX_COOP_ALIVE;
+      }
+    }
+    if(MmxArmorFrameTick(g_ram,pad,available))return;
+  }
   MmxBossRushFrame(g_ram,RtlGetPadState(0));
   if(MmxBossRushGetState().mode==MMX_RUSH_FINISHED) return;
   MmxKncBugfixTick(g_ram,RtlGetPadState(0),RtlGetPadState(1));

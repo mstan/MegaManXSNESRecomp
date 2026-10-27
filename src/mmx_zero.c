@@ -391,6 +391,7 @@ const uint8_t *MmxZeroBlade(const MmxZeroState *s) {
   return poses + (size_t)(138 + pose + (s->air ? 7 : 0)) * MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT;
 }
 void MmxZeroSetCollisionRom(uint8_t *rom, size_t size) {
+  MmxArmorCollisionRom(rom,size);
   if (!rom || size < 0x37fd8) return;
   /* X3 $86:B40E / B422, translated -8px vertically into X1's player origin.
    * This preserves Zero's full body dimensions and aligns both games' feet.
@@ -959,7 +960,7 @@ void MmxZeroPlayerEnd(uint8_t r[0x20000]) {
   }
 }
 unsigned MmxZeroWeaponTick(uint8_t r[0x20000], unsigned d, unsigned active) {
-  unsigned value = active;
+  unsigned value = MmxArmorProjectileTick(r,d,active);
   if (own_projectile(r, d)) {
     if (!poses || d != state.projectile || !state.slash) {
       memset(r + d, 0, 64); if (r[0xbdd]) --r[0xbdd];
@@ -972,12 +973,13 @@ unsigned MmxZeroWeaponTick(uint8_t r[0x20000], unsigned d, unsigned active) {
 }
 unsigned MmxZeroResponse(uint8_t *r, unsigned enemy, unsigned projectile,
                          unsigned original) {
+  original=MmxArmorResponse(r,enemy,projectile,original);
   const MmxZeroExtension *ext = live_extension();
   return ext && ext->response ?
       ext->response(r, enemy, projectile, original) : original;
 }
 unsigned MmxZeroDamage(uint8_t r[0x20000], unsigned enemy, unsigned projectile, unsigned original) {
-  unsigned value = original;
+  unsigned value = MmxArmorDamage(r,enemy,projectile,original);
   if (poses && own_projectile(r, projectile) && projectile == state.projectile &&
       enemy >= 0xe68 && enemy < 0x1228 && (enemy & 63) == 0x28 && original && !(original & 128)) {
     unsigned bit = 1u << ((enemy - 0xe68) / 64);
@@ -992,7 +994,7 @@ unsigned MmxZeroDamage(uint8_t r[0x20000], unsigned enemy, unsigned projectile, 
       ext->damage(r, enemy, projectile, value) : value;
 }
 unsigned MmxZeroHitbox(const uint8_t r[0x20000], unsigned enemy, unsigned projectile, unsigned original) {
-  unsigned value = original;
+  unsigned value = MmxArmorHitbox(r,enemy,projectile,original);
   if (poses && own_projectile(r, projectile) && projectile == state.projectile &&
       enemy >= 0xe68 && enemy < 0x1228 && (enemy & 63) == 0x28 &&
       (state.hit_slots & (1u << ((enemy - 0xe68) / 64)))) value = 0;

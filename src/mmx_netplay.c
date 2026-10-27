@@ -3,6 +3,7 @@
 #include "mod_runtime.h"
 #include "mmx_coop.h"
 #include "mmx_weapons.h"
+#include "mmx_armor.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -22,6 +23,10 @@ static char s_error[512];
 int MmxNetplayActive(void) { return s_active; }
 
 int MmxNetplayReady(char *reason, size_t cap) {
+  if(snes_mod_runtime_feature_enabled_c("megaman-x.armor","armor") && !MmxArmorEnabled()) {
+    snprintf(reason,cap,"The selected X armor could not load. Check its source ROM and cache directory.");
+    return 0;
+  }
   if (!MmxCoopEnabled()) {
     snprintf(reason, cap, "X + Zero co-op could not load. Check the selected X3 ROM and cache directory.");
     return 0;

@@ -69,6 +69,11 @@ static inline void MmxCoopImportLegacy(MmxCoopState *out, const uint8_t *bytes) 
 bool MmxCoopEnable(unsigned p1_character);
 void MmxCoopDisable(void);
 bool MmxCoopEnabled(void);
+/* Includes the body projected for a native object/contact replay. */
+bool MmxCoopActorIsX(void);
+/* Owned body for a character's paused action. The caller may edit it only
+ * while holding the scheduler; shared world and another seat stay untouched. */
+uint8_t *MmxCoopCharacterBody(uint8_t *ram,unsigned character);
 void MmxCoopReset(void);
 MmxCoopState MmxCoopGetState(void);
 bool MmxCoopValidState(const MmxCoopState *state);

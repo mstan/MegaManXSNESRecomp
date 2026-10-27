@@ -19,9 +19,9 @@
 
 extern uint8_t g_ram[0x20000];
 static void weapon_energy_hook(CpuState *cpu, uint32_t pc) {
-  if (!MmxWeaponsEnabled()) return;
   pc &= 0x7fffff;
   if (pc == 0x9ef9) { MmxWeaponsRefill(); return; }
+  if (!MmxWeaponsEnabled()) return;
   if (pc == 0x01e169) { MmxWeaponsEnergyOverflow(g_ram,cpu->X); return; }
   bool store = pc == 0xd91d || pc == 0xd95e || pc == 0xd9ab || pc == 0x01e0ce;
   if (store) {
@@ -216,6 +216,7 @@ static bool zero_terrain_solid(const uint8_t *r, int x, int y) {
 }
 void MmxZeroRegisterHooks(void) {
   MmxZeroSetTerrainQuery(zero_terrain_solid);
+  MmxArmorSetTerrainQuery(zero_terrain_solid);
   const unsigned pcs[] = {0x009dca, 0x00d6a7, 0x00d76a, 0x01971f, 0x019796, 0x0198ff,
                           0x019ea8, 0x019eae, 0x019ef9, 0x019f59, 0x0499a7,
                           0x01815c, 0x018165, 0x019d47, 0x0194af, 0x00d3e7, 0x00d4f4, 0x00d511, 0x049e1d, 0x049e3a, 0x049e45, 0x049e76, 0x049c19, 0x048f07, 0x048eea, 0x018b04, 0x0491dc, 0x02823e,
