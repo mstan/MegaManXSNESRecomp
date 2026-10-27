@@ -43,6 +43,10 @@ int main(int argc, char **argv) {
   size_t copier = (size % 0x8000) == 512 ? 512 : 0;
   MmxRendererSetRom(bytes + copier, size - copier);
   if (!MmxRendererLoadCapture(argv[1])) return 2;
+  if (!strcmp(argv[3],"stock")) {
+    const uint32_t *stock=MmxRendererStockFrame();
+    return stock && bmp(argv[5],stock,256)?0:2;
+  }
   MmxRenderAspect aspect = !strcmp(argv[3], "16:9") ? MMX_ASPECT_16_9 :
       !strcmp(argv[3], "21:9") ? MMX_ASPECT_21_9 : MMX_ASPECT_32_9;
   MmxRenderView view = !strcmp(argv[3], "4:3") ? (MmxRenderView){256,0,4.0/3.0} :

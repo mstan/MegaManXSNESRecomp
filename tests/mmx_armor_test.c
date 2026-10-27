@@ -70,6 +70,8 @@ static void buster(unsigned game) {
   puts("Donor charge, buffered follow-up, projectile state restore and arm ownership passed");
 }
 static void helmet(unsigned game) {
+  player();ram[0x1f99]=1;ram[0x1f10]=6;
+  assert(!MmxArmorFrameTick(ram,0xc10,true) && !MmxArmorGetState().tracer);
   player();ram[0x1f7a]=8;
   assert(!MmxArmorFrameTick(ram,0xc10,true) && !MmxArmorGetState().tracer);
   ram[0x1f99]=1;

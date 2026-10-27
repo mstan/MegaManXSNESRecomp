@@ -37,9 +37,10 @@ having four regular pieces or changing the dropdown does not award it.
 - [x] Validate Gold recovery, enhanced barrier, Hyper Charge and second air dash.
 - [x] Validate actual regular-capsule awards and the Hadouken/Gold reward.
 - [x] Validate current-build snapshots/rewind, co-op X + Saber Zero, Boss Rush.
-- [ ] Complete death/new-game/native-password and Ride Armor coverage.
+- [x] Validate native fatal contact/retry and the actual console-reset path.
+- [ ] Complete native-password and natural-route Ride Armor presentation coverage.
 - [ ] Complete a two-peer netplay session and launcher GUI check.
-- [ ] Prepare a lightweight owner playtest selector with reproducible ability checks.
+- [x] Prepare a lightweight owner playtest selector with reproducible ability checks.
 
 This is unfinished development work, not a release or completed feature.
 
@@ -87,6 +88,30 @@ restore. Native grabs correctly pause the charge while its controller is held.
 Missing selected donor data now refuses the launch before frame zero. Debug
 setup/export/rewind requests are handed to the simulation thread. No owner
 acceptance, public release or two-peer netplay qualification is claimed.
+
+Matched LLE/HLE scheduler runs produce identical body/projectile traces for
+both donors; active host-shot restore passes in both. HLE also reproduces the
+31-pixel Giga lift and exact mid-cast picture restore. Native fatal contact
+followed by checkpoint retry retains earned Gold and refills its energy. The
+actual console-reset input-script path clears Gold/transient actions and keeps
+the selected donor enabled.
+
+Two real local peers with X3 armor/Saber Zero agree on their boot state and
+run with forced mispredictions without forks or offline autosaves. This is a
+boot/rollback integration check, not active two-machine gameplay qualification.
+Ride Armor boarding, walking and punching run for both donors. Its teleport
+fixture lacks the mech in the stock PPU as well as the custom view; that shared
+fixture gap does not establish an introduced renderer defect. Natural-route
+vehicle presentation remains explicitly unverified.
+
+`tools/playtest_selector.py` consumes a private manifest and nine prepared
+practice states: each donor's basic/standard armor, X2 Giga, earned X3 Gold,
+each donor with Saber Zero, and X3/Saber Zero Boss Rush. It opens each paused
+with normal audio, saves individual observations/history, preserves an owner's
+modified practice snapshots before restoring a fixture, and uses normal
+shutdown on restart. The manifest, ROM paths, fixtures, observations and builds
+stay outside source control. All nine fresh-process restores and notes/restart
+behavior pass the hidden, muted selector smoke check.
 
 The original reference fixtures now enter a regular stage with parts already
 owned, so original armor controllers exist. Earlier post-entry inventory-only

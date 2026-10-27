@@ -27,7 +27,7 @@ static void debug_queue(unsigned request,const char *path,DebugServerGameSendLin
 #endif
 void MmxArmorDebugHostFrame(void) {
 #if SNESRECOMP_TRACE
-  if(!debug_mutex)return;
+  if(!debug_mutex || !snesrecomp_host_frame_is_live())return;
   char path[4096];SDL_LockMutex(debug_mutex);unsigned request=debug_request;
   if(request==4)memcpy(path,debug_path,sizeof(path));debug_request=0;SDL_UnlockMutex(debug_mutex);
   if(!MmxArmorEnabled())return;
@@ -37,6 +37,7 @@ void MmxArmorDebugHostFrame(void) {
     for(unsigned i=0;i<6 && snes_rewind_selected_seconds()<0.0999f;++i)snes_rewind_step(-1);
     snes_rewind_commit();
   } else if(request==4)MmxRendererSaveCapture(path);
+  else if(request==5)snesrecomp_request_exit();
 #endif
 }
 static int armor_debug(const char *cmd,const char *args,DebugServerGameSendLine send) {
@@ -53,6 +54,7 @@ static int armor_debug(const char *cmd,const char *args,DebugServerGameSendLine 
     send(out);return 1;
   }
 #if SNESRECOMP_TRACE
+  if(!strcmp(args,"close")) {debug_queue(5,NULL,send);return 1;}
   if(!strncmp(args,"capture ",8)) {
     debug_queue(4,args+8,send);return 1;
   }

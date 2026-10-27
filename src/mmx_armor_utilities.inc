@@ -67,7 +67,8 @@ bool MmxArmorFrameTick(uint8_t *r,uint16_t pad,bool available) {
   if(game==3 && r[0xd3]==4 && body[1]==2 && !body[2] && body[3]==2 && (body[0x2b]&4) &&
       !r[0x1f10] && !r[0x1f0c] && !r[0x1f23] && !r[0x1f48] && state.radar_stage!=r[0x1f7a]+1) {
     state.radar_stage=(uint8_t)(r[0x1f7a]+1);state.tracer=1;++state.radar_epoch;
-  } else if(combo==1 && pressed) {
+  } else if(combo==1 && pressed && r[0xd3]==4 &&
+      !r[0x1f10] && !r[0x1f0c] && !r[0x1f23] && !r[0x1f48]) {
     state.tracer^=1;state.utility_ticks=180;++state.radar_epoch;armor_sound(r,0x2c);
     if(game==3 && !state.tracer)state.radar_closing=1;
   } else if(game==3 && state.tracer && (pad&0x30d)) {
