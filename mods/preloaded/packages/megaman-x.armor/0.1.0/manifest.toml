@@ -1,0 +1,61 @@
+format_version = 1
+id = "megaman-x.armor"
+version = "0.1.0"
+name = "X2 / X3 Armor"
+author = "mstan"
+description = "Backport X's armor from a selected donor game."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "requires-same-mods"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "armor"
+name = "X2 / X3 Armor (experimental)"
+description = "Start with the donor game's basic dash. X1's capsules grant the matching armor pieces. With X3 selected, the Hadouken capsule also grants Gold Armor. Supply the ROM for the selected armor."
+group = "Characters"
+default_enabled = false
+
+[[option]]
+feature = "armor"
+id = "game"
+label = "Armor"
+type = "choice"
+default = "x2"
+[[option.choice]]
+value = "x2"
+label = "Mega Man X2"
+[[option.choice]]
+value = "x3"
+label = "Mega Man X3"
+
+[[resource]]
+feature = "armor"
+id = "x2-rom"
+label = "Mega Man X2 ROM"
+description = "Required when Mega Man X2 armor is selected."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X2 USA ROM"
+shared_key = "megaman-x.source.x2"
+normalized_sha256 = "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed"
+required = false
+
+[[resource]]
+feature = "armor"
+id = "x3-rom"
+label = "Mega Man X3 ROM"
+description = "Required when Mega Man X3 armor is selected."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X3 USA ROM"
+shared_key = "megaman-x.source.x3"
+normalized_sha256 = "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7"
+required = false
+
+[[plugin]]
+feature = "armor"
+id = "megaman-x.armor"

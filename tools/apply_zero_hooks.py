@@ -19,7 +19,7 @@ REQUIRED |= {0x049e15, 0x049e3a}  # Compiled low-bank mirror of native contact.
 # Dash exits that would stand Zero up, and the dash blocks that continue it.
 SLIDE_PCS = {0x81898e: '8991', 0x818999: '899C', 0x818965: '8971'}
 REQUIRED |= SLIDE_PCS.keys() | {0x81a062}
-REQUIRED |= {0x819eac, 0x819ef3, 0x819f36}
+REQUIRED |= {0x819eac, 0x819ef3, 0x819f36, 0x87d0d9, 0x849d50, 0x049d50}
 
 
 def apply(text):
@@ -49,6 +49,12 @@ def apply(text):
                 output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroHeadBreakY(const uint8_t *, unsigned, unsigned); {store[1]} = (uint16)MmxZeroHeadBreakY(g_ram,cpu->D,{store[1]}); cpu_write_a_m(cpu,{store[1]}); }}\n')
                 found.add(pc)
         output.append(line)
+        if (pc&0x7fffff)==0x049d50 and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxArmorTakeDamage(uint8_t *, unsigned); MmxArmorTakeDamage(g_ram,cpu->D); }}\n')
+            found.add(pc)
+        if pc == 0x87d0d9 and 'cpu_write8' in line and '0x1f7e' in line:
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxArmorHadoukenAward(const uint8_t *); MmxArmorHadoukenAward(g_ram); }}\n')
+            found.add(pc)
         if pc == 0x819f36:
             load = re.search(r'uint16 (_v\d+) = 0xffed;', line)
             if load:

@@ -84,7 +84,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/mmx_spc_player.c src/mmx_replay.c src/mods/mmx_diagnostics_plugin.c
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
         src/mods/mmx_hadouken_plugin.c src/mods/mmx_password_plugin.c src/mods/mmx_boss_rush_plugin.c src/mmx_password_save.cpp
-        src/mods/mmx_zero_plugin.c src/mmx_zero.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
+        src/mods/mmx_zero_plugin.c src/mods/mmx_armor_plugin.c src/mmx_zero.c src/mmx_armor.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
         src/mmx_hitbox_overlay.c
         src/mmx_boss_rush.c src/mmx_boss_rush_audio.c src/mmx_boss_rush_runtime.c src/mmx_boss_rush_draw.c src/mmx_boss_rush_score.cpp
         src/mmx_source_assets.cpp "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h")
@@ -174,6 +174,16 @@ add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(mmx_armor_test tests/mmx_armor_test.c src/mmx_armor.c)
+    target_include_directories(mmx_armor_test PRIVATE src)
+    if(MSVC)
+        target_compile_options(mmx_armor_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_armor_test PRIVATE -UNDEBUG)
+    endif()
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/armor-test")
+    add_test(NAME mmx_armor COMMAND mmx_armor_test)
+    set_tests_properties(mmx_armor PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/armor-test")
     add_subdirectory(${SNESRECOMP_ROOT}/runner/tests/raster_snapshot raster-snapshot-tests)
     add_subdirectory(${SNESRECOMP_ROOT}/runner/tests/diagnostics diagnostic-writer-tests)
     add_executable(mmx_boss_rush_test tests/mmx_boss_rush_test.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
@@ -193,7 +203,7 @@ if(BUILD_TESTING)
         ${SNESRECOMP_ROOT}/runner/src/sha256.c "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h")
     target_include_directories(mmx_source_assets_test PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SNESRECOMP_ROOT}/runner/src)
     target_compile_features(mmx_source_assets_test PRIVATE cxx_std_17)
-    add_executable(mmx_zero_test tests/mmx_zero_test.c src/mmx_zero.c)
+    add_executable(mmx_zero_test tests/mmx_zero_test.c src/mmx_zero.c src/mmx_armor.c)
     target_include_directories(mmx_zero_test PRIVATE src)
     add_test(NAME mmx_zero_character COMMAND mmx_zero_test)
     add_executable(mmx_password_save_test tests/mmx_password_save_test.cpp src/mmx_password_save.cpp)
@@ -206,7 +216,7 @@ if(BUILD_TESTING)
     add_executable(mmx_wide_policy_test tests/mmx_wide_policy_test.c src/mmx_wide_policy.c)
     target_include_directories(mmx_wide_policy_test PRIVATE src)
     add_test(NAME mmx_wide_policy COMMAND mmx_wide_policy_test)
-    add_executable(mmx_renderer_test tests/mmx_renderer_test.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c src/mmx_zero.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_coop_view.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
+    add_executable(mmx_renderer_test tests/mmx_renderer_test.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c src/mmx_zero.c src/mmx_armor.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_coop_view.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
     target_include_directories(mmx_renderer_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     add_test(NAME mmx_custom_renderer COMMAND mmx_renderer_test)
     get_target_property(mmx_renderer_reference_sources mmx_renderer_test SOURCES)
@@ -253,7 +263,7 @@ if(BUILD_TESTING)
         set_tests_properties(mmx_custom_renderer_${reference_name} PROPERTIES
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-${reference_name}")
     endforeach()
-    add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c src/mmx_zero.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_coop_view.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
+    add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c src/mmx_zero.c src/mmx_armor.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_coop_view.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
     target_include_directories(mmx_render_capture PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     foreach(mmx_render mmx_renderer_test mmx_render_capture)
         target_sources(${mmx_render} PRIVATE src/mmx_boss_rush_score.cpp)

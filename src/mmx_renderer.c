@@ -6,6 +6,7 @@
 #include "mmx_wide_policy.h"
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
+#include "mmx_armor.h"
 #include "mmx_knc_bugfix.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
@@ -112,6 +113,21 @@ static void reset_pilot_overlay_alignment(void) {
 
 static MmxZeroState frame_zero;
 static MmxWeaponsState frame_weapons;
+static MmxArmorState frame_armor;
+static uint8_t armor_pixels[2][128*128];
+static uint16_t armor_colors[2][128];
+static MmxRenderPlayerOverlay armor_overlays[2];
+static void capture_armor(const uint8_t *ram,const MmxZeroState *zero,unsigned seat,bool menu) {
+  MmxRenderPlayerOverlay *overlay=armor_overlays+seat;
+  memset(overlay,0,sizeof(*overlay));
+  if(MmxArmorCompose(ram,&frame_armor,!MmxZeroEnabled() || zero->active_x,menu,
+                     armor_pixels[seat],armor_colors[seat])) {
+    overlay->active=true;
+    overlay->body=(MmxRenderPlayerOverlayPlane){armor_pixels[seat],128,128,0,0};
+    overlay->palette=armor_colors[seat];overlay->palette_count=128;
+    overlay->facing_left=!menu && (ram[0xbb9]&64)!=0;
+  }
+}
 static MmxWeaponCombatState frame_weapon_combat;
 static MmxCoopState frame_coop;
 static MmxCoopViewBoundsState frame_bounds;
@@ -564,6 +580,9 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
   memset(&frame_partner_overlay, 0, sizeof(frame_partner_overlay));
   memset(&overlay, 0, sizeof(overlay));
   MmxZeroState live_zero = MmxZeroGetState();
+  frame_armor=MmxArmorGetState();
+  capture_armor(ram,&live_zero,0,((ram[0x1f10]==6 || ram[0x1f10]==8) && (ram[0xc3]&128)));
+  memset(armor_overlays+1,0,sizeof(armor_overlays[1]));
   if (player_overlay_provider && player_overlay_provider(ram, &live_zero, &overlay))
     frame_player_overlay = overlay;
   else
@@ -938,6 +957,7 @@ void MmxRendererCoopFrame(const MmxCoopState *s) {
     const MmxCoopPlayer *owner=&s->players[s->menu_last];
     frame_zero=owner->zero;frame_weapons=owner->weapons;frame_weapon_combat=owner->combat;
     memcpy(frame.ram+0xba8,owner->body,sizeof(owner->body));
+    capture_armor(frame.ram,&frame_zero,0,true);
     /* The menu shows its owner's body, which need not be the live seat's. */
     MmxRenderPlayerOverlay overlay;
     memset(&overlay,0,sizeof(overlay));
@@ -954,6 +974,7 @@ void MmxRendererCoopFrame(const MmxCoopState *s) {
   memcpy(partner_ram+0xc38,s->players[s->current^1].auxiliaries,sizeof(s->players[s->current^1].auxiliaries));
   memcpy(partner_ram+0x1228,s->players[s->current^1].shots,sizeof(s->players[s->current^1].shots));
   const MmxCoopPlayer *partner=&s->players[s->current^1];
+  capture_armor(partner_ram,&partner->zero,1,false);
   memset(&frame_partner_overlay,0,sizeof(frame_partner_overlay));
   if (!menu && partner->character==MMX_COOP_ZERO && player_overlay_provider) {
     MmxRenderPlayerOverlay overlay;
@@ -985,11 +1006,11 @@ bool MmxRendererSaveCapture(const char *path) {
   FILE *f = fopen(path, "wb");
   if (!f) { free(saved); return false; }
   uint32_t count = vram_snapshots.count;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 27 : 26,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 29 : 28,
       (uint32_t)(sizeof(frame) + sizeof(count) + sizeof(indices) + count * 0x10000u +
       sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
       (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
-      sizeof(frame_rush_visual) + sizeof(frame_bounds))};
+      sizeof(frame_rush_visual) + sizeof(frame_bounds) + sizeof(frame_armor))};
   bool ok = fwrite(header, sizeof(header), 1, f) == 1 &&
       fwrite(saved, sizeof(*saved), 1, f) == 1 &&
       fwrite(&count, sizeof(count), 1, f) == 1 &&
@@ -1003,7 +1024,8 @@ bool MmxRendererSaveCapture(const char *path) {
   if (ok && frame_coop.initialized) ok = fwrite(&frame_coop, sizeof(frame_coop), 1, f) == 1;
   if (ok) ok = fwrite(&frame_rush, sizeof(frame_rush), 1, f) == 1 &&
       fwrite(&frame_rush_visual, sizeof(frame_rush_visual), 1, f) == 1 &&
-      fwrite(&frame_bounds, sizeof(frame_bounds), 1, f) == 1;
+      fwrite(&frame_bounds, sizeof(frame_bounds), 1, f) == 1 &&
+      fwrite(&frame_armor,sizeof(frame_armor),1,f)==1;
   return fclose(f) == 0 && ok;
 }
 bool MmxRendererLoadCapture(const char *path) {
@@ -1018,6 +1040,8 @@ bool MmxRendererLoadCapture(const char *path) {
   frame.valid = false;
   reset_pilot_overlay_alignment();
   memset(&frame_zero, 0, sizeof(frame_zero));
+  memset(&frame_armor,0,sizeof(frame_armor));
+  memset(armor_overlays,0,sizeof(armor_overlays));
   memset(&frame_weapons, 0, sizeof(frame_weapons));
   memset(&frame_weapon_combat, 0, sizeof(frame_weapon_combat));
   memset(&frame_coop, 0, sizeof(frame_coop));
@@ -1025,7 +1049,7 @@ bool MmxRendererLoadCapture(const char *path) {
   memset(&frame_rush, 0, sizeof(frame_rush));
   memset(&frame_rush_visual, 0, sizeof(frame_rush_visual));
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
-      (h[1] == 26 || h[1] == 27) && fread(&frame, sizeof(frame), 1, f) == 1;
+      (h[1]>=26 && h[1]<=29) && fread(&frame, sizeof(frame), 1, f) == 1;
   const bool valid = true;
   ok = ok && !memcmp(&frame.valid, &valid, sizeof(valid)) &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES;
@@ -1035,8 +1059,8 @@ bool MmxRendererLoadCapture(const char *path) {
   ok = ok && fread(&count, sizeof(count), 1, f) == 1 && count && count <= 224 &&
       h[2] == sizeof(frame) + sizeof(count) + sizeof(indices) + count * 0x10000u +
       sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
-      (h[1] == 27 ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
-      sizeof(frame_rush_visual) + sizeof(frame_bounds) &&
+      (h[1]&1 ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
+      sizeof(frame_rush_visual) + sizeof(frame_bounds) + (h[1]>=28?sizeof(frame_armor):0) &&
       fread(indices, sizeof(indices), 1, f) == 1;
   for (unsigned line = 0; ok && line < 224; ++line) ok = indices[line] < count;
   uint16_t *source = ok ? malloc(0x10000) : NULL;
@@ -1049,7 +1073,7 @@ bool MmxRendererLoadCapture(const char *path) {
       fread(&frame_weapons, sizeof(frame_weapons), 1, f) == 1 && MmxWeaponsValidState(&frame_weapons) &&
       fread(&frame_weapon_combat, sizeof(frame_weapon_combat), 1, f) == 1 &&
       MmxWeaponsValidCombatState(&frame_weapon_combat);
-  if (ok && h[1] == 27) {
+  if (ok && (h[1]&1)) {
     ok = fread(&frame_coop, sizeof(frame_coop), 1, f) == 1 &&
         frame_coop.initialized == 1 && frame_coop.current < 2;
     for (unsigned i = 0; ok && i < 2; ++i) ok =
@@ -1061,10 +1085,12 @@ bool MmxRendererLoadCapture(const char *path) {
   }
   if (ok) ok = fread(&frame_rush, sizeof(frame_rush), 1, f) == 1 && MmxBossRushValidState(&frame_rush) &&
       fread(&frame_rush_visual, sizeof(frame_rush_visual), 1, f) == 1 && MmxBossRushVisualValidState(&frame_rush_visual) &&
-      fread(&frame_bounds, sizeof(frame_bounds), 1, f) == 1 && MmxCoopViewsValidBoundsState(&frame_bounds) &&
-      fgetc(f) == EOF;
+      fread(&frame_bounds, sizeof(frame_bounds), 1, f) == 1 && MmxCoopViewsValidBoundsState(&frame_bounds);
+  if(ok && h[1]>=28)ok=fread(&frame_armor,sizeof(frame_armor),1,f)==1 && MmxArmorValidState(&frame_armor);
+  if(ok)ok=fgetc(f)==EOF;
   fclose(f);
   if (ok) {
+    capture_armor(frame.ram,&frame_zero,0,((frame.ram[0x1f10]==6 || frame.ram[0x1f10]==8) && (frame.ram[0xc3]&128)));
     for (unsigned line = 0; line < 224; ++line)
       frame.lines[line].vram = vram_snapshots.images[indices[line]];
     if (frame_coop.initialized) { MmxCoopState coop = frame_coop; MmxRendererCoopFrame(&coop); }
@@ -1888,6 +1914,11 @@ static void coop_partner_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView 
         objects[dest] = (uint16_t)(0xe680|pixel); colors[dest] = MmxZeroColors()[palette+pixel];
       }
     }
+  } else if(!zero && armor_overlays[1].active && ram[0xbb6]) {
+    int x=(int16_t)(word(ram,0xbad)-view_camera(ram,0x1e4d));
+    int sy=(int16_t)(word(ram,0xbb0)-view_camera(ram,0x1e50));
+    unsigned z=(((ram[0xbb9]>>4&3)*4+2)<<12)|0x680;
+    player_overlay_row(armor_overlays+1,y,x,sy,z,view,objects,colors);
   }
   if (!zero && cast && ram[0xbb6]) weapon_sprite_row(cast,cast->pose,
       (int16_t)(word(ram,0xbad)-view_camera(ram,0x1e4d)),
@@ -1898,6 +1929,7 @@ static void coop_partner_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView 
      * native D56F submits them (expand_queues); bit 7 alone hid a partner X's
      * helmet, arms and boots whenever Zero drove the world. */
     bool armor = d>=0xc38 && d<=0xc78;
+    if(!zero && armor_overlays[1].active && (d==0xba8 || armor))continue;
     if (d==0xba8 ? !ram[d+1] || !ram[d+14] :
         !ram[d] || !(armor ? ram[d+14] : ram[d+14]&128)) continue;
     if(d<0xc98 && !ram[0xbb6]) continue; /* Armor follows its owner's Sting blink. */
@@ -2430,6 +2462,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           MmxRenderAssetsNativeShot(frame.ram,s.object,s.animation,piece_pose(&s),frame_coop.current) : NULL;
       bool menu_body = s.object == 0x1988 && (s.animation == 0 || s.animation == 0x18);
       bool zero_body = zero && (s.object == 0xba8 || menu_body);
+      bool armor_body=armor_overlays[0].active && (s.object==0xba8 || menu_body);
+      bool armor_part=armor_overlays[0].active &&
+          (s.object==0xc38 || s.object==0xc58 || s.object==0xc78 ||
+           (menu && (s.object==0x1928 || s.object==0x1948 || s.object==0x1968)));
       bool triad_x_body=cast_body && !zero && s.object==0xba8;
       bool triad_armor=cast_body && (s.object==0xc38 || s.object==0xc58 || s.object==0xc78);
       bool swap_actor = swapping && (s.object == 0xba8 || s.object == 0xc38 ||
@@ -2438,7 +2474,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       bool zero_armor = zero && (s.object == 0xc38 || s.object == 0xc58 || s.object == 0xc78 ||
           (zero_menu && (s.object == 0x1928 || s.object == 0x1948 || s.object == 0x1968)));
       bool oam_match = false;
-      if (g_mmx_render_asset_repairs || coop_buster || coop_special || zero_body || zero_armor || zero_charge || swap_actor || red_ready || red_death || triad_x_body || triad_armor || frozen_enemy) {
+      if (g_mmx_render_asset_repairs || coop_buster || coop_special || zero_body || zero_armor || zero_charge || swap_actor || red_ready || red_death || triad_x_body || triad_armor || frozen_enemy || armor_body || armor_part) {
 #if MMX_NATIVE_RASTER
         const SnesRenderOamBinding *binding = SnesRenderFindOam(&native_oam, s.x, s.y, s.attr);
         if (binding) {
@@ -2480,7 +2516,20 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           frame_rush.owner[(s.object-0xe68)/32])
         attr=(attr&~0x3000u)|((asset->attributes&0x30)<<8);
       if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
-      if (zero_armor || swap_actor || triad_armor || frozen_enemy) continue;
+      if (zero_armor || swap_actor || triad_armor || frozen_enemy || armor_part) continue;
+      if(armor_body && !triad_x_body && !swap_actor) {
+        if(!oam_match && !(frame.expand && frame.ram[s.object+14] &&
+            (view_dx || view_dy || s.x+s.size<=0 || s.x>=256)))continue;
+        if(!zero_drawn[menu_body]) {
+          zero_drawn[menu_body]=true;
+          int x=menu_body?128:(int16_t)(word(frame.ram,0xbad)-view_camera(frame.ram,0x1e4d));
+          int sy=menu_body?160:(int16_t)(word(frame.ram,0xbb0)-view_camera(frame.ram,0x1e50));
+          unsigned z=((((s.attr>>12)&3)*4+2)<<12)|0x680;
+          player_overlay_row(armor_overlays,y,x,sy,z|(x_in_front?0x800:0),view,objects,object_colors);
+          if(x_in_front)player_footprint(&x_pixels,objects,0,view.width-1,view.width);
+        }
+        continue;
+      }
       if (zero_charge && MmxZeroHasChargeArt() && !frame.ram[0xbdb] && !weapon_item) continue;
       if (triad_x_body) {
         if (oam_match && !zero_drawn[0]) {

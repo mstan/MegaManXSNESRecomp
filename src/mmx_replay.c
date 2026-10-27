@@ -5,6 +5,7 @@
 #include "mmx_coop_trace.h"
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
+#include "mmx_armor.h"
 #include "mmx_weapons.h"
 #if !MMX_VARIANT_JP
 #include "saber/mmx_saber_plugin.h"
@@ -79,6 +80,7 @@ static bool init_stem(void);
 static unsigned mods(void) {
   unsigned m=MmxZeroEnabled() | MmxCoopEnabled()<<1 | MmxZeroModern()<<2 |
       MmxWeaponsPageEnabled(1)<<3 | MmxWeaponsPageEnabled(2)<<4;
+  if(MmxArmorEnabled())m|=(MmxArmorGame()-1)<<6;
 #if !MMX_VARIANT_JP
   m |= MmxSaberEnabled()<<5;
 #endif

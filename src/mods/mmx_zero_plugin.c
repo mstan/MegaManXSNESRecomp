@@ -4,6 +4,7 @@
 #include "snes/interp_bridge.h"
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
+#include "mmx_armor.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
 #include "mmx_source_assets.h"
@@ -61,7 +62,7 @@ static void weapon_menu_hook(CpuState *cpu, uint32_t pc) {
   cpu->P = (cpu->P & ~0x82) | (cpu->_flag_Z ? 2 : 0) | (cpu->_flag_N ? 128 : 0);
 }
 static void hook(CpuState *cpu, uint32_t pc) {
-  if (!MmxZeroEnabled() && !MmxWeaponsEnabled()) return;
+  if (!MmxZeroEnabled() && !MmxWeaponsEnabled() && !MmxArmorEnabled()) return;
   switch (pc & 0x7fffff) {
     case 0x019ef9:
       /* Intercept the STA, which preserves the native ADC flags. */
@@ -301,6 +302,7 @@ static void activate_weapons(unsigned game) {
 static void activate_x2(void) { activate_weapons(2); }
 static void activate_x3(void) { activate_weapons(3); }
 static void reset(void) {
+  MmxArmorDisable();
   MmxRendererSetCompactCoopHud(true);
   MmxCoopViewsSetIndependent(false);
   MmxCoopDisable();

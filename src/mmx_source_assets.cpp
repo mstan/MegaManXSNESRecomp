@@ -232,6 +232,36 @@ Bytes weapon_assets(const Rom& r,unsigned game) {
   }
   return out;
 }
+Bytes armor_assets(const Rom& r,unsigned game) {
+  /* The original player DMA includes all three separate armor planes. The
+   * helmet switches the base-body arrangement; it is not a fourth overlay.
+   * X2 $88: B97C / X3 $84:A63C and $81:836B select these same groups. */
+  const unsigned frames=game==2?112:100;
+  const unsigned dma=game==2?0x859609:0x85ce45;
+  const unsigned anim=game==2?0x2fa222:0x3fcb64;
+  const unsigned anim_size=game==2?0x41e:0x584;
+  Bytes out{'M','M','X','A','R','M','R','1'};
+  put(out,game);put(out,frames);put(out,5);put(out,game==2?133:136);
+  put(out,anim_size);put(out,game==2?266:544);
+  append(out,r.raw(game==2?0x2b100:0x62400,32));
+  /* X3 $84:B713 loads palette key $1B8 ($86:8750 -> $8C:A580). */
+  append(out,r.raw(game==2?0x2b100:0x62580,32));
+  append(out,r.at(anim,anim_size));
+  Tiles t;
+  for (unsigned i=0;i<frames;++i) {
+    transfer(r,dma,i,t);
+    for (unsigned group : {0u,0x18u,0x5du,0x5eu,0x5fu}) {
+      Pose p=pose(r,group,i,t,true);
+      int l=128,top=128,right=0,bottom=0;
+      for(int y=0;y<128;++y) for(int x=0;x<128;++x)
+        if(p.pixels[y*128+x]) {l=std::min(l,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);}
+      if(right<=l || bottom<=top) {out.insert(out.end(),8,0);continue;}
+      put(out,unsigned(l));put(out,unsigned(top));put(out,unsigned(right-l));put(out,unsigned(bottom-top));
+      for(int y=top;y<bottom;++y) out.insert(out.end(),p.pixels.begin()+y*128+l,p.pixels.begin()+y*128+right);
+    }
+  }
+  return out;
+}
 void publish(const char *output,const Bytes& bytes) {
   fs::path path=fs::u8path(output),temp=path;
   /* Two local peers can prepare the same verified ROM concurrently. Each
@@ -253,6 +283,17 @@ void publish(const char *output,const Bytes& bytes) {
 #endif
   } catch (...) { std::error_code ec;fs::remove(temp,ec);throw; }
 }
+}
+int MmxArmorAssetsBuild(const char *rom,unsigned game,const char *output,char *error,size_t size) {
+  try {
+    require((game==2 || game==3) && output,"Invalid armor asset request.");
+    Rom r(rom,game);publish(output,armor_assets(r,game));
+    if(error && size) *error=0;
+    return 1;
+  } catch(const std::exception& e) {
+    if(error && size) std::snprintf(error,size,"%s",e.what());
+    return 0;
+  }
 }
 int MmxSourceAssetsBuild(const char *rom,unsigned game,int zero,const char *output,char *error,size_t size) {
   try {
