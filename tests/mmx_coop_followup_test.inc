@@ -12,6 +12,10 @@ static void native_special_art_checks(const char *fixture) {
     for(unsigned w=1;w<=8;++w)g_ram[0x1f86+w*2]=0xc0|28;
     for(unsigned w=0;w<weapon;++w) {frame(SNES_PAD_R);zero_replay(3);}
     check(g_ram[0xbdb]==weapon*2,"native reference selects requested X1 special");
+    /* Static specials leave the previous occupant's pose-DMA pointer in
+     * these reusable slots. A charged buster before Sting is a real trigger. */
+    for(unsigned d=0x1228;d<0x1428;d+=64) if(!g_ram[d])
+      eagle_putword(g_ram+d+0x31,0xaaf3);
     frame(facing?SNES_PAD_LEFT:SNES_PAD_RIGHT);
     unsigned samples=0,differences=0,matched_pieces=0,presentation_changes=0,reference_differences=0;
     for(unsigned tick=0;tick<32;++tick) {

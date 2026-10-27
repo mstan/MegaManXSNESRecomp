@@ -152,7 +152,10 @@ const MmxSpriteAsset *MmxRenderAssetsNativeShot(const uint8_t ram[0x20000],
   if(!weapon) return NULL;
   const MmxSpriteAsset *base=MmxRenderAssetsWeaponX(weapon,false);
   if(!base) return NULL;
-  unsigned table=ram_word(ram,object+0x31);
+  /* $84:8FCA consumes bit 7 of the pose when it queues CHR. Static
+   * animations leave it set and do not initialize $31: that field can still
+   * name a charged buster's directory from an earlier slot occupant. */
+  unsigned table=ram[object+23]&128 ? 0 : ram_word(ram,object+0x31);
   unsigned base_tile=ram[object+24];
   unsigned source_offset=ram_word(ram,0x18000+ram[object+16]*2);
   uint64_t key=((uint64_t)source_offset<<48)|((uint64_t)base_tile<<40)|

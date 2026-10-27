@@ -32,6 +32,14 @@ static void coop_special_dma_graphics(void) {
     ppu.oam[32]=(uint16_t)(120<<8|(flags&1?92:100));ppu.oam[33]=(uint16_t)attr;
     MmxCoopState c={0};c.initialized=1;c.players[0].status=MMX_COOP_ALIVE;
     memcpy(c.players[0].shots,q,sizeof(c.players[0].shots));
+    /* A still-pending pose is static art here: its stale DMA directory
+     * belongs to the previous slot occupant and must not overwrite the ROM
+     * weapon-selection upload. Then test the consumed dynamic pose below. */
+    q[23]=128|48;
+    const MmxSpriteAsset *pending=MmxRenderAssetsNativeShot(ram,0x1228,0x41,48,0);
+    const MmxSpriteAsset *selected=MmxRenderAssetsWeaponX(1,false);
+    assert(pending && selected && !memcmp(pending->tiles,selected->tiles,sizeof(pending->tiles)));
+    q[23]=48;
     capture();MmxRendererCoopFrame(&c);
     assert(MmxRendererDraw(output,(MmxRenderView){256,0,4.0/3.0},false));
     unsigned expected=source?0x0000ff:0x00ff00;
