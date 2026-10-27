@@ -1505,6 +1505,7 @@ static void sprite_priority_and_cutscene_binding(void) {
   g_mmx_custom_renderer = false; MmxRendererReset();
 }
 
+#include "mmx_player_presentation_test.inc"
 static void zero_blink_submission(void) {
   /* A submitted body belongs to the OAM epoch even if the next player update
    * has already cleared its visibility flag. It must never turn back into X. */
@@ -1587,6 +1588,7 @@ static void zero_blink_submission(void) {
     }
   }
   MmxBossRushReset();
+  coop_player_overlap();wide_penguin_blizzard();
   MmxZeroDisable(); g_mmx_custom_renderer = false; g_mmx_render_asset_repairs = true;
   MmxRendererReset();
 }

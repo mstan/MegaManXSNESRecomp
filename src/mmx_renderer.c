@@ -1234,7 +1234,16 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
    * BG3 uses, including dialogue, stay within their native screen bounds. */
   bool water = frame.ram[0x1f7a] == 1 && (p->screenEnabled[0] & 4) &&
       !(p->screenEnabled[1] & 4) && (p->cgwsel & 2) && (p->cgadsub & 0x44) == 0x44;
-  if (stage && layer == 2 && margin && !water) return 0;
+  /* $87:EFF6/$F030 enables BG3 for the handle's $1F3F countdown and fills
+   * its repeating snow map at $F083. Use the same captured tiles and raster
+   * scroll across the viewport, including Penguin in another Rush arena. */
+  if(stage && layer==2 && margin && !water) {
+    bool blizzard=frame.ram[0x1f3f] && frame.ram[0x1f7a]==8;
+    if(frame.ram[0x1f3f] && frame_rush.mode==MMX_RUSH_PLAYING)
+      for(unsigned i=0;i<2;++i)
+        blizzard|=frame_rush.bosses[i].id==0 && frame_rush.bosses[i].phase!=0;
+    if(!blizzard)return 0;
+  }
   /* Thunder Slimer's moving BG2 surface is already resident in VRAM.
    * Draw it through the margins using its live scroll, rather than hiding
    * it at 4:3 or reconstructing dormant bubbles from the stage map. */
@@ -1430,6 +1439,19 @@ static void native_background_center(const Ppu *p, const Raster *r,
   (void)SnesRenderMode1TileRow(p, r->vram, layer, 0, y, 256, out);
 }
 #endif
+typedef struct PlayerFootprint {
+  uint8_t opaque[MMX_RENDER_MAX_WIDTH];
+  int first,last;
+} PlayerFootprint;
+/* Rendering already consumes one immutable frame serially. This temporary
+ * binding exists only during a primary X body/armor draw, never guest work. */
+static PlayerFootprint *player_footprint;
+static void player_pixel(int x) {
+  if(!player_footprint)return;
+  player_footprint->opaque[x]=1;
+  if(x<player_footprint->first)player_footprint->first=x;
+  if(x>player_footprint->last)player_footprint->last=x;
+}
 static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, int size,
                     int y, MmxRenderView view, uint16_t *out, bool margins_only,
                     const MmxSpriteAsset *asset, unsigned raw_tile, int *object_color,
@@ -1458,6 +1480,7 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
     if (hud_color >= 0) pixel = 1;
     else if (hud_color == -2) pixel = 0;
     if (pixel) {
+      player_pixel(dest);
       out[dest] = (uint16_t)(z | pixel);
       object_color[dest] = hud_color >= 0 ? hud_color :
           asset && !asset->live_colors ? asset->colors[pixel] : -1;
@@ -1607,6 +1630,7 @@ static void weapon_sprite_row(const MmxWeaponShot *s, unsigned pose, int x, int 
     unsigned pixel=p->pixels[row*p->width+col];
     int dx=x+((s->facing&64) ? -1-p->left-col : p->left+col)+view.extra;
     if (pixel && dx>=0 && dx<view.width) {
+      player_pixel(dx);
       objects[dx]=(uint16_t)(0xa680|pixel); colors[dx]=palette[pixel];
     }
   }
@@ -2164,6 +2188,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if(stage && frame_coop.initialized &&
       frame_coop.players[frame_coop.current^1].character==MMX_COOP_X)
     prepare_partner_graphics();
+  bool x_in_front=stage && frame_coop.initialized &&
+      frame_coop.players[frame_coop.current].character==MMX_COOP_X &&
+      frame_coop.players[frame_coop.current^1].character==MMX_COOP_ZERO &&
+      frame_coop.players[frame_coop.current^1].status==MMX_COOP_ALIVE;
   bool swapping = stage && MmxZeroEnabled() && frame_zero.swap_phase;
   unsigned weapon_page = menu ? frame_weapons.menu_page : frame_weapons.page;
   unsigned weapon_item = menu ? frame.ram[0x1ed2] : frame_weapons.weapon;
@@ -2361,6 +2389,9 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     bool replaced[128] = {false};
 #endif
     const MmxSpriteAsset *slot_weapons[128] = {0};
+    PlayerFootprint x_pixels;
+    x_pixels.first=view.width;x_pixels.last=-1;
+    if(x_in_front)memset(x_pixels.opaque,0,sizeof(x_pixels.opaque));
     bool zero_drawn[2] = {false,false};
     for (int i = (int)piece_count - 1; i >= 0; --i) {
       Piece s = pieces[i]; const MmxSpriteAsset *asset = piece_assets[i];
@@ -2447,9 +2478,11 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if (triad_x_body) {
         if (oam_match && !zero_drawn[0]) {
           zero_drawn[0]=true;
+          player_footprint=x_in_front?&x_pixels:NULL;
           weapon_sprite_row(cast_body,cast_body->pose,
               (int16_t)(word(frame.ram,0xbad)-view_camera(frame.ram,0x1e4d)),
               (int16_t)(word(frame.ram,0xbb0)-view_camera(frame.ram,0x1e50)),y,view,objects,object_colors);
+          player_footprint=NULL;
         }
         continue;
       }
@@ -2550,10 +2583,27 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         const MmxSpriteAsset *beam=MmxRenderAssetsChargedBuster(s.animation,piece_pose(&s));
         if(beam) {asset=beam;attr=s.attr;}
       }
+      player_footprint=x_in_front && (s.object==0xba8 ||
+          (s.object>=0xc38 && s.object<=0xc78))?&x_pixels:NULL;
       sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset,
           coop_special?s.attr&255:s.tile, object_colors, true, false, red_ready || red_death);
+      player_footprint=NULL;
     }
-    if (stage) coop_partner_row(&p,r,y,view,objects,object_colors);
+    if (stage) {
+      /* Partner X already follows primary Zero. For primary X, protect only
+       * his opaque footprint while drawing Zero at the existing world slot.
+       * Keep any world occluder already covering X, both color sources, and
+       * every non-overlap pixel. Native OAM X follows this pass naturally. */
+      uint16_t saved_objects[MMX_RENDER_MAX_WIDTH];
+      int saved_colors[MMX_RENDER_MAX_WIDTH];
+      for(int x=x_pixels.first;x<=x_pixels.last;++x)if(x_pixels.opaque[x]) {
+        saved_objects[x]=objects[x];saved_colors[x]=object_colors[x];
+      }
+      coop_partner_row(&p,r,y,view,objects,object_colors);
+      for(int x=x_pixels.first;x<=x_pixels.last;++x)if(x_pixels.opaque[x]) {
+        objects[x]=saved_objects[x];object_colors[x]=saved_colors[x];
+      }
+    }
     int bar_first = -1, bar_count = 0;
     if (hud) for (int slot = 16; slot <= 48; ++slot) {
       unsigned pos = r->oam[slot * 2], attr = r->oam[slot * 2 + 1];
