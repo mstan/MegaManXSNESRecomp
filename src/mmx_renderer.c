@@ -1443,14 +1443,17 @@ typedef struct PlayerFootprint {
   uint8_t opaque[MMX_RENDER_MAX_WIDTH];
   int first,last;
 } PlayerFootprint;
-/* Rendering already consumes one immutable frame serially. This temporary
- * binding exists only during a primary X body/armor draw, never guest work. */
-static PlayerFootprint *player_footprint;
-static void player_pixel(int x) {
-  if(!player_footprint)return;
-  player_footprint->opaque[x]=1;
-  if(x<player_footprint->first)player_footprint->first=x;
-  if(x>player_footprint->last)player_footprint->last=x;
+/* Bit 11 is unused by OBJ's layer 4/6 encoding. Mark a body draw in z once,
+ * then remove its temporary tag while collecting that small tile's footprint.
+ * Ordinary sprite pixels keep their original loop, with no per-pixel hook. */
+static void player_footprint(PlayerFootprint *p,uint16_t *objects,int first,int last,int width) {
+  if(first<0)first=0;
+  if(last>=width)last=width-1;
+  for(int x=first;x<=last;++x)if(objects[x]&0x800) {
+    objects[x]&=~0x800u;p->opaque[x]=1;
+    if(x<p->first)p->first=x;
+    if(x>p->last)p->last=x;
+  }
 }
 static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, int size,
                     int y, MmxRenderView view, uint16_t *out, bool margins_only,
@@ -1462,7 +1465,8 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
   unsigned base = (p->obsel & 7) * 8192;
   if (attr & 256) base += (((p->obsel >> 3) & 3) + 1) * 4096;
   unsigned z = ((((attr >> 12) & 3) * 4 + 2) << 12) |
-               ((attr & 0x800 ? 4 : 6) << 8) | (128 + ((attr >> 9) & 7) * 16);
+               ((attr & 0x800 ? 4 : 6) << 8) | (128 + ((attr >> 9) & 7) * 16) |
+               ((attr&0x10000)>>5);
   for (int c = 0; c < size; ++c) {
     int dx = x + c, dest = dx + view.extra;
     if (dest < 0 || dest >= view.width || (margins_only && dx >= 0 && dx < 256)) continue;
@@ -1480,7 +1484,6 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
     if (hud_color >= 0) pixel = 1;
     else if (hud_color == -2) pixel = 0;
     if (pixel) {
-      player_pixel(dest);
       out[dest] = (uint16_t)(z | pixel);
       object_color[dest] = hud_color >= 0 ? hud_color :
           asset && !asset->live_colors ? asset->colors[pixel] : -1;
@@ -1619,21 +1622,25 @@ static uint32_t native_plain_colour(const uint16_t *palette, const uint32_t *rgb
   return rgb[color & 0x7fff];
 }
 #endif
-static void weapon_sprite_row(const MmxWeaponShot *s, unsigned pose, int x, int sy,
-                              int y, MmxRenderView view, uint16_t *objects, int *colors) {
+static void weapon_sprite_row_tag(const MmxWeaponShot *s,unsigned pose,int x,int sy,
+    int y,MmxRenderView view,uint16_t *objects,int *colors,unsigned tag) {
   const MmxWeaponPose *p = MmxWeaponsPose(s->page,s->weapon,s->group,pose);
   const uint16_t *palette = MmxWeaponsGroupPalette(s->page,s->weapon,s->group);
   if (!p || !palette) return;
   int row = (s->facing&128 ? -(y-sy)-1 : y-sy) - p->top;
   if (row < 0 || row >= p->height) return;
+  uint16_t z=(uint16_t)(0xa680|tag);
   for (int col=0;col<p->width;++col) {
     unsigned pixel=p->pixels[row*p->width+col];
     int dx=x+((s->facing&64) ? -1-p->left-col : p->left+col)+view.extra;
     if (pixel && dx>=0 && dx<view.width) {
-      player_pixel(dx);
-      objects[dx]=(uint16_t)(0xa680|pixel); colors[dx]=palette[pixel];
+      objects[dx]=(uint16_t)(z|pixel); colors[dx]=palette[pixel];
     }
   }
+}
+static void weapon_sprite_row(const MmxWeaponShot *s,unsigned pose,int x,int sy,
+    int y,MmxRenderView view,uint16_t *objects,int *colors) {
+  weapon_sprite_row_tag(s,pose,x,sy,y,view,objects,colors,0);
 }
 static void moved_enemy_row(const MmxWeaponShot *s,const Ppu *p,const Raster *r,int y,
                             MmxRenderView view,uint16_t *objects,int *colors) {
@@ -2478,11 +2485,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if (triad_x_body) {
         if (oam_match && !zero_drawn[0]) {
           zero_drawn[0]=true;
-          player_footprint=x_in_front?&x_pixels:NULL;
-          weapon_sprite_row(cast_body,cast_body->pose,
+          weapon_sprite_row_tag(cast_body,cast_body->pose,
               (int16_t)(word(frame.ram,0xbad)-view_camera(frame.ram,0x1e4d)),
-              (int16_t)(word(frame.ram,0xbb0)-view_camera(frame.ram,0x1e50)),y,view,objects,object_colors);
-          player_footprint=NULL;
+              (int16_t)(word(frame.ram,0xbb0)-view_camera(frame.ram,0x1e50)),y,view,objects,object_colors,x_in_front?0x800:0);
+          if(x_in_front)player_footprint(&x_pixels,objects,0,view.width-1,view.width);
         }
         continue;
       }
@@ -2583,11 +2589,12 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         const MmxSpriteAsset *beam=MmxRenderAssetsChargedBuster(s.animation,piece_pose(&s));
         if(beam) {asset=beam;attr=s.attr;}
       }
-      player_footprint=x_in_front && (s.object==0xba8 ||
-          (s.object>=0xc38 && s.object<=0xc78))?&x_pixels:NULL;
+      bool x_body=x_in_front && (s.object==0xba8 || (s.object>=0xc38 && s.object<=0xc78));
+      if(x_body)attr|=0x10000;
       sprite(&p, r, s.x, s.y, attr, s.size, y, view, objects, !center, asset,
           coop_special?s.attr&255:s.tile, object_colors, true, false, red_ready || red_death);
-      player_footprint=NULL;
+      if(x_body && y>=s.y && y<s.y+s.size)
+        player_footprint(&x_pixels,objects,s.x+view.extra,s.x+view.extra+s.size-1,view.width);
     }
     if (stage) {
       /* Partner X already follows primary Zero. For primary X, protect only
