@@ -143,11 +143,24 @@ static void coop_view_checks(const char *fixture,uint8_t *start,uint8_t *expecte
   eagle_putword(shaft+0x1e56,0);eagle_putword(shaft+0x1e58,2048);
   eagle_putword(shaft+0x1e5a,0);eagle_putword(shaft+0x1e5c,2048);
   eagle_putword(separated.players[1].body+5,1000);eagle_putword(separated.players[1].body+8,1300);
-  b=MmxCoopViewForPlayer(shaft,&separated,1);
-  check(b.y>1000 && MmxCoopViewContains(shaft,&separated,1000,1300,64,320,64,288,0),
-      "vertical separation activates the remote player's shaft");
-  check(!MmxCoopViewContains(shaft,&separated,128,1300,64,320,64,288,0),
-      "activation does not combine one player's X with the other player's Y");
+  /* This artificial shaft is not Highway. The real per-player limit history
+   * still describes Highway's fixed Y=256 and correctly overrides WRAM when
+   * valid. Supply this fixture's own history, then restore the live world's.
+   * Cover the WRAM fallback and valid history without relaxing either check. */
+  MmxCoopViewBoundsState live_bounds=MmxCoopViewsGetBoundsState();
+  MmxCoopViewBoundsState shaft_bounds={0};shaft_bounds.stage=shaft[0x1f7a];
+  for(unsigned seat=0;seat<2;++seat) {
+    shaft_bounds.limits[seat][1]=shaft_bounds.limits[seat][3]=2048;
+  }
+  for(unsigned history=0;history<2;++history) {
+    shaft_bounds.valid=history?3:0;MmxCoopViewsSetBoundsState(&shaft_bounds);
+    b=MmxCoopViewForPlayer(shaft,&separated,1);
+    check(b.y>1000 && MmxCoopViewContains(shaft,&separated,1000,1300,64,320,64,288,0),
+        "vertical separation activates the remote player's shaft");
+    check(!MmxCoopViewContains(shaft,&separated,128,1300,64,320,64,288,0),
+        "activation does not combine one player's X with the other player's Y");
+  }
+  MmxCoopViewsSetBoundsState(&live_bounds);
   static uint32_t views[2][342*224];
   size_t n=RtlSaveSnapshotToMemory(start,cap);check(n,"independent-view snapshot saves");
   for(unsigned seat=0;seat<2;++seat) {
