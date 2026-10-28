@@ -161,15 +161,15 @@ static void gold(void) {
   assert(MmxArmorGetState().hyper_energy==0x1c00);
   MmxArmorFrameTick(ram,0,true);MmxArmorFrameTick(ram,8,true);
   MmxArmorFrameTick(ram,0,true);MmxArmorFrameTick(ram,0,true);
-  MmxArmorFrameTick(ram,0xc20,true);assert(MmxArmorGetState().hyper);
+  MmxArmorFrameTick(ram,0xc20,true);assert(MmxArmorGetState().hyper_active);
   tick_buster(true,true);assert(MmxArmorGetState().burst==1 && MmxArmorGetState().hyper_energy==0x1a00);
   MmxArmorRefill();assert(MmxArmorGetState().hyper_energy==0x1c00);
   gold_recovery();
   player();ram[0x1f99]=15;ram[0x1f7a]=3;MmxArmorPrePlayer(ram);MmxArmorHadoukenAward(ram);
-  MmxArmorState retry=MmxArmorGetState();retry.hyper=1;retry.hyper_energy=12;retry.dash_used=2;
+  MmxArmorState retry=MmxArmorGetState();retry.hyper_active=1;retry.hyper_energy=12;retry.dash_used=2;
   MmxArmorSetState(retry);ram[0xd2]=2;assert(!MmxArmorFrameTick(ram,0,true));
   ram[0xd2]=4;MmxArmorPrePlayer(ram);retry=MmxArmorGetState();
-  assert(retry.gold && retry.hyper_energy==0x1c00 && !retry.hyper && !retry.dash_used);
+  assert(retry.gold && retry.hyper_energy==0x1c00 && !retry.hyper_active && !retry.dash_used);
   assert(MmxArmorFrameTick(ram,0,true) && MmxArmorGetState().tracer);
   puts("Gold Hyper Charge cost/refill and source-timed health/Sub Tank recovery passed");
 }

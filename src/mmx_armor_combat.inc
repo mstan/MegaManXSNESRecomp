@@ -176,12 +176,12 @@ static void buster_player(uint8_t *r) {
   bool held=(r[0xbdf]&64)!=0,pressed=(r[0xbe3]&64)!=0;
   unsigned live=0;for(unsigned i=0;i<8;++i)if(state.shots[i].active && MmxArmorProjectileOwned(r,0x1228+i*64))live|=1u<<i;
   state.shot_mask=(uint16_t)live;
-  if(state.hyper && state.gold && game==3 && (r[0x1f99]&2) && pressed &&
+  if(state.hyper_active && state.gold && game==3 && (r[0x1f99]&2) && pressed &&
       !state.burst && !state.stored_shot && config[10]) {
     unsigned cost=word(config[10]);if((r[0x1f99]&5)==5)cost/=2;
     if(cost && state.hyper_energy>=cost) {
       state.hyper_energy=(uint16_t)(state.hyper_energy-cost);state.stored_shot=2;start_armor_burst(r,1);
-    } else state.hyper=0;
+    } else state.hyper_active=0;
   }
   if(state.burst==1 && state.burst_fired && pressed)state.burst_queued=1;
   if(state.burst_end) {

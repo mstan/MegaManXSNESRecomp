@@ -38,7 +38,7 @@ bool MmxArmorFrameTick(uint8_t *r,uint16_t pad,bool available) {
   bool pressed=combo && state.utility_held!=combo;state.utility_held=(uint8_t)combo;
   if(!state.giga_tick && combo==2 && pressed && r[0xd3]==4 &&
       !r[0x1f10] && !r[0x1f0c] && !r[0x1f23] && !r[0x1f48]) {
-    if(game==3) {state.hyper^=1;armor_sound(r,0x2c);}
+    if(game==3) {state.hyper_active^=1;armor_sound(r,0x2c);}
     else if(state.valid && state.stage==r[0x1f7a] && config[9] && state.energy>=0x1c00 &&
         !body[0x35] && (body[2]<=10 || body[2]==0x14)) {
       state.energy=0;state.giga_tick=1;state.giga_fired=0;state.tracer=0;

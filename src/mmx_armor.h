@@ -32,7 +32,7 @@ typedef struct MmxArmorState {
   uint16_t utility_ticks,radar_epoch;
   uint8_t radar_stage,radar_closing;
   uint16_t giga_tick,hyper_energy;
-  uint8_t giga_fired,hyper;
+  uint8_t giga_fired,hyper_active;
   uint16_t utility_reserved;
   MmxArmorShot shots[8];
 } MmxArmorState;

@@ -149,7 +149,7 @@ bool MmxArmorValidState(const MmxArmorState *s) {
       s->barrier_x>=-0x1000000 && s->barrier_x<=0x1000000 &&
       s->barrier_y>=-0x1000000 && s->barrier_y<=0x1000000 &&
       s->utility_ticks<=180 && s->radar_stage<=13 && s->radar_closing<=1 &&
-      s->giga_tick<=242 && s->hyper_energy<=0x1c00 && s->giga_fired<=1 && s->hyper<=1 &&
+      s->giga_tick<=242 && s->hyper_energy<=0x1c00 && s->giga_fired<=1 && s->hyper_active<=1 &&
       !s->utility_reserved &&
       s->anim_group<=1 && s->dash_recovery<=9 && !s->reserved_word &&
       s->burst<=2 && s->burst_air<=1 && s->burst_fired<=1 && s->burst_transition<=1 &&
@@ -334,7 +334,7 @@ void MmxArmorPrePlayer(uint8_t *r) {
   if(!state.valid || state.stage!=r[0x1f7a]) {
     state.valid=1;state.stage=r[0x1f7a];state.barrier_ticks=state.barrier_level=state.barrier_delay=0;
     state.dash_used=state.dash_ticks=state.dash_up=state.dash_jump=state.dash_recovery=0;
-    state.giga_tick=state.giga_fired=state.hyper=0;MmxArmorRefill();
+    state.giga_tick=state.giga_fired=state.hyper_active=0;MmxArmorRefill();
     if(game!=3)state.tracer=0;state.recovery_ticks=0;
     state.burst=state.burst_end=state.burst_queued=state.stored_shot=state.charge=state.fire_held=0;
     memset(state.shots,0,sizeof(state.shots));state.shot_mask=0;

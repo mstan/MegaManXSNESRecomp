@@ -2310,6 +2310,13 @@ static bool raster_scene_owned(void) {
       zero_title_menu() || frame_rush.menu;
 }
 
+#ifndef MMX_NATIVE_ROW_PLAN
+#define MMX_NATIVE_ROW_PLAN 0
+#endif
+#if MMX_NATIVE_RASTER && MMX_NATIVE_ROW_PLAN
+#include "mmx_row_plan.inc"
+#endif
+
 bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   if (!out || !frame.valid || view.width < 256 || view.width > MMX_RENDER_MAX_WIDTH ||
       view.extra != (view.width - 256) / 2 || (view.width & 1)) return false;
@@ -2887,6 +2894,13 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         native_layers |= 1u << layer;
       }
     }
+#endif
+#if MMX_NATIVE_RASTER && MMX_NATIVE_ROW_PLAN
+    native_render_row(&p, r, y, view, stage, menu, dialogue_backdrop,
+        crystal_ripple[y], palette_fade, native_background, native_layers,
+        objects, object_colors, native_rgb, brightness, native_plain_layers,
+        beams, beam_count, out + y * view.width);
+    continue;
 #endif
     for (int sx = 0; sx < view.width; ++sx) {
       int x = sx - view.extra;
