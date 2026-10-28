@@ -1078,9 +1078,14 @@ ice-sled fixture before landing. Fixtures and source ROM assets remain private.
 
 ## Learner Mode (P2)
 
-Option `learner` (boolean, off by default) of the co-op feature. Seat 1 is
-the learner; the roster choice is unchanged. It is configuration, not save
-state: the netplay mod set and same-mods saves already carry option values.
+Its own package, `megaman-x.coop.learner` (feature `learner`, plugin
+`megaman-x.coop.learner`, off by default), with `requires =
+"megaman-x.coop/coop"`: enabling it turns co-op on, and turning co-op off or
+choosing Add Zero turns it off. Seat 1 is the learner; the roster choice is
+unchanged. It is configuration, not save state: the netplay mod set and
+same-mods saves already carry it. Its `health` option (off by default) shows
+the learner's health meter; hidden, the weapon column keeps its place
+(`MmxRendererSetLearnerHealth`).
 
 Damage. Every hit on the projected body subtracts at one of two places:
 `$84:9F42`, shared by `$84:9F2F` (hurt action, then `$0BCE`) and `$84:9F2A`,
@@ -1116,6 +1121,7 @@ for both rosters: a pit rescue while P1 walks (no frozen frame, exact
 mid-rescue replay), a would-be fatal native enemy hit at 1 HP, a forced
 death-controller state, being left behind (no tether, P1-only camera, rescue
 after two seconds), pause and withdrawal ownership, the learner's own live
-withdrawal and return, and P1's death as a one-life team restart. Turning the
-option off restores the fatal pit. Doors, Ride Armor, capsules and story
+withdrawal and return, P1's death as a one-life team restart, and the hidden
+or shown learner meter in both HUD layouts. Turning the mode off restores the
+fatal pit. Doors, Ride Armor, capsules and story
 scripts with a learner have no private fixture yet and need playtesting.

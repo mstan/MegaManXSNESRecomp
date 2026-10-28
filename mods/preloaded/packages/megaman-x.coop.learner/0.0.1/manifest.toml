@@ -1,0 +1,33 @@
+format_version = 1
+id = "megaman-x.coop.learner"
+version = "0.0.1"
+name = "Co-op Learner Mode"
+author = "mstan"
+description = "A forgiving Player 2 for younger or new players, on top of X / Zero Co-op."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "requires-same-mods"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "learner"
+name = "Player 2 Learner Mode"
+description = "For younger or new players. Player 2 cannot lose health or die. Pits, spikes and falling behind off-screen beam them back beside Player 1, who never waits for them. The camera follows Player 1 only, and Player 2 cannot pause, open doors or board Ride Armor. If Player 1 falls, the stage restarts as in single player. Turning this on turns on co-op."
+group = "Characters"
+default_enabled = false
+requires = "megaman-x.coop/coop"
+
+[[option]]
+feature = "learner"
+id = "health"
+label = "Show Player 2 health bar"
+description = "Player 2 never loses health, so the bar is hidden unless you want it."
+type = "boolean"
+default = false
+
+[[plugin]]
+feature = "learner"
+id = "megaman-x.coop.learner"

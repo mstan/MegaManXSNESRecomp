@@ -35,14 +35,6 @@ label = "Zero"
 
 [[option]]
 feature = "coop"
-id = "learner"
-label = "Player 2 Learner Mode"
-description = "For younger or new players. Player 2 cannot lose health or die. Pits, spikes and falling behind off-screen beam them back beside Player 1, who never waits for them. The camera follows Player 1 only, and Player 2 cannot pause, open doors or board Ride Armor."
-type = "boolean"
-default = false
-
-[[option]]
-feature = "coop"
 id = "behavior"
 label = "Zero behavior"
 description = "Shared with Add Zero. Modern replaces Zero's buster with a direct saber and adds a double jump and air dash. Saber Zero (by RaphaelAzev) adds a Y-button Z-Saber with a 3-hit ground combo, air, wall and dash slashes, and the X3 finisher wave; tune it with Saber Zero settings. Special weapons remain available."
