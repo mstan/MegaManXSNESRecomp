@@ -142,6 +142,20 @@ static void giga(void) {
   MmxArmorSetBodyQuery(NULL);
   puts("Giga timing, energy, native-contact hit mask, ceiling and stored-seat ownership passed");
 }
+static void gold_recovery(void) {
+  player();ram[0x1f99]=1;ram[0x1f7a]=3;MmxArmorPrePlayer(ram);MmxArmorHadoukenAward(ram);
+  /* Native HUD $80:D82C clears bit 7 after drawing HP. Each heal must
+   * set it again, otherwise live HP rises while the meter stays stale. */
+  ram[0x1f9a]=32;ram[0xbcf]=16;
+  for(unsigned i=0;i<307;++i)MmxArmorPrePlayer(ram);
+  assert(ram[0xbcf]==16);MmxArmorPrePlayer(ram);assert(ram[0xbcf]==0x91);
+  ram[0xbcf]&=127; /* HUD consumed the first change. */
+  for(unsigned i=0;i<179;++i)MmxArmorPrePlayer(ram);
+  assert(ram[0xbcf]==17);MmxArmorPrePlayer(ram);assert(ram[0xbcf]==0x92);
+  ram[0xbcf]=0xa0;ram[0x1f83]=0x80;
+  for(unsigned i=0;i<180;++i)MmxArmorPrePlayer(ram);
+  assert(ram[0x1f83]==0x81);
+}
 static void gold(void) {
   player();ram[0x1f99]=15;ram[0x1f7a]=3;MmxArmorPrePlayer(ram);MmxArmorHadoukenAward(ram);
   assert(MmxArmorGetState().hyper_energy==0x1c00);
@@ -150,15 +164,7 @@ static void gold(void) {
   MmxArmorFrameTick(ram,0xc20,true);assert(MmxArmorGetState().hyper);
   tick_buster(true,true);assert(MmxArmorGetState().burst==1 && MmxArmorGetState().hyper_energy==0x1a00);
   MmxArmorRefill();assert(MmxArmorGetState().hyper_energy==0x1c00);
-  player();ram[0x1f99]=1;ram[0x1f7a]=3;MmxArmorPrePlayer(ram);MmxArmorHadoukenAward(ram);
-  ram[0x1f9a]=32;
-  for(unsigned i=0;i<307;++i)MmxArmorPrePlayer(ram);
-  assert((ram[0xbcf]&127)==16);MmxArmorPrePlayer(ram);assert((ram[0xbcf]&127)==17);
-  for(unsigned i=0;i<179;++i)MmxArmorPrePlayer(ram);
-  assert((ram[0xbcf]&127)==17);MmxArmorPrePlayer(ram);assert((ram[0xbcf]&127)==18);
-  ram[0xbcf]=0xa0;ram[0x1f83]=0x80;
-  for(unsigned i=0;i<180;++i)MmxArmorPrePlayer(ram);
-  assert(ram[0x1f83]==0x81);
+  gold_recovery();
   player();ram[0x1f99]=15;ram[0x1f7a]=3;MmxArmorPrePlayer(ram);MmxArmorHadoukenAward(ram);
   MmxArmorState retry=MmxArmorGetState();retry.hyper=1;retry.hyper_energy=12;retry.dash_used=2;
   MmxArmorSetState(retry);ram[0xd2]=2;assert(!MmxArmorFrameTick(ram,0,true));
@@ -271,6 +277,7 @@ int main(int argc,char **argv) {
       assert(ram[0]==expected);
     }
     if(game==3) {
+      gold_recovery();
       player();ram[0x1f99]=4;ram[0xe8e]=8;MmxArmorTakeDamage(ram,0xe68);
       assert(ram[0]==4 && MmxArmorGetState().barrier_ticks==300);
       MmxArmorState shield=MmxArmorGetState();shield.valid=1;shield.stage=0;shield.barrier_delay=0;

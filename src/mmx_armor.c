@@ -366,7 +366,9 @@ void MmxArmorPrePlayer(uint8_t *r) {
     if(!--state.recovery_ticks) {
       state.recovery_ticks=180;
       unsigned hp=r[0xbcf]&127;
-      if(hp<r[0x1f9a])r[0xbcf]=(uint8_t)((r[0xbcf]&128)|(hp+1));
+      /* X1 $80:D82C redraws the native health meter only when bit 7 is
+       * set, then clears it. Notify it on every recovered point. */
+      if(hp<r[0x1f9a])r[0xbcf]=(uint8_t)(128|(hp+1));
       else for(unsigned i=0;i<4;++i)if((r[0x1f83+i]&128) && r[0x1f83+i]<0x8e) {++r[0x1f83+i];break;}
     }
   } else state.recovery_ticks=0;
