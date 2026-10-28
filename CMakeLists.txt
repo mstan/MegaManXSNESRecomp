@@ -52,9 +52,12 @@ endif()
 option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
 option(MMX_NATIVE_BG_SPANS "Bind reconstructed background tiles and palettes per source span" OFF)
 set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
-    tests/mmx_row_plan_test.c src/main.c tests/mmx_adaptive_state_test.c
+    src/main.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
     MMX_NATIVE_BG_SPANS=$<BOOL:${MMX_NATIVE_BG_SPANS}>)
+# Exercise the candidate in ROM-free CI even when the product selects its floor.
+set_property(SOURCE tests/mmx_row_plan_test.c APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_NATIVE_BG_SPANS=1)
 set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
     src/main.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
