@@ -72,7 +72,7 @@ static int armor_debug(const char *cmd,const char *args,DebugServerGameSendLine 
   uint8_t *body=MmxCoopEnabled()?MmxCoopCharacterBody(g_ram,MMX_COOP_X):g_ram+0xba8;
   snprintf(out,sizeof(out),"{\"game\":%u,\"gold\":%u,\"charge\":%u,\"burst\":%u,\"stored\":%u,\"shots\":%u,\"tracer\":%u,\"radar_stage\":%u,\"pad\":%u,\"valid\":%u,\"giga\":%u,\"energy\":%u,\"hyper\":%u,\"hyper_energy\":%u,\"x\":%u,\"y\":%u,\"barrier\":%u,\"barrier_level\":%u,\"dash_used\":%u,\"dash_ticks\":%u,\"dash_up\":%u,\"recovery\":%u}",
     MmxArmorGame(),s.gold,s.charge,s.burst,s.stored_shot,active,s.tracer,s.radar_stage,RtlGetPadState(0),MmxArmorValidState(&s),
-    s.giga_tick,s.energy,s.hyper,s.hyper_energy,body?(unsigned)(body[5]|body[6]<<8):0,body?(unsigned)(body[8]|body[9]<<8):0,
+    s.giga_tick,s.energy,s.hyper_active,s.hyper_energy,body?(unsigned)(body[5]|body[6]<<8):0,body?(unsigned)(body[8]|body[9]<<8):0,
     s.barrier_ticks,s.barrier_level,s.dash_used,s.dash_ticks,s.dash_up,s.recovery_ticks);
   send(out);return 1;
 }
