@@ -1,8 +1,9 @@
 # Whole-view row rendering experiment
 
 `MMX_NATIVE_ROW_PLAN=ON` selects a prepared-row pipeline in the NATIVE custom
-renderer. The default stays OFF while the candidate is being qualified. The
-existing NATIVE compositor and the separate LLE renderer remain buildable.
+renderer. It defaults ON for the qualified Windows x64 NATIVE configuration;
+other platforms retain their existing defaults. Explicit OFF selects the
+existing NATIVE compositor, and the separate LLE renderer remains buildable.
 
 Each captured line/view prepares its background pixel and private-color planes
 before composition. The shared `snes/raster_plan.h` job resolves widened hardware
@@ -33,3 +34,10 @@ Owning issue: `beads-8wg.2.161`; coordinating campaign: `beads-2wy8.1`. Bounded
 raw receipts and source/binary/configuration identities are retained under
 `G:/Temp/Codex/snesrecomp/full-view-20261027`. No original Xbox runtime or
 cross-build netplay compatibility is claimed.
+
+Five balanced A/B pairs per view on an Intel i5-4670 measured median process-CPU
+reductions of 7.4% (custom 4:3), 9.6% (16:9) and 12.6% (32:9). The ordinary
+stock-renderer workload was neutral/inconclusive. These are additional results
+against the preceding optimized MMX build, not additive percentages or original
+Xbox qualification. Raw samples, exact binary identities and settings are in
+`campaign-results.json` beneath the evidence directory above.

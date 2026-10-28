@@ -45,7 +45,11 @@ set(SNESRECOMP_BUILD_VERSION "${PROJECT_VERSION}" CACHE STRING "Release stamp fo
 set(RECOMP_UI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui" CACHE PATH "recomp-ui checkout")
 option(MMX_RASTER_FULL_COPY "Use full-copy raster storage as the correctness/performance reference" OFF)
 option(MMX_STAGE_TILE_REUSE "Reuse exact stage-map lookups within one captured draw" ON)
-option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" OFF)
+set(_MMX_NATIVE_ROW_PLAN_DEFAULT OFF)
+if(_MMX_RASTER_IMPL_DEFAULT STREQUAL "NATIVE" AND MMX_RASTER_IMPL STREQUAL "NATIVE")
+    set(_MMX_NATIVE_ROW_PLAN_DEFAULT ON)
+endif()
+option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
 set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
     src/main.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
