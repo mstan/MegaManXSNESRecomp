@@ -176,6 +176,13 @@ for 1.5 seconds to withdraw, and tap it to rejoin. A player who dies can tap
 are not available during boss or miniboss fights; the request waits until the
 fight is over, or until a 1-up is collected if no lives are left.
 
+For younger or new players, turn on **Player 2 Learner Mode** in the co-op
+options. Player 2 then cannot lose health or die: pits, spikes and falling
+behind off-screen beam them back beside Player 1, and Player 1 never waits
+for it. The camera follows Player 1 only, and Player 2 cannot pause, open
+doors, board Ride Armor or take over the stage. Player 1's death restarts the
+team as in single player.
+
 Reopen the launcher during play with **Ctrl+L** or controller **Select+L3**.
 Configure system shortcuts in **Hotkeys**. **F7** opens the save-state browser
 and **F8** opens rewind; both pause gameplay while you choose.

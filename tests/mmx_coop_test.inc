@@ -992,7 +992,16 @@ static void coop_launcher_checks(const char *root,const char *rom,const char *x3
     MmxCoopState s=MmxCoopGetState();
     check(MmxCoopEnabled() && MmxZeroEnabled() && s.players[0].character==character &&
         s.players[1].character==(character^1),"real plugin extracts source ROM and activates chosen roster");
+    check(!MmxCoopLearner(),"Learner Mode defaults off");
   }
+  check(p->feature_set_option(p->ctx,"megaman-x.coop","coop","learner","true") && p->commit(p->ctx,rom),
+      "launcher turns on Player 2 Learner Mode");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxCoopEnabled() && MmxCoopLearner(),"real plugin activates Learner Mode");
+  check(p->feature_set_option(p->ctx,"megaman-x.coop","coop","learner","false") && p->commit(p->ctx,rom),
+      "launcher turns Learner Mode off");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxCoopEnabled() && !MmxCoopLearner(),"turning the option off restores ordinary co-op");
   /* Saber Zero is a Zero behavior shared by co-op and Add Zero, with an
    * optional settings feature that claims no plugin of its own. */
   check(!MmxSaberEnabled(),"X3 behavior leaves Saber off");
@@ -1120,6 +1129,7 @@ static void coop_slime_checks(const char *fixture,uint8_t *start,uint8_t *expect
 #include "mmx_sigma_test.inc"
 #include "mmx_coop_bounce_test.inc"
 #include "mmx_hadouken_test.inc"
+#include "mmx_coop_learner_test.inc"
 static void coop_checks(const char *assets, const char *fixture,
                         uint8_t *start, uint8_t *expected, uint8_t *actual, size_t cap) {
   check(assets && fixture, "co-op check requires private source assets and a grounded fixture");
@@ -1146,6 +1156,7 @@ static void coop_checks(const char *assets, const char *fixture,
   }
   if(getenv("MMX_COOP_OWNER_WIDE_FIXTURES")) {owner_wide_checks(getenv("MMX_COOP_OWNER_WIDE_FIXTURES"),fixture);return;}
   if(getenv("MMX_COOP_FOLLOWUP_TEST")) {coop_followup_checks(fixture);return;}
+  if(getenv("MMX_COOP_LEARNER_TEST")) {coop_learner_checks(fixture,start,expected,actual,cap);return;}
   if(getenv("MMX_COOP_VIEWS_TEST")) {coop_view_checks(fixture,start,expected,actual,cap);return;}
   if(getenv("MMX_COOP_DASH_TEST")) {coop_dash_effect_checks(fixture,start,expected,actual,cap);return;}
   if(getenv("MMX_COOP_GRAPHICS_FOLLOWUP_TEST")) {coop_graphics_followup_checks(fixture);return;}

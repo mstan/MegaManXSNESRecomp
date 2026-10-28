@@ -1075,3 +1075,47 @@ busters, the retained ROM tile, and deterministic snapshot replay. Set
 camera paths without opening sockets or a lobby. Synthetic projectile
 placement uses the unified view; independent views can cull that imposed
 ice-sled fixture before landing. Fixtures and source ROM assets remain private.
+
+## Learner Mode (P2)
+
+Option `learner` (boolean, off by default) of the co-op feature. Seat 1 is
+the learner; the roster choice is unchanged. It is configuration, not save
+state: the netplay mod set and same-mods saves already carry option values.
+
+Damage. Every hit on the projected body subtracts at one of two places:
+`$84:9F42`, shared by `$84:9F2F` (hurt action, then `$0BCE`) and `$84:9F2A`,
+and enemy contact `$84:9D50`, from scratch `$0000` set from the enemy's `.26`.
+`$7F` is the instant kill (spikes `$84:9450`, pits `$80:E146`, crushers
+`$82:D859`). For the learner the hook zeroes the amount, so the native hurt
+reaction, knockback and invulnerability remain, and a `$7F` also requests a
+rescue. `apply_coop_hooks.py` routes `$84:9F2F/9F2A` to the interpreter only
+in Learner Mode; `$84:9B03` is always interpreted under co-op. Drains that
+bypass both (`$81:C809`) are refilled each frame, and any entry into the
+death initializer `$81:8A5C` returns through its RTS `$81:8A91` as a rescue.
+
+Rescue. The ordinary scene transport (departure, hidden, arrival beside P1 at
+the next `MmxCoopFindLanding`) with `scene_flags` LIVE: the world keeps
+running, teleports only pause during P1's menu, and `MmxCoopTransitionActive`
+excludes it so the renderer never holds a frame. Every world pass already
+skips a partner while `scene_owner` is set. Triggers: a hazard or the pit
+checks (`$80:E12D` hook, independent-view edge), falling below P1's screen,
+the capsule rule, and 120 frames off P1's screen (`learner_away`, formerly a
+reserved byte; `scene_flags` was `scene_reserved`). Select withdrawal and
+return, and stage-entry arrival, use the same live transport.
+
+Ownership. The camera follows P1 alone and P1 is never tethered by the
+224-pixel separation limit. The learner never retries doors (`door_route`),
+boarding (`armor_board_hook`) or capsules (`capsule_takes_world`), cannot
+pause (`$80:9E68`), and never becomes the world actor on P1's death: `$00:9AC7`
+keeps mode 6, so P1's death restarts the team and spends a life as in single
+player. P1 cannot withdraw. A story script that still hands an X learner the
+world (Sigma 1's farewell) is returned to P1 once it releases him.
+
+`MMX_COOP_LEARNER_TEST=1` with the ordinary co-op fixture variables checks,
+for both rosters: a pit rescue while P1 walks (no frozen frame, exact
+mid-rescue replay), a would-be fatal native enemy hit at 1 HP, a forced
+death-controller state, being left behind (no tether, P1-only camera, rescue
+after two seconds), pause and withdrawal ownership, the learner's own live
+withdrawal and return, and P1's death as a one-life team restart. Turning the
+option off restores the fatal pit. Doors, Ride Armor, capsules and story
+scripts with a learner have no private fixture yet and need playtesting.
