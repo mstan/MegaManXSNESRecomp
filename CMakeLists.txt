@@ -45,6 +45,11 @@ set(SNESRECOMP_BUILD_VERSION "${PROJECT_VERSION}" CACHE STRING "Release stamp fo
 set(RECOMP_UI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui" CACHE PATH "recomp-ui checkout")
 option(MMX_RASTER_FULL_COPY "Use full-copy raster storage as the correctness/performance reference" OFF)
 option(MMX_STAGE_TILE_REUSE "Reuse exact stage-map lookups within one captured draw" ON)
+option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" OFF)
+set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
+    src/main.c tests/mmx_adaptive_state_test.c
+    APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_NATIVE_ROW_PLAN=$<BOOL:${MMX_NATIVE_ROW_PLAN}>)
 set_property(SOURCE src/mmx_renderer.c APPEND PROPERTY COMPILE_DEFINITIONS
     MMX_RASTER_FULL_COPY=$<BOOL:${MMX_RASTER_FULL_COPY}>
     MMX_STAGE_TILE_REUSE=$<BOOL:${MMX_STAGE_TILE_REUSE}>)
@@ -53,7 +58,7 @@ set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL "Shared mod package runtime" FORCE)
 # keeps the unmodified Japanese edition and small unit tests independent.
 set(SNESRECOMP_NET_ICE ON CACHE BOOL "Internet netplay transport" FORCE)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
-string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}")
+string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}-row${MMX_NATIVE_ROW_PLAN}")
 set_property(SOURCE src/mmx_replay.c APPEND PROPERTY COMPILE_DEFINITIONS
     MMX_REPLAY_REVISION="${MMX_REPLAY_REVISION}" MMX_REPLAY_ENGINE="${MMX_REPLAY_ENGINE}")
 include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
@@ -248,6 +253,24 @@ if(BUILD_TESTING)
     add_test(NAME mmx_custom_renderer_native COMMAND mmx_renderer_native_test)
     set_tests_properties(mmx_custom_renderer_native PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-native")
+    set(mmx_row_plan_test_sources ${mmx_renderer_native_test_sources})
+    list(REMOVE_ITEM mmx_row_plan_test_sources tests/mmx_native_renderer_test.c)
+    add_executable(mmx_row_plan_test ${mmx_row_plan_test_sources}
+        tests/mmx_row_plan_test.c src/mmx_boss_rush_score.cpp)
+    target_include_directories(mmx_row_plan_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    target_compile_features(mmx_row_plan_test PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(mmx_row_plan_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_row_plan_test PRIVATE -UNDEBUG)
+    endif()
+    if(NOT WIN32)
+        target_link_libraries(mmx_row_plan_test PRIVATE m)
+    endif()
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-row-plan")
+    add_test(NAME mmx_custom_renderer_row_plan COMMAND mmx_row_plan_test)
+    set_tests_properties(mmx_custom_renderer_row_plan PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-row-plan")
     foreach(reference FULLCOPY TRACE)
         string(TOLOWER "${reference}" reference_name)
         add_executable(mmx_renderer_${reference_name}_test

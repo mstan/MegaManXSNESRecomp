@@ -20,7 +20,10 @@ static uint32_t row_random(void) {
   return row_rng;
 }
 
-int main(void) {
+#ifndef MMX_NATIVE_TEST_ENTRY
+#define MMX_NATIVE_TEST_ENTRY main
+#endif
+int MMX_NATIVE_TEST_ENTRY(void) {
   renderer_scene_suite();
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
   memset(&frame_rush, 0, sizeof(frame_rush));

@@ -43,6 +43,9 @@
 #ifndef MMX_DESKTOP_ENTRY
 #define MMX_DESKTOP_ENTRY main
 #endif
+#ifndef MMX_NATIVE_ROW_PLAN
+#define MMX_NATIVE_ROW_PLAN 0
+#endif
 extern const RtlGameInfo kMmxGameInfo;
 extern int mmx_tier2_diagnostics_enabled(void);
 
@@ -249,10 +252,11 @@ static void MmxAfterFrame(const SnesDesktopHostFrameStats *stats) {
     double seconds = stats->run_seconds;
     printf("SNESRECOMP_BENCHMARK {\"game\":\"Mega Man X\",\"frames\":%u,"
            "\"seconds\":%.9f,\"fps\":%.3f,\"ms_per_frame\":%.6f,\"native_raster_lines\":%llu,"
-           "\"apu_time_impl\":\"%s\",\"raster_impl\":\"%s\",\"audio_output\":%s}\n",
+           "\"apu_time_impl\":\"%s\",\"raster_impl\":\"%s\",\"row_plan\":%s,\"audio_output\":%s}\n",
            stats->frame, seconds, stats->frame / seconds,
            seconds * 1000.0 / stats->frame,(unsigned long long)s_benchmark_native_lines,
            apu_time_implementation(), MMX_NATIVE_RASTER ? "NATIVE" : "LLE",
+           MMX_NATIVE_RASTER && MMX_NATIVE_ROW_PLAN ? "true" : "false",
            s_benchmark_audio ? "true" : "false");
   }
 }
