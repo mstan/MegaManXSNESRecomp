@@ -59,8 +59,11 @@ captured row, with no new persistent cache, guest write or serialized state.
 The prototype passes existing native scenes, 1,536 scalar-compared full-width
 rows, separate non-aligned CHR/palette phase checks, all four Magic Carpet
 gates and eight captured view/HUD comparisons. The row suite also executes on
-Linux. This is correctness evidence, not yet a performance claim or owner
-approval. Current-build state and matched built-game performance qualification
-remain pending at this checkpoint. Tracking: `beads-8wg.1.150`, roadmap
+Linux. Both clean-source OFF/ON builds pass current-build restore, rewind,
+deterministic replay and fresh-process replay. A dedicated ROM-backed rollback
+check also compares identical guest inputs while varying render widths and
+draw counts; the resulting rollback state is identical. This is correctness
+evidence, not yet a performance claim or owner approval. Matched built-game
+performance qualification remains pending. Tracking: `beads-8wg.1.150`, roadmap
 `beads-49cy`, campaign `beads-2wy8.1`. Evidence:
 `G:/Temp/Codex/snesrecomp/background-spans-20261027/evidence`.

@@ -353,6 +353,15 @@ if(TARGET mmx_state_tests)
         tests/mmx_adaptive_state_test.c ${mmx_state_sources})
     if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
         set(rush_report_dir "${CMAKE_CURRENT_BINARY_DIR}/boss-rush-reports")
+        set(render_rollback_dir "${CMAKE_CURRENT_BINARY_DIR}/render-rollback")
+        file(MAKE_DIRECTORY "${render_rollback_dir}")
+        add_test(NAME mmx_render_rollback
+            COMMAND ${CMAKE_COMMAND} -E env
+                SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=dummy MMX_REPLAY_RECORD=0
+                MMX_RENDER_ROLLBACK_TEST=1
+                $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_render_rollback PROPERTIES
+            WORKING_DIRECTORY "${render_rollback_dir}" LABELS "rom;rollback;renderer")
         file(MAKE_DIRECTORY "${rush_report_dir}")
         add_test(NAME mmx_boss_rush_reports
             COMMAND ${CMAKE_COMMAND} -E env SDL_AUDIODRIVER=dummy MMX_REPLAY_RECORD=0
