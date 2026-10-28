@@ -304,6 +304,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_display.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_wide_policy.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_zero.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_armor.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_weapons.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_weapon_combat.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mmx_coop_view.c"
