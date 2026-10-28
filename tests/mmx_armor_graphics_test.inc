@@ -42,6 +42,34 @@ static void armor_menu_and_hud(void) {
       for(unsigned part=0;part<3;++part)
         assert(output[160*256+130+part]==((parts&(2u<<part))?rgb[3+part]:0));
     }
+    /* Pause fades keep old OAM after live actors stop submitting. Both the
+     * stage X and menu preview must retain donor parts throughout that epoch,
+     * including expanded views. Once OAM retires, neither may leave a ghost. */
+    g_mmx_custom_renderer=true;
+    for(unsigned expanded=0;expanded<2;++expanded)for(unsigned menu=0;menu<2;++menu) {
+      MmxRendererReset();g_mmx_expanded_sprites=expanded;
+      ram[0x1f99]=15;ram[0xc3]=menu?128:0;ram[0x1f10]=menu?6:0;
+      ram[0x1989]=menu?1:0;
+      unsigned d=menu?0x1988:0xba8;
+      ram[d+14]=1;ram[d+17]=0x22;ram[d+22]=ram[d+23]=0;
+      put_word(d+5,128);put_word(d+8,160);
+      ppu.oam[32]=0xa080;ppu.oam[33]=0x2200;
+      put_word(0,128);put_word(2,160);put_word(0x18,0x9100);ram[0x1a]=0x8d;ram[0xf]=0x22;
+      MmxRendererObserveObject(ram,(uint16_t)d);MmxRendererRecordPiece(ram,0);
+      MmxRendererLatchSprites();ram[d+14]=0;
+      const unsigned levels[]={15,9,4,0,4,9,15};
+      for(unsigned fade=0;fade<7;++fade) {
+        ppu.inidisp=(uint8_t)levels[fade];MmxRendererLatchSprites();capture();
+        MmxRenderView view={342,43,16.0/9.0};
+        assert(MmxRendererDraw(output,view,false));
+        unsigned yellow=255*levels[fade]/15;
+        assert(output[160*view.width+view.extra+132]==(yellow<<16|yellow<<8));
+      }
+      ppu.oam[32]=0xe000;MmxRendererLatchSprites();capture();
+      assert(MmxRendererDraw(output,(MmxRenderView){256,0,4.0/3.0},false));
+      assert(output[160*256+132]==0);
+    }
+    g_mmx_expanded_sprites=false;g_mmx_custom_renderer=false;
     ram[0xc3]=ram[0x1f10]=ram[0x1989]=0;
     MmxArmorState armor=MmxArmorGetState();armor.energy=armor.hyper_energy=0x1c00;
     armor.gold=game==3;MmxArmorSetState(armor);capture();

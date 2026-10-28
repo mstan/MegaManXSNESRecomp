@@ -132,6 +132,18 @@ and their palettes compare exactly with captured original-game VRAM/CGRAM
 partial/full armor and earned Gold palette, including on snapshot restore.
 Mod-off menus keep their original presentation.
 
+Pause transitions also retain the donor player's body/part attribution while
+the SNES repeats its previous OAM without rebuilding sprite lists. The native
+OAM still decides visibility, so hiding/removing a sprite does not leave an
+armor ghost. Normal and expanded views share this rule. Initial capture,
+co-op menu ownership and restored captures use the same native-menu predicate,
+including the preview object's first visible frame before its HUD flag settles.
+Regression checks cover repeated OAM through fade-out/in and actual removal
+in both compositors. Built X2, X3, earned Gold and co-op checks capture every
+pause/unpause frame (130 each); 88 representative scene/aspect pairs agree
+between compositors. Saves made in the stage fade, menu fade and stage return
+restore exactly the uninterrupted image and guest RAM.
+
 There is no added gameplay energy bar for Giga Crush or Hyper Charge. Their
 energy accounting and controls remain available; an invented horizontal HUD
 must not stand in for the original donor presentation.
