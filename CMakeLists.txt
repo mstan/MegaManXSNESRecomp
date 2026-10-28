@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 2.3.7 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 2.3.8 LANGUAGES C CXX)
 # Qualified Windows x64 default; retain explicit selections and other-target floors.
 set(_MMX_RASTER_IMPL_DEFAULT "LLE")
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _MMX_RASTER_IMPL_PROCESSOR)

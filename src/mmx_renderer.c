@@ -180,6 +180,9 @@ bool g_mmx_custom_renderer;
 bool g_mmx_custom_hud = true;
 static bool coop_hud_compact = true;
 void MmxRendererSetCompactCoopHud(bool compact) { coop_hud_compact=compact; }
+static bool coop_hide_learner_health;
+void MmxRendererSetHideLearnerHealth(bool hide) { coop_hide_learner_health=hide; }
+bool MmxRendererHidesLearnerHealth(void) { return coop_hide_learner_health; }
 bool g_mmx_expanded_sprites;
 bool g_mmx_render_asset_repairs = true;
 MmxRenderAspect g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
@@ -2163,10 +2166,13 @@ static void coop_hud_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView view
     bool inverted=coop_hud_compact && player->character==MMX_COOP_ZERO;
     int x=8+(coop_hud_compact?0:(int)seat*32)-(anchored?view.extra:0),icon_y=inverted?100:80;
     unsigned hp=player->status==MMX_COOP_FALLEN?0:player->body[0x27]&127;
-    coop_meter_row(ppu,r,y,view,objects,colors,x,hp,frame.ram[0x1f9a],2,NULL,icon_y,inverted);
-    if(inverted) coop_inverted_badge_row(ppu,r,y,view,objects,colors,x,icon_y,2,NULL,NULL,NULL,true);
-    else sprite(ppu,r,x,icon_y,0x3486,16,y,view,objects,false,NULL,0,colors,true,
-        player->character==MMX_COOP_ZERO,false);
+    /* A hidden learner meter leaves the weapon column in its place. */
+    if(!seat || !coop_hide_learner_health) {
+      coop_meter_row(ppu,r,y,view,objects,colors,x,hp,frame.ram[0x1f9a],2,NULL,icon_y,inverted);
+      if(inverted) coop_inverted_badge_row(ppu,r,y,view,objects,colors,x,icon_y,2,NULL,NULL,NULL,true);
+      else sprite(ppu,r,x,icon_y,0x3486,16,y,view,objects,false,NULL,0,colors,true,
+          player->character==MMX_COOP_ZERO,false);
+    }
     unsigned page=player->weapons.page;
     unsigned weapon=page?player->weapons.weapon:player->body[0x33]/2;
     if(!weapon || weapon>8) continue; /* Keep this seat's reserved blank column. */

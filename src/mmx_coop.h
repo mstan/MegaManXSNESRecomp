@@ -39,13 +39,22 @@ typedef struct MmxCoopState {
   uint8_t menu_owner, menu_last, p1_select_hold, p1_select_armed; /* Last two bytes were reserved. */
   uint8_t pickup_owner[16]; /* Native item slots $1628 + index*$30. */
   uint16_t pickup_s, pickup_d;
-  uint8_t pickup_pass, pickup_reserved[3];
+  /* Learner Mode: frames P2 has spent off P1's screen; LEARNER_RESCUE after
+   * a fatal hazard. Formerly reserved. */
+  uint8_t pickup_pass, learner_away, pickup_reserved[2];
   uint8_t anchor, solo_death[2], respawn_pending; /* Seat bits; formerly reserved. */
   uint8_t death_flags[2][8]; /* Native freeze flags around a partner's death. */
-  uint8_t scene_owner, scene_phase, door_pass, scene_reserved;
+  uint8_t scene_owner, scene_phase, door_pass, scene_flags; /* MMX_COOP_SCENE_*; formerly reserved. */
   uint16_t door_s, door_d, door_entry;
   uint16_t slime_p2; /* Capture owner bits for $1428 + slot*$40; formerly reserved. */
 } MmxCoopState;
+
+/* scene_flags, meaningful only while scene_owner is set. LIVE transport
+ * (Learner Mode) teleports without freezing the world; WITHDRAW ends in the
+ * absent state instead of a return. */
+enum { MMX_COOP_SCENE_LIVE = 1, MMX_COOP_SCENE_WITHDRAW = 2 };
+/* Learner Mode returns P2 after this long off P1's screen (learner_away). */
+enum { MMX_COOP_LEARNER_AWAY_FRAMES = 120 };
 
 enum { MMX_COOP_LEGACY_STATE_SIZE = 4648 };
 /* v14 saves / v13 captures predate Modern's per-player extension. Keep
@@ -69,6 +78,11 @@ static inline void MmxCoopImportLegacy(MmxCoopState *out, const uint8_t *bytes) 
 bool MmxCoopEnable(unsigned p1_character);
 void MmxCoopDisable(void);
 bool MmxCoopEnabled(void);
+/* Learner Mode: P2 cannot lose health or die, never drives the world, and
+ * returns beside P1 after a fatal hazard or falling behind. Configuration,
+ * like the roster: it is not serialized; the mod set carries it. */
+void MmxCoopSetLearner(bool active);
+bool MmxCoopLearner(void);
 /* Includes the body projected for a native object/contact replay. */
 bool MmxCoopActorIsX(void);
 /* Owned body for a character's paused action. The caller may edit it only

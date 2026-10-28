@@ -289,6 +289,15 @@ static void activate_coop(void) {
 #endif
   fprintf(stderr,"[mmx-coop] Co-op enabled; P1 is %s\n",p1==MMX_COOP_X?"X":"Zero");
 }
+/* Its own package, which requires co-op. Only flags are set here, so the
+ * order against activate_coop does not matter: MmxCoopEnable keeps them. */
+static void activate_learner(void) {
+  char health[16]={0};
+  snes_mod_runtime_feature_option_value_c("megaman-x.coop.learner","learner","health",health,sizeof(health));
+  MmxRendererSetHideLearnerHealth(strcmp(health,"true") && strcmp(health,"1") && strcmp(health,"on"));
+  MmxCoopSetLearner(true);
+  fprintf(stderr,"[mmx-coop] P2 Learner Mode%s\n",MmxCoopLearner()?"":" waits for co-op");
+}
 static void activate_weapons(unsigned game) {
   char path[4096];
   const char *package=game==2?"megaman-x.weapons.x2":"megaman-x.weapons.x3";
@@ -305,6 +314,7 @@ static void activate_x3(void) { activate_weapons(3); }
 static void reset(void) {
   MmxArmorDisable();
   MmxRendererSetCompactCoopHud(true);
+  MmxRendererSetHideLearnerHealth(false);
   MmxCoopViewsSetIndependent(false);
   MmxCoopDisable();
   if (MmxWeaponsEnabled()) g_ram[0x1f12] = 0;
@@ -316,6 +326,7 @@ SNES_MOD_CONSTRUCTOR(mmx_register_zero_plugin) {
   (void)snes_mod_register_reset_callback(reset);
   (void)snes_mod_register_activation_plugin("megaman-x.zero", activate);
   (void)snes_mod_register_activation_plugin("megaman-x.coop",activate_coop);
+  (void)snes_mod_register_activation_plugin("megaman-x.coop.learner",activate_learner);
   (void)snes_mod_register_activation_plugin("megaman-x.weapons.x2",activate_x2);
   (void)snes_mod_register_activation_plugin("megaman-x.weapons.x3",activate_x3);
 }

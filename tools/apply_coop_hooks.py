@@ -18,7 +18,9 @@ TARGETS = {0x01812e, 0x048fca, 0x0280b4, 0xd2bd, 0xd3dd, 0xd3fa, 0xd43a, 0xd457,
            # $83:8129: an empty Ride Armor's idle/boarding state; armor_board_hook.
            0x038129,
            # Armadillo's map-coordinate wrap must also move the stored seat.
-           0x01f9b7}
+           0x01f9b7,
+           # $84:9F2F/$84:9F2A: hits on the projected player; learner_hurt_hook.
+           0x049f2f, 0x049f2a}
 VIEW_TARGETS={0x00dc36,0x00dcdb,0x02806e,0x02808f,0x00d4aa}
 TARGETS |= VIEW_TARGETS
 # Routed through the interpreter when the generated code has them as entries,
@@ -30,7 +32,10 @@ OPTIONAL = {0x02d7d7}
 # $81:EC98 state crashes when interpreted during the Storm Eagle lift ride
 # (dispatch to $50:D2ED), so the doors enter the interpreter only when
 # door_hook can open its pass.
-POLICIES = {0x01e70d: 'MmxCoopDoorRouteE70D', 0x01ec98: 'MmxCoopDoorRouteEC98'}
+# The hit routines run in the interpreter only in Learner Mode. Enemy contact
+# ($84:9B03, which reaches $84:9D50) is always interpreted under co-op.
+POLICIES = {0x01e70d: 'MmxCoopDoorRouteE70D', 0x01ec98: 'MmxCoopDoorRouteEC98',
+            0x049f2f: 'MmxCoopLearnerRoute', 0x049f2a: 'MmxCoopLearnerRoute'}
 
 
 def apply(text):
