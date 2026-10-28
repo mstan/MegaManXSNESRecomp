@@ -123,6 +123,41 @@ two-peer session. Pilot poses outside the donor's standard Ride Armor table
 retain the native arrangement and need a live check. Owner visual/play review
 is still pending.
 
+## Armor presentation
+
+The X2/X3 override includes the donor's unarmored body from the first frame,
+then composes only the actually owned parts. Both base standing arrangements
+and their palettes compare exactly with captured original-game VRAM/CGRAM
+(525 visible pixels each). The native pause menu uses the same donor body,
+partial/full armor and earned Gold palette, including on snapshot restore.
+Mod-off menus keep their original presentation.
+
+There is no added gameplay energy bar for Giga Crush or Hyper Charge. Their
+energy accounting and controls remain available; an invented horizontal HUD
+must not stand in for the original donor presentation.
+
+The private v8 armor cache fixes X3 group `$3A`: its dynamic source DMA and
+arrangements are kept in the same unrelocated tile space. Adding the live
+actor tile offset only to the arrangements made all twelve sphere/lobe poses
+transparent. Extraction and real-donor component checks now require those
+poses to contain visible pixels. Cache files remain local to the verified ROM.
+
+Validation includes all sixteen armor combinations in native pause previews,
+no added Giga/Gold meter, live X3 charge/cross sprites, earned-Gold pause
+save/load, and thirty native/portable scene/aspect comparisons (including
+partial armor, pause, Gold and co-op). These pass on the revised candidate.
+Owner recheck of the corrected presentation remains pending.
+
+The reported slowdown in the second X2 setup did not reproduce in a matched
+stationary Penguin-stage check. Five measured samples after warmup used 600
+frames each, alternating old/revised builds and no/full armor at 1024x576,
+with emulated audio and dummy output. Revised medians were 5.495 CPU ms/frame
+for both no armor and all four parts (original candidate: 5.651 / 5.677).
+The small differences are neutral/inconclusive, not a speedup claim. This
+check does not qualify every ability or desktop GPU/audio delivery under load.
+Private raw samples and source/executable/settings identities are retained in
+`evidence/visual-correction/performance.json` under the task workspace.
+
 ## Controls and adaptations
 
 The existing input mapping still assigns the SNES buttons. Hold L+R and press

@@ -205,11 +205,17 @@ static bool storm_upper_sky(const uint8_t *ram, int camera_y) {
 bool MmxRendererNeedsStormSkyRepair(const uint8_t ram[0x20000]) {
   return ram && storm_upper_sky(ram, (int)word(ram, 0x1e50));
 }
-static bool zero_weapons_menu(void) {
-  return MmxZeroEnabled() && !frame_zero.active_x && frame.ram[0xd1] == 2 && frame.ram[0xd2] == 4 &&
+static bool player_weapons_menu(void) {
+  return frame.ram[0xd1] == 2 && frame.ram[0xd2] == 4 &&
       (((frame.ram[0x1f10] == 6 || frame.ram[0x1f10] == 8) && (frame.ram[0xc3] & 128)) ||
        (frame.ram[0x1989] == 1 && word(frame.ram,0x198d) == 128 &&
         word(frame.ram,0x1990) == 160 && (frame.ram[0x199e] == 0 || frame.ram[0x199e] == 0x18)));
+}
+static bool zero_weapons_menu(void) {
+  return MmxZeroEnabled() && !frame_zero.active_x && player_weapons_menu();
+}
+static bool armor_weapons_menu(void) {
+  return armor_overlays[0].active && player_weapons_menu();
 }
 static bool zero_title_menu(void) {
   /* Retail title-menu cursor is the player object, at one of three rows.
@@ -633,13 +639,13 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
   }
   frame.piece_count = latched_stage == ram[0x1f7a] ? latched_count : 0;
   memcpy(frame.pieces, latched, frame.piece_count * sizeof(*latched));
-  if (MmxZeroEnabled()) {
+  if (MmxZeroEnabled() || MmxArmorEnabled()) {
     /* Loading a snapshot can begin on a fade before the first observed
      * submission. Reconstruct candidates, then match them against live OAM. */
     const unsigned actors[] = {0xba8,0xc38,0xc58,0xc78,0x1928,0x1948,0x1968,0x1988};
     for (unsigned j = 0; j < sizeof(actors)/sizeof(actors[0]); ++j) {
       unsigned d = actors[j]; bool found = false;
-      if (d >= 0x1928 && !zero_weapons_menu()) continue;
+      if (d >= 0x1928 && !player_weapons_menu()) continue;
       for (unsigned i = 0; i < frame.piece_count; ++i) found |= frame.pieces[i].object == d;
       /* $81:8AAA disables armor at death but leaves +$0E set. Unlike the
        * body, D56F submits these parts only while their active byte is set.
@@ -651,7 +657,7 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
       if (!a) continue;
       int x = (int16_t)(word(ram,d + 5) - word(ram,0x1e4d));
       int y = (int16_t)(word(ram,d + 8) + (int8_t)ram[d + 25] - word(ram,0x1e50));
-      if (d >= 0x1928 && zero_weapons_menu()) { x = word(ram,d + 5); y = word(ram,d + 8); }
+      if (d >= 0x1928 && player_weapons_menu()) { x = word(ram,d + 5); y = word(ram,d + 8); }
       for (unsigned i = 0; i < a[0] && frame.piece_count < MAX_PIECES; ++i)
         frame.pieces[frame.piece_count++] = make_piece(a + i * 4,x,y,ram[d + 17] & 64,
             ram[d + 17] & 63,ram[d + 24],ram[d + 22],d,ram[d+23]&127);
@@ -1778,22 +1784,6 @@ static void armor_giga_row(int y,MmxRenderView view,uint16_t *objects,int *color
     }
   }
 }
-static void armor_meter_row(int y,MmxRenderView view,uint16_t *objects,int *colors) {
-  if(y<208 || y>=215)return;
-  bool giga=MmxArmorGame()==2;
-  if(!MmxArmorEnabled() || (giga?!(frame.ram[0x1f99]&4):!frame_armor.gold || !(frame.ram[0x1f99]&2)))return;
-  unsigned energy=giga?frame_armor.energy:frame_armor.hyper_energy;
-  int tint=giga?(energy==0x1c00?0x03ff:0x7fe0):frame_armor.hyper?0x03ff:0x4210;
-  static const uint8_t g[]={7,4,5,5,7},h[]={5,5,7,5,5};
-  if(y>=209 && y<214)for(unsigned x=0;x<3;++x)if((giga?g:h)[y-209]&(4>>x)) {
-    objects[8+x]=0xe681;colors[8+x]=tint;
-  }
-  unsigned fill=energy*40/0x1c00;
-  for(int x=14;x<56 && x<view.width;++x) {
-    bool border=x==14 || x==55 || y==208 || y==214;
-    objects[x]=0xe681;colors[x]=border?tint:(unsigned)(x-15)<fill?tint:0;
-  }
-}
 static void moved_enemy_row(const MmxWeaponShot *s,const Ppu *p,const Raster *r,int y,
                             MmxRenderView view,uint16_t *objects,int *colors) {
   unsigned d=(unsigned)s->origin_x;
@@ -2315,7 +2305,7 @@ static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const 
   }
 }
 static bool raster_scene_owned(void) {
-  return MmxWidePolicy_IsStageScene(frame.ram) || zero_weapons_menu() ||
+  return MmxWidePolicy_IsStageScene(frame.ram) || zero_weapons_menu() || armor_weapons_menu() ||
       MmxWeaponsMenuVisible(frame.ram) || rush_pause_art_needed() ||
       zero_title_menu() || frame_rush.menu;
 }
@@ -2348,7 +2338,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   bool weapon_menu = MmxWeaponsMenuVisible(frame.ram);
   /* Plain X's menu normally uses the stock frame. During a Rush fade it
    * still needs private art until the last matching boss OAM disappears. */
-  bool menu = zero_menu || weapon_menu ||
+  bool menu = zero_menu || armor_weapons_menu() || weapon_menu ||
       (!MmxWidePolicy_IsStageScene(frame.ram) && rush_pause_art_needed());
   bool zero_title = zero_title_menu();
   bool stage = MmxWidePolicy_IsStageScene(frame.ram) && !menu;
@@ -2879,7 +2869,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     if (stage) for (unsigned i = 0; i < frame_world_sprite_count; ++i)
       world_sprite_row(&frame_world_sprites[i], y, view, objects, object_colors);
     if(stage)armor_utility_row(y,view,objects,object_colors);
-    if(stage) {armor_giga_row(y,view,objects,object_colors);armor_meter_row(y,view,objects,object_colors);}
+    if(stage)armor_giga_row(y,view,objects,object_colors);
     if (swapping) teleport_actor_row(frame.ram,&frame_zero,&p,r,y,view,objects,object_colors);
     if(coop_hud) coop_hud_row(&p,r,y,view,hud,objects,object_colors);
     if(rush_hud) rush_hud_row(&p,r,y,view,objects,object_colors);

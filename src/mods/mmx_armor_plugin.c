@@ -98,7 +98,7 @@ static void activate(void) {
     snprintf(error,sizeof(error),"Select your Mega Man X%u USA ROM for the selected armor.",game);
     preparation_failed(error);return;
   }
-  snprintf(leaf,sizeof(leaf),"cache/mmx-source/x%u-armor-v7.bin",game);
+  snprintf(leaf,sizeof(leaf),"cache/mmx-source/x%u-armor-v8.bin",game);
   if(!snesrecomp_exe_dir_path(leaf,output,sizeof(output))) {
     preparation_failed("Cannot resolve the local armor cache directory.");return;
   }

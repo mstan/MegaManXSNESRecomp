@@ -292,7 +292,7 @@ Bytes armor_assets(const Rom& r,unsigned game) {
    * entries belong to a separate Ride Chaser transfer table. */
   extra.push_back({0x6a,game==2?36u:47u,game==2?0x859b46u:0x85d568u,0,1});
   extra.push_back({0x6b,game==2?36u:47u,game==2?0x859b46u:0x85d568u,0,1});
-  if(game==3) {extra.push_back({0x3a,12,0x85dcf0,8,3});extra.push_back({0x65,13,0,0,2});}
+  if(game==3) {extra.push_back({0x3a,12,0x85dcf0,0,3});extra.push_back({0x65,13,0,0,2});}
   append(out,Bytes{'A','R','F','X','0','0','0','1'});put(out,unsigned(extra.size()));put(out,0);
   for(unsigned address : game==2?std::array<unsigned,3>{0x2b240,0x2b220,0x2b160}:
                                std::array<unsigned,3>{0x63100,0x630e0,0x62460})append(out,r.raw(address,32));
@@ -312,7 +312,14 @@ Bytes armor_assets(const Rom& r,unsigned game) {
     std::fill(tiles.known.begin()+0x1000,tiles.known.end(),1);
     for(unsigned i=0;i<g.frames;++i) {
       if(g.dma)transfer(r,g.dma,i,tiles);
-      cropped_pose(out,pose(r,source,i,tiles,true,g.tile,int(g.palette)));
+      /* Dynamic source DMA adds the actor's allocated tile offset to its
+       * destination too. These private sheets keep the unrelocated DMA and
+       * layout together; adding X3's live $18=8 only to the layout made every
+       * cross-shot sphere/lobe transparent. */
+      Pose p=pose(r,source,i,tiles,true,g.tile,int(g.palette));
+      if(g.group==0x3a)require(std::any_of(p.pixels.begin(),p.pixels.end(),[](uint8_t v){return v!=0;}),
+                              "Missing source cross-charge graphics.");
+      cropped_pose(out,p);
     }
   }
   /* Small original data tables, retained only in the owner's verified cache.

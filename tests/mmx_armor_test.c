@@ -199,6 +199,11 @@ int main(int argc,char **argv) {
       }
       assert(!MmxArmorGetState().dash_recovery && !MmxArmorGetState().anim_group);
     }
+    if(game==3)for(unsigned pose=0;pose<12;++pose) {
+      MmxArmorGraphic p;assert(MmxArmorGraphicGet(0x3a,pose,&p));
+      unsigned visible=0;for(unsigned i=0;i<(unsigned)p.w*p.h;++i)visible+=p.pixels[i]!=0;
+      assert(visible); /* Dynamic-DMA spheres/lobes must never be transparent. */
+    }
     buster(game);
     helmet(game);
     charge_boundaries();
