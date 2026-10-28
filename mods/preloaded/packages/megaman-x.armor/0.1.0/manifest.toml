@@ -1,7 +1,7 @@
 format_version = 1
 id = "megaman-x.armor"
 version = "0.1.0"
-name = "X2 / X3 Armor"
+name = "X2 / X3 Armor (experimental)"
 author = "mstan"
 description = "Backport X's armor from a selected donor game."
 license = "PolyForm-Noncommercial-1.0.0"

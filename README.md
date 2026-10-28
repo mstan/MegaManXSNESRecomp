@@ -96,6 +96,7 @@ Rev 1 build.
 | &#9745; | **[Boss Rush](docs/boss-rush.md)** | Endless fights against two different Mavericks, solo or co-op, from the game's title menu. |
 | &#9745; | **X2 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
 | &#9745; | **X3 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
+| &#9745; | **X2 / X3 Armor (experimental)** | Donor X graphics and abilities, unlocked through X1's armor capsules. X3 Gold Armor is awarded by the Hadouken capsule. |
 | &#9745; | **Netplay** | Two-player online co-op with lobbies and rollback, plus optional fixed widescreen. |
 
 See the [co-op validation notes](docs/coop-port.md) for current limits.
@@ -112,6 +113,13 @@ See the [co-op validation notes](docs/coop-port.md) for current limits.
 For Zero or co-op, select your own **Mega Man X3 USA ROM** in Mods. The X3
 weapon mod shares that selection. X2 weapons need your **Mega Man X2 USA ROM**.
 Assets are extracted automatically on your machine.
+
+For **X2 / X3 Armor (experimental)**, enable it in **Mods**, choose the donor
+game in the **Armor** dropdown, and supply that game's USA ROM. X starts with
+the donor game's basic appearance and ground dash. X1's capsules unlock the
+matching donor parts; X3's four regular parts remain standard armor, and the
+Hadouken capsule also grants Gold Armor and its enhancements. The mod is off
+by default and has passed preliminary playtests.
 
 Select **Modern** under **Zero behavior** in either Zero mod for saber combat
 and extra aerial movement. **X3 Behavior** is the default. **Add Zero** and
@@ -140,8 +148,8 @@ has different code and is refused. Checksums are for the ROM without a
 | Use for | No-Intro name | SHA-256 | SHA-1 | CRC32 |
 |---|---|---|---|---|
 | Game | Mega Man X (USA) (Rev 1) | `b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32` | `c65216760ba99178100a10d98457cf11496c2097` | `DED53C64` |
-| Zero, co-op, X3 weapons | Mega Man X3 (USA) | `65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7` | `b226f7ec59283b05c1e276e2f433893f45027cac` | `FA0FE671` |
-| X2 weapons | Mega Man X2 (USA) | `f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed` | `637079014421563283cded6aeaa0604597b2e33c` | `947B0355` |
+| Zero, co-op, X3 weapons/armor | Mega Man X3 (USA) | `65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7` | `b226f7ec59283b05c1e276e2f433893f45027cac` | `FA0FE671` |
+| X2 weapons/armor | Mega Man X2 (USA) | `f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed` | `637079014421563283cded6aeaa0604597b2e33c` | `947B0355` |
 
 If the launcher refuses a ROM, it says which dump you picked and what it
 needs. For example: *"This is Mega Man X (USA) v1.0. Mega Man X needs Mega Man
