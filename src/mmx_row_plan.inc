@@ -1,12 +1,12 @@
 /* Included after the compositor's scalar helpers. All data is private to this
  * captured row/view. This pipeline never reads or writes the live machine. */
-#include "snes/raster_plan.h"
+#include "snes/raster_register_plan.h"
 #include <assert.h>
 #if MMX_NATIVE_BG_SPANS
 #include "mmx_background_span.inc"
 #endif
 
-static void native_background_range(const Ppu *p, const Raster *r,
+static void native_background_range(const SnesRenderRegisters *p, const Raster *r,
     unsigned layer, int y, bool stage, int extra, unsigned begin, unsigned end,
     uint16_t *pixels, int *colors) {
   int by = y;
@@ -34,7 +34,7 @@ static void native_background_range(const Ppu *p, const Raster *r,
   }
 }
 
-static void native_compose_row(const Ppu *p, const Raster *r,
+static void native_compose_row(const SnesRenderRegisters *p, const Raster *r,
     MmxRenderView view, const uint16_t backgrounds[3][MMX_RENDER_MAX_WIDTH],
     const int colors[3][MMX_RENDER_MAX_WIDTH], const uint16_t *objects,
     const int *object_colors, const uint32_t *rgb, const uint8_t brightness[32],
@@ -78,7 +78,7 @@ static void native_compose_row(const Ppu *p, const Raster *r,
   }
 }
 
-static void native_render_row(const Ppu *p, const Raster *r, int y,
+static void native_render_row(const SnesRenderRegisters *p, const Raster *r, int y,
     MmxRenderView view, bool stage, bool menu, bool dialogue_backdrop,
     int ripple, unsigned palette_fade, const uint16_t center[3][256],
     unsigned center_layers, const uint16_t *objects, int *object_colors,
@@ -111,7 +111,7 @@ static void native_render_row(const Ppu *p, const Raster *r, int y,
     if (object_colors[sx] >= 0)
       object_colors[sx] = MmxRenderAssetsFadeColor((uint16_t)object_colors[sx], palette_fade) |
           (object_colors[sx] & 0x8000);
-  SnesRenderWindowPlan windows = SnesRenderWindows(p,
+  SnesRenderWindowPlan windows = SnesRenderRegistersWindows(p,
       p->window1left == 0 ? -view.extra : p->window1left,
       p->window1right == 255 ? 255 + view.extra : p->window1right,
       p->window2left == 0 ? -view.extra : p->window2left,
@@ -120,7 +120,7 @@ static void native_render_row(const Ppu *p, const Raster *r, int y,
   for (unsigned i = 0; i < beam_count; ++i)
     color_windows[i] = (SnesRenderInterval){beams[i].left[y], beams[i].right[y]};
   SnesRenderComposePlan plan;
-  bool planned = SnesRenderPlanCompose(&plan, p, &windows, -view.extra,
+  bool planned = SnesRenderRegistersPlanCompose(&plan, p, &windows, -view.extra,
       (unsigned)view.width, color_windows, beam_count);
   assert(planned); /* Validated renderer dimensions and at most two beams. */
   if (!planned) return;

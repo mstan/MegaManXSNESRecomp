@@ -73,10 +73,11 @@ int MMX_NATIVE_TEST_ENTRY(void) {
       ppu.vScroll[layer] = (uint16_t)row_random();
       ppu.bgTileAdr = (uint16_t)row_random();
       uint16_t pixels[256];
-      native_background_center(&ppu, &raster, layer, y, pixels);
+      SnesRenderRegisters registers = SnesRenderRegistersLoad(&ppu);
+      native_background_center(&registers, &raster, layer, y, pixels);
       for (int x = 0; x < 256; ++x) {
         int private_color = -1;
-        uint16_t expected = background(&ppu, &raster, layer, x, y, true, &private_color);
+        uint16_t expected = background(&registers, &raster, layer, x, y, true, &private_color);
         if (pixels[x] != expected || private_color != -1) {
           fprintf(stderr, "native tile job differs sample=%u layer=%u x=%d\n", sample, layer, x);
           return 1;
@@ -103,7 +104,8 @@ int MMX_NATIVE_TEST_ENTRY(void) {
       int bg[3];
       for (unsigned i = 0; i < 3; ++i)
         bg[i] = (row_random() & 1) ? (int)(row_random() & 0xffff) : -1;
-      uint32_t expected = colour(&ppu, palette, brightness, main_pixel,
+      SnesRenderRegisters registers = SnesRenderRegistersLoad(&ppu);
+      uint32_t expected = colour(&registers, palette, brightness, main_pixel,
           (uint16_t)row_random(), inside, object, bg, false, 0x500);
       assert(native_plain_colour(palette, rgb, main_pixel, object, bg) == expected);
     }

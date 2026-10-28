@@ -12,7 +12,7 @@ static void composition_rows(void) {
   for (unsigned sample = 0; sample < 512; ++sample) {
     unsigned width = widths[sample % 4], extra = (width - 256) / 2;
     MmxRenderView view = {(int)width, (int)extra, 16.0/9.0};
-    Ppu p = {0}; Raster r = {0};
+    SnesRenderRegisters p = {0}; Raster r = {0};
     p.inidisp = (uint8_t)(row_random() & 15);
     p.screenEnabled[0] = (uint8_t)row_random();
     p.screenEnabled[1] = (uint8_t)row_random();
@@ -45,13 +45,13 @@ static void composition_rows(void) {
       beams[i].left = (int)(row_random() % (width + 100)) - (int)extra - 50;
       beams[i].right = (int)(row_random() % (width + 100)) - (int)extra - 50;
     }
-    SnesRenderWindowPlan windows = SnesRenderWindows(&p,
+    SnesRenderWindowPlan windows = SnesRenderRegistersWindows(&p,
         p.window1left ? p.window1left : -(int)extra,
         p.window1right == 255 ? 255 + (int)extra : p.window1right,
         p.window2left ? p.window2left : -(int)extra,
         p.window2right == 255 ? 255 + (int)extra : p.window2right);
     SnesRenderComposePlan plan;
-    assert(SnesRenderPlanCompose(&plan, &p, &windows, -(int)extra, width, beams, beam_count));
+    assert(SnesRenderRegistersPlanCompose(&plan, &p, &windows, -(int)extra, width, beams, beam_count));
     assert(plan.count && plan.count <= 11 && plan.spans[0].begin == 0 &&
            plan.spans[plan.count-1].end == width);
     unsigned plain[2]; uint8_t brightness[32];
@@ -183,10 +183,11 @@ static void background_span_rows(void) {
     for (unsigned i = 0; i < width; ++i) colors[i] = reference_colors[i] = -1;
     memset(door_cache, 0, sizeof(door_cache));
     for (unsigned i = 0; i < 2; ++i) stage_tile_cache[i].key = ~0u;
+    SnesRenderRegisters registers = SnesRenderRegistersLoad(&ppu);
     for (unsigned i = 0; i < width; ++i)
-      expected[i] = background(&ppu, &raster, layer, (int)i - extra, y, true, &reference_colors[i]);
+      expected[i] = background(&registers, &raster, layer, (int)i - extra, y, true, &reference_colors[i]);
     for (unsigned i = 0; i < width;) {
-      unsigned count = background_source_span(&ppu, &raster, layer, (int)i - extra,
+      unsigned count = background_source_span(&registers, &raster, layer, (int)i - extra,
           y, true, width - i, actual + i, colors + i);
       assert(count && count <= width - i); i += count;
     }

@@ -7,7 +7,7 @@ static void background_span_cut(unsigned *count, int coordinate, int step, int e
   if (distance > 0 && (unsigned)distance < *count) *count = (unsigned)distance;
 }
 
-static unsigned background_source_span(const Ppu *p, const Raster *r,
+static unsigned background_source_span(const SnesRenderRegisters *p, const Raster *r,
     unsigned layer, int x, int y, bool stage, unsigned count,
     uint16_t *pixels, int *colors) {
   static const unsigned low[] = {8, 7, 1}, high[] = {12, 11, 3};
