@@ -50,6 +50,11 @@ if(_MMX_RASTER_IMPL_DEFAULT STREQUAL "NATIVE" AND MMX_RASTER_IMPL STREQUAL "NATI
     set(_MMX_NATIVE_ROW_PLAN_DEFAULT ON)
 endif()
 option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
+option(MMX_NATIVE_BG_SPANS "Bind reconstructed background tiles and palettes per source span" OFF)
+set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
+    tests/mmx_row_plan_test.c src/main.c tests/mmx_adaptive_state_test.c
+    APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_NATIVE_BG_SPANS=$<BOOL:${MMX_NATIVE_BG_SPANS}>)
 set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
     src/main.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
@@ -62,7 +67,7 @@ set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL "Shared mod package runtime" FORCE)
 # keeps the unmodified Japanese edition and small unit tests independent.
 set(SNESRECOMP_NET_ICE ON CACHE BOOL "Internet netplay transport" FORCE)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
-string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}-row${MMX_NATIVE_ROW_PLAN}")
+string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}-row${MMX_NATIVE_ROW_PLAN}-bgspans${MMX_NATIVE_BG_SPANS}")
 set_property(SOURCE src/mmx_replay.c APPEND PROPERTY COMPILE_DEFINITIONS
     MMX_REPLAY_REVISION="${MMX_REPLAY_REVISION}" MMX_REPLAY_ENGINE="${MMX_REPLAY_ENGINE}")
 include(${RECOMP_UI_ROOT}/recomp_ui.cmake)

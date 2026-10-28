@@ -41,3 +41,26 @@ stock-renderer workload was neutral/inconclusive. These are additional results
 against the preceding optimized MMX build, not additive percentages or original
 Xbox qualification. Raw samples, exact binary identities and settings are in
 `campaign-results.json` beneath the evidence directory above.
+
+## Reconstructed background source spans (R1)
+
+`MMX_NATIVE_BG_SPANS=ON` additionally resolves full-view map tiles, source-row
+planes and private CHR/palette bindings per source span. Its development default
+is OFF pending built-game measurement and owner review. The old scalar
+`background()` remains the independent reference and handles per-pixel imported
+menu art and the Rush ceiling; mosaic retains its existing path.
+
+Spans end at native-view edges, source characters, scene reflections/clamps,
+door cells, submarine bands and authored resource-phase changes. Resource
+columns may advance forward, backward, at half-camera scale or remain clamped;
+CHR and palette changes need not align with a tile. Bindings are private to a
+captured row, with no new persistent cache, guest write or serialized state.
+
+The prototype passes existing native scenes, 1,536 scalar-compared full-width
+rows, separate non-aligned CHR/palette phase checks, all four Magic Carpet
+gates and eight captured view/HUD comparisons. The row suite also executes on
+Linux. This is correctness evidence, not yet a performance claim or owner
+approval. Current-build state and matched built-game performance qualification
+remain pending at this checkpoint. Tracking: `beads-8wg.1.150`, roadmap
+`beads-49cy`, campaign `beads-2wy8.1`. Evidence:
+`G:/Temp/Codex/snesrecomp/background-spans-20261027/evidence`.

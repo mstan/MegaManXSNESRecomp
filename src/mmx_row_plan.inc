@@ -2,6 +2,9 @@
  * captured row/view. This pipeline never reads or writes the live machine. */
 #include "snes/raster_plan.h"
 #include <assert.h>
+#if MMX_NATIVE_BG_SPANS
+#include "mmx_background_span.inc"
+#endif
 
 static void native_background_range(const Ppu *p, const Raster *r,
     unsigned layer, int y, bool stage, int extra, unsigned begin, unsigned end,
@@ -9,6 +12,21 @@ static void native_background_range(const Ppu *p, const Raster *r,
   int by = y;
   unsigned mosaic = (p->mosaic & (1u << layer)) ? (p->mosaic >> 4) + 1 : 0;
   if (mosaic) by -= by % (int)mosaic;
+#if MMX_NATIVE_BG_SPANS
+  if (!mosaic) {
+    for (unsigned sx = begin; sx < end;) {
+      unsigned count = background_source_span(p, r, layer, (int)sx - extra,
+          by, stage, end - sx, pixels + sx, colors + sx);
+      assert(count && count <= end - sx);
+      if (!count || count > end - sx) {
+        pixels[sx] = background(p, r, layer, (int)sx - extra, by, stage, &colors[sx]);
+        count = 1;
+      }
+      sx += count;
+    }
+    return;
+  }
+#endif
   for (unsigned sx = begin; sx < end; ++sx) {
     int x = (int)sx - extra;
     if (mosaic) x -= ((x % (int)mosaic) + (int)mosaic) % (int)mosaic;
