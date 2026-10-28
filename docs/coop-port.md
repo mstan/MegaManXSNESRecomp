@@ -1085,7 +1085,7 @@ choosing Add Zero turns it off. Seat 1 is the learner; the roster choice is
 unchanged. It is configuration, not save state: the netplay mod set and
 same-mods saves already carry it. Its `health` option (off by default) shows
 the learner's health meter; hidden, the weapon column keeps its place
-(`MmxRendererSetLearnerHealth`).
+(`MmxRendererSetHideLearnerHealth`).
 
 Damage. Every hit on the projected body subtracts at one of two places:
 `$84:9F42`, shared by `$84:9F2F` (hurt action, then `$0BCE`) and `$84:9F2A`,

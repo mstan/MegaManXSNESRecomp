@@ -294,7 +294,7 @@ static void activate_coop(void) {
 static void activate_learner(void) {
   char health[16]={0};
   snes_mod_runtime_feature_option_value_c("megaman-x.coop.learner","learner","health",health,sizeof(health));
-  MmxRendererSetLearnerHealth(!strcmp(health,"true") || !strcmp(health,"1") || !strcmp(health,"on"));
+  MmxRendererSetHideLearnerHealth(strcmp(health,"true") && strcmp(health,"1") && strcmp(health,"on"));
   MmxCoopSetLearner(true);
   fprintf(stderr,"[mmx-coop] P2 Learner Mode%s\n",MmxCoopLearner()?"":" waits for co-op");
 }
@@ -314,7 +314,7 @@ static void activate_x3(void) { activate_weapons(3); }
 static void reset(void) {
   MmxArmorDisable();
   MmxRendererSetCompactCoopHud(true);
-  MmxRendererSetLearnerHealth(false);
+  MmxRendererSetHideLearnerHealth(false);
   MmxCoopViewsSetIndependent(false);
   MmxCoopDisable();
   if (MmxWeaponsEnabled()) g_ram[0x1f12] = 0;

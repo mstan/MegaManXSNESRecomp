@@ -1004,6 +1004,12 @@ static void coop_launcher_checks(const char *root,const char *rom,const char *x3
       "enabling the Learner Mode mod turns co-op on");
   snes_mod_runtime_activate_plugins_c();
   check(MmxCoopEnabled() && MmxCoopLearner(),"real plugin activates Learner Mode");
+  check(MmxRendererHidesLearnerHealth(),"Learner Mode hides P2's health bar by default");
+  check(p->feature_set_option(p->ctx,learner,"learner","health","true") && p->commit(p->ctx,rom),
+      "launcher shows P2's health bar");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxCoopLearner() && !MmxRendererHidesLearnerHealth(),"the option shows the learner's health bar");
+  check(p->feature_set_option(p->ctx,learner,"learner","health","false"),"launcher hides P2's health bar again");
   check(p->feature_enable(p->ctx,"megaman-x.character.zero","zero",1) &&
       !snes_mod_runtime_feature_enabled_c("megaman-x.coop","coop") &&
       !snes_mod_runtime_feature_enabled_c(learner,"learner"),
@@ -1016,7 +1022,8 @@ static void coop_launcher_checks(const char *root,const char *rom,const char *x3
   check(p->feature_enable(p->ctx,"megaman-x.coop","coop",1) && p->commit(p->ctx,rom),
       "launcher restores ordinary co-op");
   snes_mod_runtime_activate_plugins_c();
-  check(MmxCoopEnabled() && !MmxCoopLearner(),"without the mod, co-op is ordinary co-op");
+  check(MmxCoopEnabled() && !MmxCoopLearner() && !MmxRendererHidesLearnerHealth(),
+      "without the mod, co-op is ordinary co-op");
   /* Saber Zero is a Zero behavior shared by co-op and Add Zero, with an
    * optional settings feature that claims no plugin of its own. */
   check(!MmxSaberEnabled(),"X3 behavior leaves Saber off");

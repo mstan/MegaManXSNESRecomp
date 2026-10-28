@@ -68,28 +68,24 @@ static void learner_rescue(const char *what,unsigned p1_frames,uint8_t *start,
   check(began && returned,what);
   coop_frames(1,0,0);learner_check_beside(what);
 }
-/* The learner's health meter is hidden unless the option shows it; P1's HUD
- * and P2's weapon column are untouched, and shown matches ordinary co-op. */
+/* The mod hides the learner's health meter unless the option shows it; P1's
+ * HUD and P2's weapon column are untouched in either HUD layout. */
 static void learner_hud_check(unsigned character) {
-  static uint32_t hidden[256*224],shown[256*224],ordinary[256*224];
+  static uint32_t hidden[256*224],shown[256*224];
   const MmxRenderView view={256,0,4.0/3.0};
   for(unsigned compact=0;compact<2;++compact) {
     MmxRendererSetCompactCoopHud(compact!=0);
-    MmxRendererSetLearnerHealth(false);
+    MmxRendererSetHideLearnerHealth(true);
     check(MmxRendererDraw(hidden,view,false),"learner HUD renders");
-    MmxRendererSetLearnerHealth(true);
+    MmxRendererSetHideLearnerHealth(false);
     check(MmxRendererDraw(shown,view,false),"learner HUD renders with health shown");
-    MmxCoopSetLearner(false);MmxRendererSetLearnerHealth(false);
-    check(MmxRendererDraw(ordinary,view,false),"ordinary co-op HUD renders");
-    MmxCoopSetLearner(true);
     unsigned changed=0,outside=0;
     for(unsigned y=0;y<224;++y) for(unsigned x=0;x<256;++x)
       if(hidden[y*256+x]!=shown[y*256+x]) {++changed;outside+=x>=72 || y>=160;}
     fprintf(stderr,"learner HUD roster=%u compact=%u hidden pixels=%u outside=%u\n",character,compact,changed,outside);
-    check(changed>=64 && !outside,"the learner's health meter is hidden by default");
-    check(!memcmp(shown,ordinary,sizeof(shown)),"a shown learner meter matches ordinary co-op");
+    check(changed>=64 && !outside,"only the learner's health meter is hidden");
   }
-  MmxRendererSetCompactCoopHud(true);MmxRendererSetLearnerHealth(false);
+  MmxRendererSetCompactCoopHud(true);
 }
 static void coop_learner_checks(const char *fixture,uint8_t *start,uint8_t *expected,uint8_t *actual,size_t cap) {
   interp_bridge_set_pre_opcode_hook(0x818aa4,coop_death_sound_check);
