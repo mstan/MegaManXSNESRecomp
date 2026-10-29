@@ -2651,6 +2651,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if(asset && frame_rush.mode==MMX_RUSH_PLAYING && s.object>=0xe68 && s.object<0x1d08 &&
           frame_rush.owner[(s.object-0xe68)/32])
         attr=(attr&~0x3000u)|((asset->attributes&0x30)<<8);
+      /* Highway's first Gun Volt can initialize before resource $30 loads.
+       * Its tile base is later repaired, but the zero palette/page/priority
+       * byte persists. Substituting CHR/colors while preserving priority zero
+       * hides the whole body behind BG1 although its shots remain visible.
+       * Use the resource's priority only for this unbound initializer state;
+       * normal hit flashes and deliberately low-priority platform art keep
+       * their submitted attributes. No guest allocation or state is changed. */
+      if (asset && MmxWidePolicy_GunVoltUnbound(frame.ram, s.object, s.animation))
+        attr = (attr & ~0x3000u) | ((asset->attributes & 0x30) << 8);
       if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
       if (zero_armor || swap_actor || triad_armor || frozen_enemy || armor_part) continue;
       if(armor_body && !triad_x_body && !swap_actor) {

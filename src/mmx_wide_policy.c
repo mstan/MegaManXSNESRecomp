@@ -31,6 +31,14 @@ bool MmxWidePolicy_IsCollectible(uint8_t object_id) {
   return (object_id >= 1 && object_id <= 5) || object_id == 0x0b;
 }
 
+bool MmxWidePolicy_GunVoltUnbound(const uint8_t ram[0x20000], uint16_t object,
+                                 unsigned animation) {
+  return ram && ram[0x1f7a] == 0 && object >= 0xe68 && object < 0x1228 &&
+      (object & 63) == 0x28 && ram[object] && ram[object + 1] >= 2 &&
+      ram[object + 10] == 0x29 && ram[object + 22] == 0x32 && animation == 0x32 &&
+      !(ram[object + 17] & 0x3f);
+}
+
 bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object_id) {
   /* A vertical climb can bring an authored lift into view after its column
    * passed both horizontal cursors. Rescan Kuwanger's rideable lift ($16),

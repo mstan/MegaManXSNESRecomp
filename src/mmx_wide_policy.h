@@ -36,6 +36,10 @@ bool MmxWidePolicy_IsScriptedEncounter(uint8_t object_id);
 uint16_t MmxWidePolicy_BarrierEnemyState(const uint8_t ram[0x20000], uint16_t controller,
                                        uint16_t object, uint16_t state, bool custom);
 bool MmxWidePolicy_IsCollectible(uint8_t object_id);
+/* Early Highway activation can precede the section's OBJ allocation. Only
+ * this proven all-zero Gun Volt binding may borrow the resource priority. */
+bool MmxWidePolicy_GunVoltUnbound(const uint8_t ram[0x20000], uint16_t object,
+                                 unsigned animation);
 bool MmxWidePolicy_RescanSpawnRecord(uint8_t stage, uint8_t kind, uint8_t object_id);
 void MmxWidePolicy_StreakerEntrance(uint8_t ram[0x20000], uint16_t object, unsigned margin);
 bool MmxWidePolicy_RecoverParkedStreaker(uint8_t ram[0x20000], uint16_t object, uint16_t authored_x);
