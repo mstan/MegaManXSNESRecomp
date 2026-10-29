@@ -50,6 +50,14 @@ if(_MMX_RASTER_IMPL_DEFAULT STREQUAL "NATIVE" AND MMX_RASTER_IMPL STREQUAL "NATI
     set(_MMX_NATIVE_ROW_PLAN_DEFAULT ON)
 endif()
 option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
+option(MMX_NATIVE_BG_SPANS "Bind reconstructed background tiles and palettes per source span" OFF)
+set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
+    src/main.c tests/mmx_adaptive_state_test.c
+    APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_NATIVE_BG_SPANS=$<BOOL:${MMX_NATIVE_BG_SPANS}>)
+# Exercise the candidate in ROM-free CI even when the product selects its floor.
+set_property(SOURCE tests/mmx_row_plan_test.c APPEND PROPERTY COMPILE_DEFINITIONS
+    MMX_NATIVE_BG_SPANS=1)
 set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
     src/main.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
@@ -62,7 +70,7 @@ set(SNESRECOMP_ENABLE_MODS ON CACHE BOOL "Shared mod package runtime" FORCE)
 # keeps the unmodified Japanese edition and small unit tests independent.
 set(SNESRECOMP_NET_ICE ON CACHE BOOL "Internet netplay transport" FORCE)
 include(${SNESRECOMP_ROOT}/runner/runner.cmake)
-string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}-row${MMX_NATIVE_ROW_PLAN}")
+string(APPEND MMX_REPLAY_ENGINE "-apu${SNESRECOMP_APU_TIME_IMPL}-crc${SNESRECOMP_CRC32_IMPL}-raster${MMX_RASTER_IMPL}-row${MMX_NATIVE_ROW_PLAN}-bgspans${MMX_NATIVE_BG_SPANS}")
 set_property(SOURCE src/mmx_replay.c APPEND PROPERTY COMPILE_DEFINITIONS
     MMX_REPLAY_REVISION="${MMX_REPLAY_REVISION}" MMX_REPLAY_ENGINE="${MMX_REPLAY_ENGINE}")
 include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
@@ -348,6 +356,15 @@ if(TARGET mmx_state_tests)
         tests/mmx_adaptive_state_test.c ${mmx_state_sources})
     if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
         set(rush_report_dir "${CMAKE_CURRENT_BINARY_DIR}/boss-rush-reports")
+        set(render_rollback_dir "${CMAKE_CURRENT_BINARY_DIR}/render-rollback")
+        file(MAKE_DIRECTORY "${render_rollback_dir}")
+        add_test(NAME mmx_render_rollback
+            COMMAND ${CMAKE_COMMAND} -E env
+                SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=dummy MMX_REPLAY_RECORD=0
+                MMX_RENDER_ROLLBACK_TEST=1
+                $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_render_rollback PROPERTIES
+            WORKING_DIRECTORY "${render_rollback_dir}" LABELS "rom;rollback;renderer")
         file(MAKE_DIRECTORY "${rush_report_dir}")
         add_test(NAME mmx_boss_rush_reports
             COMMAND ${CMAKE_COMMAND} -E env SDL_AUDIODRIVER=dummy MMX_REPLAY_RECORD=0

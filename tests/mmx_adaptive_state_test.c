@@ -1863,6 +1863,43 @@ static void zero_state_checks(const char *assets, const char *fixture, uint8 *st
   puts("MMX ZERO RUNTIME CHECKS PASSED");
 }
 #include "mmx_frame_cost_test.inc"
+static void render_rollback_checks(uint8 *start, uint8 *expected, uint8 *actual, size_t cap) {
+  hitbox_boot();
+  unsigned waited;
+  for (waited = 0; waited < 600; ++waited) {
+    if (g_ram[0xba9] == 2 && !g_ram[0xbaa] && (g_ram[0xbd3] & 4) &&
+        (g_ram[0xbcf] & 127)) break;
+    frame(0);
+  }
+  check(waited < 600, "render rollback starts on real Highway ground");
+  g_config.widescreen = true;
+  int width, height; MmxPrepareFrame(1280, 720, &width, &height);
+  check(g_mmx_custom_renderer, "render rollback uses custom compositor");
+  frame(0);
+  uint32_t *pixels = malloc((size_t)MMX_RENDER_MAX_WIDTH * 224 * sizeof(*pixels));
+  check(pixels != NULL, "render rollback buffer allocates");
+  size_t n = RtlRollbackSaveToMemory(start, cap);
+  check(n != 0, "render rollback saves initial state");
+  const MmxRenderView views[] = {{342,43,16.0/9.0},{682,213,32.0/9.0},{256,0,4.0/3.0}};
+  for (unsigned i = 0; i < 16; ++i) {
+    frame((i < 8 ? SNES_PAD_RIGHT : 0) | SNES_PAD_Y);
+    check(MmxRendererDraw(pixels, views[0], true), "initial branch renders widescreen");
+  }
+  size_t en = RtlRollbackSaveToMemory(expected, cap);
+  check(RtlRollbackLoadFromMemory(start, n), "render rollback restores initial state");
+  size_t an = RtlRollbackSaveToMemory(actual, cap);
+  same(start, n, actual, an, "render rollback complete immediate restore");
+  for (unsigned i = 0; i < 16; ++i) {
+    frame((i < 8 ? SNES_PAD_RIGHT : 0) | SNES_PAD_Y);
+    for (unsigned view = 0; view < 3; ++view)
+      check(MmxRendererDraw(pixels, views[view], true), "resimulation renders alternate width/count");
+  }
+  an = RtlRollbackSaveToMemory(actual, cap);
+  same(expected, en, actual, an, "render width/count leaves rollback replay identical");
+  free(pixels);
+  puts("MMX RENDER ROLLBACK CHECKS PASSED");
+}
+
 int main(int argc, char **argv) {
   check(argc == 2 || argc == 3, "ROM supplied");
   SDL_SetMainReady();
@@ -1958,6 +1995,9 @@ int main(int argc, char **argv) {
   MkDir("saves");
   size_t cap = 2u * 1024u * 1024u;
   uint8 *start = malloc(cap), *expected = malloc(cap), *actual = malloc(cap);
+  if (getenv("MMX_RENDER_ROLLBACK_TEST")) {
+    render_rollback_checks(start, expected, actual, cap); return 0;
+  }
   if(getenv("MMX_ZERO_BLOCKS_TEST")) {zero_blocks_checks(getenv("MMX_ZERO_TEST_ASSETS"));return 0;}
   if (getenv("MMX_FRAME_COST_TEST")) {
     frame_cost_checks(start, expected, actual, cap);

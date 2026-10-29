@@ -51,3 +51,15 @@ const uint8_t *MmxRenderAssetsBackgroundTile(const uint8_t ram[0x20000],
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalette(const uint8_t ram[0x20000],
                                                              int world_x);
 const MmxBackgroundPalette *MmxRenderAssetsBackgroundPalettePhase(const uint8_t ram[0x20000], unsigned phase);
+
+/* One captured tile's immutable CHR/palette binding. The returned count ends
+ * before a resource-phase change. step is -2..2 authored columns per pixel;
+ * count is 1..1024. Zero rejects invalid arguments. palette_phase=-1 follows
+ * authored columns; a nonnegative phase binds an explicit continuation. */
+typedef struct MmxBackgroundBinding {
+  const uint8_t *tile;
+  const MmxBackgroundPalette *palette;
+} MmxBackgroundBinding;
+unsigned MmxRenderAssetsBindBackground(const uint8_t ram[0x20000],
+    int world_x, int step, unsigned vram_word, unsigned count, bool use_chr,
+    int palette_phase, MmxBackgroundBinding *binding);

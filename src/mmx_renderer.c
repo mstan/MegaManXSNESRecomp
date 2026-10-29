@@ -1,7 +1,7 @@
 #include "mmx_renderer.h"
 #include "raster_snapshot.h"
 #include "mmx_display.h"
-#include "snes/raster_jobs.h"
+#include "snes/raster_register_jobs.h"
 #include "snes/raster_image.h"
 #include "mmx_wide_policy.h"
 #include "mmx_render_assets.h"
@@ -1253,7 +1253,7 @@ static int weapon_menu_icon(int x, int y) {
   unsigned pixel = pose->pixels[py * pose->width + px];
   return pixel ? colors[pixel] : -1;
 }
-static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x, int y, bool stage, int *private_color) {
+static uint16_t background(const SnesRenderRegisters *p, const Raster *r, unsigned layer, int x, int y, bool stage, int *private_color) {
   static const unsigned low[] = {8, 7, 1}, high[] = {12, 11, 3};
   if(stage && layer==0 && frame.ram[0x1f7a]==4 &&
       (frame_rush.mode==MMX_RUSH_PLAYING || frame_rush.mode==MMX_RUSH_PREPARING)) {
@@ -1472,9 +1472,9 @@ static uint16_t background(const Ppu *p, const Raster *r, unsigned layer, int x,
  * scene reconstruction, peer cameras, mosaic and scene-specific surfaces
  * retain background() below; none of those jobs may borrow this binding.
  */
-static void native_background_center(const Ppu *p, const Raster *r,
+static void native_background_center(const SnesRenderRegisters *p, const Raster *r,
                                      unsigned layer, int y, uint16_t out[256]) {
-  (void)SnesRenderMode1TileRow(p, r->vram, layer, 0, y, 256, out);
+  (void)SnesRenderRegistersMode1TileRow(p, r->vram, layer, 0, y, 256, out);
 }
 #endif
 typedef struct PlayerFootprint {
@@ -1493,7 +1493,7 @@ static void player_footprint(PlayerFootprint *p,uint16_t *objects,int first,int 
     if(x>p->last)p->last=x;
   }
 }
-static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, int size,
+static void sprite(const SnesRenderRegisters *p, const Raster *r, int x, int sy, unsigned attr, int size,
                     int y, MmxRenderView view, uint16_t *out, bool margins_only,
                     const MmxSpriteAsset *asset, unsigned raw_tile, int *object_color,
                     bool full_coordinates, unsigned zero_icon, bool red_tint) {
@@ -1537,7 +1537,7 @@ static void sprite(const Ppu *p, const Raster *r, int x, int sy, unsigned attr, 
     }
   }
 }
-static bool window(const Ppu *p, int layer, int x, int extra) {
+static bool window(const SnesRenderRegisters *p, int layer, int x, int extra) {
   unsigned flags = (p->windowsel >> (layer * 4)) & 15;
   int l1 = p->window1left == 0 ? -extra : p->window1left;
   int r1 = p->window1right == 255 ? 255 + extra : p->window1right;
@@ -1602,7 +1602,7 @@ static unsigned spark_lights(LightBeam beams[2], int extra) {
   return count;
 }
 static bool condition(unsigned mode, bool inside) { return mode == 3 || (mode == 1 && !inside) || (mode == 2 && inside); }
-static uint32_t colour(const Ppu *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3], bool dialogue_margin, uint16_t camouflage_bg) {
+static uint32_t colour(const SnesRenderRegisters *p, const uint16_t *palette, const uint8_t brightness[32], uint16_t main, uint16_t sub, bool inside, int object_color, const int bg_colors[3], bool dialogue_margin, uint16_t camouflage_bg) {
   unsigned rgb = palette[main & 255], layer = (main >> 8) & 15;
   if (object_color >= 0 && (layer == 4 || layer == 6)) rgb = (unsigned)object_color;
   if (layer < 3 && bg_colors[layer] >= 0) rgb = (unsigned)bg_colors[layer];
@@ -1787,7 +1787,7 @@ static void armor_giga_row(int y,MmxRenderView view,uint16_t *objects,int *color
     }
   }
 }
-static void moved_enemy_row(const MmxWeaponShot *s,const Ppu *p,const Raster *r,int y,
+static void moved_enemy_row(const MmxWeaponShot *s,const SnesRenderRegisters *p,const Raster *r,int y,
                             MmxRenderView view,uint16_t *objects,int *colors) {
   unsigned d=(unsigned)s->origin_x;
   if(d<0xe68 || d>=0x1228 || !frame.ram[d] || frame.ram[d+10]!=s->origin_y) return;
@@ -1811,7 +1811,7 @@ static void moved_enemy_row(const MmxWeaponShot *s,const Ppu *p,const Raster *r,
     } else sprite(p,r,piece.x,piece.y,attr,piece.size,y,view,objects,false,asset,piece.tile,colors,true,false,false);
   }
 }
-static void weapon_effects_row(const MmxWeaponCombatState *combat,const Ppu *p,const Raster *r,
+static void weapon_effects_row(const MmxWeaponCombatState *combat,const SnesRenderRegisters *p,const Raster *r,
                                int y,MmxRenderView view,uint16_t *objects,int *object_colors) {
   for (unsigned i=0;i<24;++i) {
     const MmxWeaponShot *s=i<8 ? combat->shots+i : combat->effects+i-8;
@@ -1877,7 +1877,7 @@ static void weapon_effects_row(const MmxWeaponCombatState *combat,const Ppu *p,c
         (s->y>>8)-view_camera(frame.ram,0x1e50),y,view,objects,object_colors);
   }
 }
-static void teleport_actor_row(const uint8_t *ram,const MmxZeroState *zero,const Ppu *p,
+static void teleport_actor_row(const uint8_t *ram,const MmxZeroState *zero,const SnesRenderRegisters *p,
                                const Raster *r,int y,MmxRenderView view,uint16_t *objects,int *object_colors) {
   unsigned pose = MmxZeroSwapPose(zero);
   int x = (int16_t)(word(ram,0xbad) - view_camera(ram,0x1e4d));
@@ -1968,7 +1968,7 @@ static void player_overlay_row(const MmxRenderPlayerOverlay *overlay, int y,
     player_overlay_plane_row(&overlay->blade, overlay->palette, overlay->palette_count,
         y, zx, zy, overlay->facing_left, z, view, objects, object_colors);
 }
-static void coop_partner_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView view,
+static void coop_partner_row(const SnesRenderRegisters *ppu,const Raster *r,int y,MmxRenderView view,
                              uint16_t *objects,int *colors) {
   const MmxCoopPlayer *partner = &frame_coop.players[frame_coop.current^1];
   if (!frame_coop.initialized || partner->status != MMX_COOP_ALIVE || frame_coop.scene_phase==2) return;
@@ -2088,7 +2088,7 @@ static void coop_partner_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView 
     }
   }
 }
-static void coop_meter_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView view,
+static void coop_meter_row(const SnesRenderRegisters *ppu,const Raster *r,int y,MmxRenderView view,
                            uint16_t *objects,int *colors,int x,unsigned value,unsigned maximum,
                            unsigned palette,const MmxSpriteAsset *art,int icon_y,bool inverted) {
   /* The native $D82C/$D94A meter uses overlapping 16px strips. Retain its
@@ -2124,7 +2124,7 @@ static void coop_meter_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView vi
         objects,false,art,tile,colors,true,false,false);
   }
 }
-static void coop_inverted_badge_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView view,
+static void coop_inverted_badge_row(const SnesRenderRegisters *ppu,const Raster *r,int y,MmxRenderView view,
                                     uint16_t *objects,int *colors,int x,int icon_y,unsigned palette,
                                     const MmxSpriteAsset *frame_art,const MmxSpriteAsset *icon_art,
                                     const MmxWeaponPose *icon,bool zero) {
@@ -2158,7 +2158,7 @@ static void coop_inverted_badge_row(const Ppu *ppu,const Raster *r,int y,MmxRend
     objects[dx]=0xe6a1;colors[dx]=color;
   }
 }
-static void coop_hud_row(const Ppu *ppu,const Raster *r,int y,MmxRenderView view,bool anchored,
+static void coop_hud_row(const SnesRenderRegisters *ppu,const Raster *r,int y,MmxRenderView view,bool anchored,
                          uint16_t *objects,int *colors) {
   for(unsigned seat=0;seat<2;++seat) {
     const MmxCoopPlayer *player=&frame_coop.players[seat];
@@ -2277,7 +2277,7 @@ static void draw_debug_rect(uint32_t *out, MmxRenderView view,
     for (int y = y0; y <= y1; ++y) out[y * view.width + (int)right] = color;
   }
 }
-static void rush_hud_row(const Ppu *p,const Raster *r,int y,MmxRenderView view,
+static void rush_hud_row(const SnesRenderRegisters *p,const Raster *r,int y,MmxRenderView view,
                          uint16_t *objects,int *colors) {
   for(unsigned i=0;i<2;++i) {
     const MmxBossRushBoss *b=&frame_rush.bosses[i];if(!b->phase) continue;
@@ -2290,7 +2290,7 @@ static void rush_hud_row(const Ppu *p,const Raster *r,int y,MmxRenderView view,
 static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const char *s,unsigned palette) {
   for(int row=0;row<8;++row) {
     if(y+row<0 || y+row>=224) continue;
-    const Raster *r=&frame.lines[y+row];Ppu p={0};memcpy(&p,r->registers,sizeof(r->registers));
+    const Raster *r=&frame.lines[y+row];SnesRenderRegisters p={0};memcpy(&p,r->registers,sizeof(r->registers));
     if((p.inidisp&128) && palette<8) continue;
     for(unsigned n=0;s[n];++n) for(int col=0;col<8;++col) {
       int dx=x+(int)n*8+col;if(dx<0 || dx>=view.width) continue;
@@ -2513,7 +2513,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
          MmxWeaponsMovedEnemy(&frame_coop.players[frame_coop.current^1].combat, pieces[i].object)));
 #endif
   for (int y = 0; y < 224; ++y) {
-    const Raster *r = &frame.lines[y]; Ppu p;
+    const Raster *r = &frame.lines[y]; SnesRenderRegisters p;
     memcpy(&p, r->registers, PPU_SAVESTATE_REGS_SIZE);
     if (beam_count) p.cgwsel = (p.cgwsel & 0xcf) | 0x20;
     if ((p.bgmode & 7) != 1 || !own_scene) {
@@ -2657,6 +2657,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if(asset && frame_rush.mode==MMX_RUSH_PLAYING && s.object>=0xe68 && s.object<0x1d08 &&
           frame_rush.owner[(s.object-0xe68)/32])
         attr=(attr&~0x3000u)|((asset->attributes&0x30)<<8);
+      /* Highway's first Gun Volt can initialize before resource $30 loads.
+       * Its tile base is later repaired, but the zero palette/page/priority
+       * byte persists. Substituting CHR/colors while preserving priority zero
+       * hides the whole body behind BG1 although its shots remain visible.
+       * Use the resource's priority only for this unbound initializer state;
+       * normal hit flashes and deliberately low-priority platform art keep
+       * their submitted attributes. No guest allocation or state is changed. */
+      if (asset && MmxWidePolicy_GunVoltUnbound(frame.ram, s.object, s.animation))
+        attr = (attr & ~0x3000u) | ((asset->attributes & 0x30) << 8);
       if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
       if (zero_armor || swap_actor || triad_armor || frozen_enemy || armor_part) continue;
       if(armor_body && !triad_x_body && !swap_actor) {
