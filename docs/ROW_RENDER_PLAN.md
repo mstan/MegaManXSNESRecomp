@@ -41,3 +41,48 @@ stock-renderer workload was neutral/inconclusive. These are additional results
 against the preceding optimized MMX build, not additive percentages or original
 Xbox qualification. Raw samples, exact binary identities and settings are in
 `campaign-results.json` beneath the evidence directory above.
+
+## Reconstructed background source spans (R1)
+
+`MMX_NATIVE_BG_SPANS=ON` additionally resolves full-view map tiles, source-row
+planes and private CHR/palette bindings per source span. Its development default
+remains OFF by owner direction. The old scalar
+`background()` remains the independent reference and handles per-pixel imported
+menu art and the Rush ceiling; mosaic retains its existing path.
+
+Spans end at native-view edges, source characters, scene reflections/clamps,
+door cells, submarine bands and authored resource-phase changes. Resource
+columns may advance forward, backward, at half-camera scale or remain clamped;
+CHR and palette changes need not align with a tile. Bindings are private to a
+captured row, with no new persistent cache, guest write or serialized state.
+
+The prototype passes existing native scenes, 1,536 scalar-compared full-width
+rows, separate non-aligned CHR/palette phase checks, all four Magic Carpet
+gates and eight captured view/HUD comparisons. The row suite also executes on
+Linux. Both clean-source OFF/ON builds pass current-build restore, rewind,
+deterministic replay and fresh-process replay. A dedicated ROM-backed rollback
+check also compares identical guest inputs while varying render widths and
+draw counts; the resulting rollback state is identical.
+
+Five balanced 4,200-frame Highway pairs per profile on an i5-4670 measured
+median process-CPU reductions of 12.81% at 16:9 and 34.69% at 32:9, with all
+five pairs positive in each wider view. Custom 4:3 and stock were
+neutral/inconclusive; repeated OFF/ON, identical-binary and canonical-main
+controls are retained. These results belong to this MMX title adapter and
+package, not every SNES game; do not add percentages to the preceding row
+package. Exact measured source is `ef821a32` (runtime code from `7e558267`).
+Raw samples, source/runtime/binary identities, feature settings and size costs
+are indexed in `campaign-results.json` under the task directory below.
+Automated qualification is complete; combined owner playtest approval and
+merge remain pending. No original Xbox or cross-build netplay claim is made.
+
+Owner direction on 2026-10-28: finish this already-authorized title candidate,
+then prioritize game-agnostic engine mechanisms. Reuse or elevate shared
+operations with actual consumer validation; retain X1 scene and asset policy
+here. X2/X3 already use the shared live PPU and a shared background provider,
+so enabling this X1-specific build flag is not a direct port. Substantial
+adoption belongs after the shared-engine burndown or is deferred.
+
+Tracking: `beads-8wg.1.150`, roadmap
+`beads-49cy`, campaign `beads-2wy8.1`. Evidence:
+`G:/Temp/Codex/snesrecomp/background-spans-20261027/evidence`.

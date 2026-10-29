@@ -316,7 +316,35 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 1, 0x21, true));
 }
 
+static void test_unbound_gun_volt(void) {
+  /* First-approach 32:9 capture: live Gun Volt, group $32, allocation has
+   * arrived but the initializer's whole attribute byte remains zero. */
+  const unsigned d = 0xea8;
+  memset(ram, 0, sizeof(ram));
+  ram[d] = 1; ram[d + 1] = 4; ram[d + 10] = 0x29;
+  ram[d + 22] = 0x32; ram[d + 24] = 0x60;
+  assert(MmxWidePolicy_GunVoltUnbound(ram, d, 0x32));
+  ram[d + 17] = 0x40;
+  assert(MmxWidePolicy_GunVoltUnbound(ram, d, 0x32)); /* Facing is independent. */
+  const unsigned valid[] = {0x2b, 0x21, 0x20, 0x0b, 0x3b};
+  for (unsigned i = 0; i < sizeof(valid) / sizeof(*valid); ++i) {
+    ram[d + 17] = (uint8_t)valid[i];
+    assert(!MmxWidePolicy_GunVoltUnbound(ram, d, 0x32));
+  }
+  ram[d + 17] = 0;
+  assert(!MmxWidePolicy_GunVoltUnbound(ram, d, 0x22));
+  assert(!MmxWidePolicy_GunVoltUnbound(ram, d + 1, 0x32));
+  assert(!MmxWidePolicy_GunVoltUnbound(ram, 0xffff, 0x32));
+  assert(!MmxWidePolicy_GunVoltUnbound(NULL, d, 0x32));
+  ram[0x1f7a] = 5; assert(!MmxWidePolicy_GunVoltUnbound(ram, d, 0x32));
+  ram[0x1f7a] = 0; ram[d + 10] = 0x15;
+  assert(!MmxWidePolicy_GunVoltUnbound(ram, d, 0x32));
+  ram[d + 10] = 0x29; ram[d] = 0;
+  assert(!MmxWidePolicy_GunVoltUnbound(ram, d, 0x32));
+}
+
 int main(void) {
+  test_unbound_gun_volt();
   memset(ram, 0, sizeof(ram)); ram[0xd1] = 2; ram[0xd2] = 4;
   for (int scene = 0; scene <= 8; scene += 2) {
     ram[0xd3] = (uint8_t)scene; assert(MmxWidePolicy_IsStageScene(ram));

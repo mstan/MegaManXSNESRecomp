@@ -900,3 +900,33 @@ unsigned MmxRenderAssetsDeathPaletteFade(const uint8_t ram[0x20000], const uint1
   }
   return 0;
 }
+
+unsigned MmxRenderAssetsBindBackground(const uint8_t ram[0x20000],
+    int world_x, int step, unsigned vram_word, unsigned count, bool use_chr,
+    int palette_phase, MmxBackgroundBinding *binding) {
+  if (!binding || !ram || !count || count > 1024 || step < -2 || step > 2) return 0;
+  binding->tile = use_chr ? MmxRenderAssetsBackgroundTile(ram, world_x, vram_word) : NULL;
+  binding->palette = palette_phase >= 0 ?
+      MmxRenderAssetsBackgroundPalettePhase(ram, (unsigned)palette_phase) :
+      MmxRenderAssetsBackgroundPalette(ram, world_x);
+  if (!step || count == 1) return count;
+  unsigned stage = ram[0x1f7a];
+  bool chr = use_chr && (stage == 0 || stage == 1);
+  bool palette = palette_phase < 0 &&
+      (stage == 0 || stage == 1 || stage == 2 || stage == 4 || stage == 8);
+  if ((!chr && !palette) || !prepare_background(ram)) return count;
+  /* Resource events need not share a tile boundary. Check their prepared
+   * column phases, without repeating map/CHR/palette resolution per pixel.
+   * An invalid column is a distinct binding so crossing into/out of ROM's
+   * authored 8192px resource range also ends the span. */
+  bool valid = world_x >= 0 && world_x < 8192;
+  unsigned chr_phase = valid ? bg_phase[0][world_x] : 16;
+  unsigned pal_phase = valid ? bg_phase[1][world_x] : 16;
+  for (unsigned i = 1; i < count; ++i) {
+    int64_t next = (int64_t)world_x + (int64_t)i * step;
+    bool next_valid = next >= 0 && next < 8192;
+    if ((chr && (next_valid ? bg_phase[0][next] : 16) != chr_phase) ||
+        (palette && (next_valid ? bg_phase[1][next] : 16) != pal_phase)) return i;
+  }
+  return count;
+}
