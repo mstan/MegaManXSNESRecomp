@@ -69,7 +69,7 @@ static void coop_special_graphics(void) {
     rom_long(0x69000+w*4,0x8da000+w*8);
     rom_bytes[arrangement]=1;rom_bytes[arrangement+3]=0x1d;
   }
-  MmxZeroDisable();MmxBossRushReset();MmxCoopViewsSetOnline(false);
+  MmxZeroDisable();MmxBossRushReset();MmxCoopViewsSetActive(false);
   MmxRendererSetRom(NULL,0);MmxRendererSetRom(rom_bytes,sizeof(rom_bytes));
   g_mmx_custom_renderer=true;
   for(unsigned weapon=1;weapon<=8;++weapon)for(unsigned charged=0;charged<2;++charged)

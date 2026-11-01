@@ -603,7 +603,7 @@ static void coop_scene_checks(const char *fixture,uint8_t *start,uint8_t *expect
         ++departures;
         check(s.scene_owner==driver+1 && s.anchor==driver,"touching player owns native door walk");
       }
-      if(s.scene_phase && MmxCoopViewsOnline()) {
+      if(s.scene_phase && MmxCoopViewsActive()) {
         MmxCoopView owner=MmxCoopViewForPlayer(g_ram,&s,driver),partner=MmxCoopViewForPlayer(g_ram,&s,driver^1);
         check(owner.x==partner.x && owner.y==partner.y && partner.player==driver,
             "scripted transport immediately gives both seats the owner's camera");

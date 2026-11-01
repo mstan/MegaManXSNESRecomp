@@ -92,7 +92,7 @@ Rev 1 build.
 | &#9745; | **Adaptive widescreen** | Expanded gameplay with adaptive, 16:9, 21:9, and 32:9 views. |
 | &#9745; | **Playable Zero** | X3 Zero with his buster/saber combo and grounded character switching. Separate health for X and Zero. |
 | &#9745; | **Modern Zero** | Direct saber attacks, double jump, air dash, and movement during airborne swings. |
-| &#9745; | **Co-op mode** | X and Zero on screen together, with independent health, weapons, and weapon energy. |
+| &#9745; | **Co-op mode** | X and Zero with independent health, weapons, and weapon energy. Optional [local side-by-side screens](docs/local-independent-views.md), at 5:4 per player or widescreen per pane. |
 | &#9745; | **[Boss Rush](docs/boss-rush.md)** | Endless fights against two different Mavericks, solo or co-op, from the game's title menu. |
 | &#9745; | **X2 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
 | &#9745; | **X3 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |

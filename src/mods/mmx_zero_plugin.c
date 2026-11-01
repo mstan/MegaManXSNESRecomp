@@ -276,6 +276,8 @@ static void activate_coop(void) {
   MmxZeroSetModern(!strcmp(behavior,"modern"));
   snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","cameras",cameras,sizeof(cameras));
   MmxCoopViewsSetIndependent(!strcmp(cameras,"independent"));
+  snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","local_cameras",cameras,sizeof(cameras));
+  MmxCoopViewsSetLocalSplit(!strcmp(cameras,"split"));
   snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","hud",hud,sizeof(hud));
   MmxRendererSetCompactCoopHud(strcmp(hud,"horizontal")!=0);
   unsigned p1=!strcmp(character,"zero") ? MMX_COOP_ZERO : MMX_COOP_X;
@@ -316,6 +318,8 @@ static void reset(void) {
   MmxRendererSetCompactCoopHud(true);
   MmxRendererSetHideLearnerHealth(false);
   MmxCoopViewsSetIndependent(false);
+  MmxCoopViewsSetLocalSplit(false);
+  MmxCoopViewsSetActive(false);
   MmxCoopDisable();
   if (MmxWeaponsEnabled()) g_ram[0x1f12] = 0;
   MmxZeroSetStartCharacter(false);

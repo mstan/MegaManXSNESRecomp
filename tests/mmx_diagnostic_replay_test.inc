@@ -41,13 +41,16 @@ static void diagnostic_replay_checks(const char *assets, const char *mode) {
   if(coop) {
     coop_replay_start(assets);
     check(MmxCoopEnable(!strcmp(mode,"zero") ? MMX_COOP_ZERO : MMX_COOP_X),"recording roster selected");
+    if(!strcmp(mode,"local")) MmxCoopViewsSetLocalSplit(true);
   }
   const char *input=getenv("MMX_REPLAY_INPUT");
   if(input) {
+    if(!strcmp(mode,"local")) MmxCoopViewsSetLocalSplit(false);
     check(MmxReplayPlayback(input),"fresh-process diagnostic replay opens");
     unsigned frames=0;
     while(!MmxReplayFinished() && !MmxReplayFailed() && frames<10000) {frame(0);++frames;}
     check(!MmxReplayFailed() && MmxReplayFinished(),"fresh-process checkpoints match");
+    if(!strcmp(mode,"local")) check(MmxCoopViewsLocalSplit(),"recorded local layout overrides playback preferences");
     printf("MMX DIAGNOSTIC REPLAY PASSED (%u executions)\n",frames);return;
   }
   /* Real boot and title flow, followed by an input sequence on both seats.

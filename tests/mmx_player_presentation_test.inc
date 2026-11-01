@@ -44,7 +44,7 @@ static void coop_player_overlap(void) {
   rom_long(0x68000,0x8d9000);rom_long(0x69000,0x8d9100);
   rom_bytes[0x69100]=1;
   MmxRendererSetRom(NULL,0);MmxRendererSetRom(rom_bytes,sizeof(rom_bytes));
-  MmxCoopViewsSetOnline(false);g_mmx_custom_renderer=true;g_mmx_expanded_sprites=false;
+  MmxCoopViewsSetActive(false);g_mmx_custom_renderer=true;g_mmx_expanded_sprites=false;
   for(unsigned current=0;current<2;++current)for(unsigned repairs=0;repairs<2;++repairs)
   for(unsigned overlay=0;overlay<2;++overlay)for(unsigned wide=0;wide<2;++wide) {
     memset(&ppu,0,sizeof(ppu));memset(ram,0,sizeof(ram));memset(stock,0,sizeof(stock));
@@ -92,6 +92,6 @@ static void coop_player_overlap(void) {
       assert(output[48*v.width+v.extra+44]==0xff0000);
     }
   }
-  MmxRendererSetPlayerOverlayProvider(NULL);MmxCoopViewsSetOnline(false);
+  MmxRendererSetPlayerOverlayProvider(NULL);MmxCoopViewsSetActive(false);
   g_mmx_custom_renderer=false;g_mmx_render_asset_repairs=true;MmxRendererReset();
 }

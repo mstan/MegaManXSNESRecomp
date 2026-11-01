@@ -13,6 +13,7 @@
 #include "mmx_coop_view.h"
 #include "mmx_boss_rush.h"
 #include "mmx_boss_rush_score.h"
+#include "desktop/local_views.h"
 #include <math.h>
 
 /* Mode-1 decode/composition follows SuperMetroidRecomp's sm_renderer.c.
@@ -134,6 +135,7 @@ static MmxCoopState frame_coop;
 static MmxCoopViewBoundsState frame_bounds;
 static bool frame_held;
 static int peer_seat=-1,view_dx,view_dy;
+static bool local_pane;
 void MmxRendererSetPeerView(int seat) { peer_seat=seat>=0 && seat<2?seat:-1; }
 int MmxRendererGetPeerView(void) { return peer_seat; }
 static int view_camera(const uint8_t *r,unsigned address) {
@@ -504,7 +506,7 @@ void MmxRendererObserveObject(const uint8_t ram[0x20000], uint16_t object) {
   current_object = object;
   /* Two bosses and their attacks exceed the retail OAM submission budget.
    * Preserve the native queue and full arrangements in Rush too. */
-  if (observed_lists || (!g_mmx_expanded_sprites && !MmxCoopViewsOnline() &&
+  if (observed_lists || (!g_mmx_expanded_sprites && !MmxCoopViewsActive() &&
       MmxBossRushGetState().mode!=MMX_RUSH_PLAYING)) return;
   observed_lists = true;
   expand_queues(ram);
@@ -670,7 +672,7 @@ void MmxRendererBeginFrame(const uint8_t ram[0x20000]) {
   }
   frame.expanded_count = latched_stage == ram[0x1f7a] ? expanded_latched_count : 0;
   memcpy(frame.expanded, expanded_latched, frame.expanded_count * sizeof(Piece));
-  frame.expand = g_mmx_expanded_sprites || MmxCoopViewsOnline() ||
+  frame.expand = g_mmx_expanded_sprites || MmxCoopViewsActive() ||
       (frame_rush.mode==MMX_RUSH_PLAYING && MmxWidePolicy_IsStageScene(frame.ram) &&
        !zero_weapons_menu() &&
        !MmxWeaponsMenuVisible(frame.ram));
@@ -1018,7 +1020,7 @@ bool MmxRendererSaveCapture(const char *path) {
   FILE *f = fopen(path, "wb");
   if (!f) { free(saved); return false; }
   uint32_t count = vram_snapshots.count;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 31 : 30,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 33 : 32,
       (uint32_t)(sizeof(frame) + sizeof(count) + sizeof(indices) + count * 0x10000u +
       sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
       (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
@@ -1061,7 +1063,7 @@ bool MmxRendererLoadCapture(const char *path) {
   memset(&frame_rush, 0, sizeof(frame_rush));
   memset(&frame_rush_visual, 0, sizeof(frame_rush_visual));
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
-      (h[1]==26 || h[1]==27 || h[1]==30 || h[1]==31) && fread(&frame, sizeof(frame), 1, f) == 1;
+      (h[1]==32 || h[1]==33) && fread(&frame, sizeof(frame), 1, f) == 1;
   const bool valid = true;
   ok = ok && !memcmp(&frame.valid, &valid, sizeof(valid)) &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES;
@@ -2162,9 +2164,10 @@ static void coop_hud_row(const SnesRenderRegisters *ppu,const Raster *r,int y,Mm
                          uint16_t *objects,int *colors) {
   for(unsigned seat=0;seat<2;++seat) {
     const MmxCoopPlayer *player=&frame_coop.players[seat];
+    if(local_pane && peer_seat>=0 && seat!=(unsigned)peer_seat) continue;
     if(seat && player->status==MMX_COOP_ABSENT) continue;
-    bool inverted=coop_hud_compact && player->character==MMX_COOP_ZERO;
-    int x=8+(coop_hud_compact?0:(int)seat*32)-(anchored?view.extra:0),icon_y=inverted?100:80;
+    bool inverted=!local_pane && coop_hud_compact && player->character==MMX_COOP_ZERO;
+    int x=8+(coop_hud_compact || local_pane?0:(int)seat*32)-(anchored?view.extra:0),icon_y=inverted?100:80;
     unsigned hp=player->status==MMX_COOP_FALLEN?0:player->body[0x27]&127;
     /* A hidden learner meter leaves the weapon column in its place. */
     if(!seat || !coop_hide_learner_health) {
@@ -2358,7 +2361,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
   bool own_scene = raster_scene_owned();
   bool rush_hud = stage && frame_rush.loaded;
   view_dx=view_dy=0;
-  if(stage && peer_seat>=0 && frame_coop.initialized && MmxCoopViewsOnline()) {
+  if(stage && peer_seat>=0 && frame_coop.initialized && MmxCoopViewsActive()) {
     MmxCoopView camera=MmxCoopViewWithBounds(frame.ram,&frame_coop,(unsigned)peer_seat,&frame_bounds);
     view_dx=camera.x-(int)word(frame.ram,0x1e4d);
     view_dy=camera.y-(int)word(frame.ram,0x1e50);
@@ -2991,4 +2994,20 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       rush_native_text(out,view,view.width-40+(int)i*16,96,labels[frame_rush.bosses[i].id],7);
   }
   return true;
+}
+
+bool MmxRendererDrawLocalPair(uint8_t *output,size_t pitch,MmxRenderView view,bool hud) {
+  static uint32_t panes[2][MMX_RENDER_MAX_WIDTH * MMX_RENDER_HEIGHT];
+  if(!output || view.width<256 || view.width>MMX_RENDER_MAX_WIDTH ||
+      pitch<(size_t)view.width*8) return false;
+  int saved_seat=peer_seat,saved_dx=view_dx,saved_dy=view_dy;
+  bool saved_local=local_pane;
+  bool independent=frame_coop.initialized && !frame_coop.menu_owner &&
+      !frame_coop.scene_owner && !frame_coop.stage_pending && MmxWidePolicy_IsStageScene(frame.ram);
+  local_pane=independent;
+  peer_seat=independent?0:-1;bool ok=MmxRendererDraw(panes[0],view,hud);
+  if(ok && independent) {peer_seat=1;ok=MmxRendererDraw(panes[1],view,hud);}
+  peer_seat=saved_seat;view_dx=saved_dx;view_dy=saved_dy;local_pane=saved_local;
+  return ok && SnesLocalViews_ComposeSideBySide(output,pitch,view.width,MMX_RENDER_HEIGHT,
+      panes[0],(size_t)view.width*4,independent?panes[1]:NULL,(size_t)view.width*4);
 }

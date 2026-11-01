@@ -23,7 +23,7 @@ default_enabled = false
 feature = "widescreen"
 id = "aspect"
 label = "View aspect ratio"
-description = "Fit the view to the window, or select a fixed ratio. Settings > Display Aspect controls pixel and sprite proportions in every mode."
+description = "Fit the view to the window, or select a fixed ratio. Local Side by side applies this ratio to each screen, with 5:4 base pixel proportions. Unified follows Settings > Display Aspect."
 type = "choice"
 default = "adaptive"
 [[option.choice]]

@@ -1,11 +1,13 @@
 #pragma once
 #include "mmx_coop.h"
 
-/* Session policy is identical on both peers. The local seat affects only
- * presentation; it must never select a simulation camera or active region. */
+/* The active independent-world policy is shared by local split and online
+ * independent cameras. Selecting a presentation seat never changes it. */
 typedef struct MmxCoopView { int x, y; unsigned player; } MmxCoopView;
-void MmxCoopViewsSetOnline(bool online);
-bool MmxCoopViewsOnline(void);
+void MmxCoopViewsSetActive(bool active);
+bool MmxCoopViewsActive(void);
+void MmxCoopViewsSetLocalSplit(bool enabled);
+bool MmxCoopViewsLocalSplit(void);
 void MmxCoopViewsSetIndependent(bool independent);
 bool MmxCoopViewsIndependent(void);
 
@@ -14,12 +16,17 @@ bool MmxCoopViewsIndependent(void);
 typedef struct MmxCoopViewBoundsState {
   uint16_t limits[2][4]; /* left, right, top, bottom */
   uint8_t valid, stage;
+  /* Native current limits ease toward the authored targets above. Camera
+   * history advances once per simulation frame, never during presentation. */
+  uint16_t current[2][4], camera[2][2];
+  uint8_t camera_valid;
 } MmxCoopViewBoundsState;
 void MmxCoopViewsSetRom(const uint8_t *rom, size_t size);
 MmxCoopViewBoundsState MmxCoopViewsGetBoundsState(void);
 bool MmxCoopViewsValidBoundsState(const MmxCoopViewBoundsState *bounds);
 void MmxCoopViewsSetBoundsState(const MmxCoopViewBoundsState *bounds);
 void MmxCoopViewsUpdateBounds(const uint8_t *ram, const MmxCoopState *state);
+void MmxCoopViewsEndFrame(const uint8_t *ram, const MmxCoopState *state);
 /* Before a remote player takes a native door, transfer its authored view to
  * the shared script camera while both independent views still exist. */
 void MmxCoopViewsAdoptPlayer(uint8_t *ram, const MmxCoopState *state, unsigned seat);

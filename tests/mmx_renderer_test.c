@@ -246,7 +246,7 @@ static void independent_oam_visibility(void) {
   /* Native OAM contains hidden slots and wraps sprites across y=255.
    * Neither is a full world coordinate after selecting a distant peer view. */
   MmxRendererSetRom(NULL,0);MmxZeroDisable();MmxRendererSetCompactCoopHud(false);
-  MmxCoopViewsSetOnline(true);g_mmx_custom_renderer=true;
+  MmxCoopViewsSetActive(true);g_mmx_custom_renderer=true;
   const int separation[]={0,208,256,-256,512,-512};
   for(unsigned anchor=0;anchor<2;++anchor) for(unsigned n=0;n<6;++n)
       for(unsigned kind=0;kind<3;++kind) {
@@ -288,7 +288,28 @@ static void independent_oam_visibility(void) {
       }
     }
   }
-  MmxRendererSetPeerView(-1);MmxCoopViewsSetOnline(false);
+  /* Publish both distant cameras from the same capture, at native, wide and
+   * maximum pane width. Caller padding and the selected peer must survive. */
+  static uint32_t expected[2][MMX_RENDER_MAX_WIDTH*224];
+  static uint32_t pair[(2*MMX_RENDER_MAX_WIDTH+4)*224];
+  const int widths[]={256,364,MMX_RENDER_MAX_WIDTH};
+  for(unsigned mode=0;mode<3;++mode) {
+    int width=widths[mode],stride=2*width+4;
+    MmxRenderView view={width,(width-256)/2,mode?16.0/9:5.0/4};
+    for(unsigned seat=0;seat<2;++seat) {
+      MmxRendererSetPeerView((int)seat);
+      assert(MmxRendererDraw(expected[seat],view,true));
+    }
+    memset(pair,0xcd,sizeof(pair));
+    assert(MmxRendererDrawLocalPair((uint8_t *)pair,(size_t)stride*4,view,true));
+    assert(MmxRendererGetPeerView()==1);
+    for(int y=0;y<224;++y) {
+      assert(!memcmp(pair+y*stride,expected[0]+y*width,(size_t)width*4));
+      assert(!memcmp(pair+y*stride+width,expected[1]+y*width,(size_t)width*4));
+      assert(pair[y*stride+2*width]==0xcdcdcdcd);
+    }
+  }
+  MmxRendererSetPeerView(-1);MmxCoopViewsSetActive(false);
   MmxRendererSetCompactCoopHud(true);g_mmx_custom_renderer=false;MmxRendererReset();
 }
 static void expanded_capacity(void) {
@@ -807,7 +828,7 @@ static void spark_effects(void) {
    * ($87:A6ED/A7AE). It must follow the same world position in either view. */
   put_word(0x1e50,256);ppu.vScroll[0]=256;
   put_word(0x1e58,2048);put_word(0x1e5c,2048);
-  MmxCoopViewsSetOnline(true);
+  MmxCoopViewsSetActive(true);
   for(unsigned anchor=0;anchor<2;++anchor) for(int dy=-64;dy<=64;dy+=64) {
     MmxCoopState s={0};s.initialized=1;s.current=s.anchor=(uint8_t)anchor;
     for(unsigned seat=0;seat<2;++seat) {
@@ -825,7 +846,7 @@ static void spark_effects(void) {
           (y>=top && y<top+13?0xffffffu:0u));
     }
   }
-  MmxRendererSetPeerView(-1);MmxCoopViewsSetOnline(false);
+  MmxRendererSetPeerView(-1);MmxCoopViewsSetActive(false);
   memset(ram+0xba8,0,0x90);put_word(0x1e50,0);ppu.vScroll[0]=0;
   /* Thunder Slimer's BG2 surface reaches the margins from live VRAM, never
    * from the stage map's dormant staging tiles. */
@@ -1783,4 +1804,5 @@ static void rush_results_page(void) {
   assert((output[48*256+92]&0xffffff)==0x00ffff);
   MmxBossRushReset();
 }
-int main(void) { geometry(); raster_and_hud(); immutable_vram_raster(); stage_map_draw_lifetime(); sprite_coordinates(); independent_oam_visibility(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); airport_upper_sky_repair(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); storm_dormant_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); rush_static_and_streamed_graphics(); rush_results_page(); coop_special_graphics(); armor_menu_and_hud(); return 0; }
+#include "mmx_coop_camera_test.inc"
+int main(void) { independent_camera_pan(); geometry(); raster_and_hud(); immutable_vram_raster(); stage_map_draw_lifetime(); sprite_coordinates(); independent_oam_visibility(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); airport_upper_sky_repair(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); storm_dormant_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); rush_static_and_streamed_graphics(); rush_results_page(); coop_special_graphics(); armor_menu_and_hud(); return 0; }

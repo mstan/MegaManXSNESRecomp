@@ -17,9 +17,9 @@ static void frame(unsigned input) {
       getenv("MMX_COOP_ONLINE_FIXTURE") || getenv("MMX_COOP_LIFT_REPLAY_FIXTURE") ||
       getenv("MMX_COOP_REGION_REPLAY_FIXTURE") || getenv("MMX_COOP_WRAP_REPLAY_FIXTURE") ||
       getenv("MMX_COOP_SIGMA1_INTRO_FIXTURE") || getenv("MMX_COOP_SIGMA1_LOCKED_FIXTURE") ||
-      getenv("MMX_COOP_SIGMA1_VILE_FIXTURE") || getenv("MMX_COOP_SIGMA1_LADDER_FIXTURE")) MmxCoopViewsSetOnline(!getenv("MMX_COOP_SIGMA1_UNIFIED"));
+      getenv("MMX_COOP_SIGMA1_VILE_FIXTURE") || getenv("MMX_COOP_SIGMA1_LADDER_FIXTURE")) MmxCoopViewsSetActive(!getenv("MMX_COOP_SIGMA1_UNIFIED"));
   if(!MmxReplayPlaying() && getenv("MMX_REPLAY_TEST") && !strcmp(getenv("MMX_REPLAY_TEST"),"online")) {
-    MmxCoopViewsSetIndependent(true);MmxCoopViewsSetOnline(true);MmxRendererSetPeerView(1);
+    MmxCoopViewsSetIndependent(true);MmxCoopViewsSetActive(true);MmxRendererSetPeerView(1);
   }
   RtlRunFrame(input | (1u << 30));
   MmxBossRushAudioPresent();
@@ -1901,6 +1901,7 @@ static void render_rollback_checks(uint8 *start, uint8 *expected, uint8 *actual,
 }
 
 int main(int argc, char **argv) {
+  setvbuf(stdout,NULL,_IONBF,0);
   check(argc == 2 || argc == 3, "ROM supplied");
   SDL_SetMainReady();
   check(snesrecomp_sdl_init(SDL_INIT_EVENTS), "SDL initializes");
@@ -2053,9 +2054,10 @@ int main(int argc, char **argv) {
     coop_region_replay_checks(zero_assets,getenv("MMX_COOP_WRAP_REPLAY_FIXTURE"),start,expected,actual,cap);return 0;
   }
   if(getenv("MMX_REPLAY_TEST")) { diagnostic_replay_checks(zero_assets,getenv("MMX_REPLAY_TEST")); return 0; }
-  if(getenv("MMX_COOP_VIEWS_BOOT_TEST")) {
+  if(getenv("MMX_COOP_VIEWS_BOOT_TEST") || getenv("MMX_LOCAL_VIEWS_TEST")) {
     coop_view_boot_checks(zero_assets,start,expected,actual,cap);return 0;
   }
+  if(getenv("MMX_COOP_PAN_TEST")) { coop_camera_pan_checks(zero_assets,getenv("MMX_COOP_PAN_TEST"),start,expected,actual,cap);return 0; }
   if(getenv("MMX_COOP_REPLAY")) { coop_replay_probe(zero_assets,getenv("MMX_COOP_REPLAY")); return 0; }
   if(getenv("MMX_COOP_ZERO_SLOPE_FIXTURE")) { coop_zero_slope_burst_checks(zero_assets,getenv("MMX_COOP_ZERO_SLOPE_FIXTURE")); return 0; }
   if(getenv("MMX_COOP_ARMOR_PILOT_FIXTURE")) { coop_armor_pilot_checks(zero_assets,getenv("MMX_COOP_ARMOR_PILOT_FIXTURE")); return 0; }

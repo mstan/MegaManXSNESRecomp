@@ -85,9 +85,14 @@ static void netplay_policy_checks(const char *root, const char *rom, const char 
     offline_camera|=!strcmp(camera_option.id,"cameras");
   check(!offline_camera &&
       !linked->feature_set_option(linked->ctx,coop,"coop","cameras","independent"),
-      "camera selection is unavailable offline");
+      "online camera selection is unavailable offline");
+  int local_camera=0;
+  for(int i=0;linked->feature_option_get(linked->ctx,coop,"coop",i,&camera_option);++i)
+    local_camera|=!strcmp(camera_option.id,"local_cameras");
+  check(local_camera && linked->feature_set_option(linked->ctx,coop,"coop","local_cameras","split"),
+      "offline launcher exposes independent side-by-side display");
   MmxCoopViewsSetIndependent(true); MmxBeforeFrame();
-  check(!MmxCoopViewsOnline(),"offline frames force Unified despite the catalog default");
+  check(!MmxCoopViewsActive(),"offline frames force Unified despite the catalog default");
   char behavior[32] = {0};
   snes_mod_runtime_feature_option_value_c(zero,"zero","behavior",behavior,sizeof(behavior));
   check(!strcmp(behavior,"x3"),"X3 Behavior is the default");
@@ -106,6 +111,10 @@ static void netplay_policy_checks(const char *root, const char *rom, const char 
   check(p->feature_option_get(p->ctx,coop,"coop",2,&camera_option) &&
       !strcmp(camera_option.id,"cameras") && !strcmp(camera_option.value,"unified") &&
       camera_option.choice_count==2,"netplay exposes Unified by default and Independent opt-in");
+  for(int i=0;p->feature_option_get(p->ctx,coop,"coop",i,&camera_option);++i)
+    check(strcmp(camera_option.id,"local_cameras")!=0,"online launcher hides local display preference");
+  check(!p->feature_set_option(p->ctx,coop,"coop","local_cameras","split"),
+      "local layout cannot replace a room's camera agreement");
   check(MmxNetplayActive() && snes_mod_runtime_feature_enabled_c(coop, "coop") &&
       !snes_mod_runtime_feature_enabled_c(zero, "zero"), "entering Netplay replaces exchange with co-op");
   check(!p->feature_enable(p->ctx, coop, "coop", 0) &&
@@ -128,6 +137,7 @@ static void netplay_policy_checks(const char *root, const char *rom, const char 
     check(p->feature_set_option(p->ctx, wide, "widescreen", "aspect", ratios[ratio]) &&
         p->commit_netplay(p->ctx, rom), "fixed view commits with local ROM validation");
     snes_mod_runtime_activate_plugins_c();
+    check(!MmxCoopViewsLocalSplit(),"temporary online plan suppresses the saved local split layout");
     memset(g_ram + 0x1e60, 0, 12);
     MmxPasswordPrefill(g_ram);
     check(!g_ram[0x1e60], "online password screen keeps synchronized defaults");
@@ -303,7 +313,7 @@ static void netplay_pair_checks(const char *root, const char *rom, const char *x
     if (snes_netplay_rb_desync_count()) break;
   }
   check(frames==480 && !snes_netplay_rb_desync_count(), "two peers advance 480 frames without a digest fork");
-  check(MmxCoopViewsOnline()==!getenv("MMX_NETPLAY_UNIFIED_TEST"),"runtime session applies agreed camera mode");
+  check(MmxCoopViewsActive()==!getenv("MMX_NETPLAY_UNIFIED_TEST"),"runtime session applies agreed camera mode");
   s=MmxCoopGetState();
   check(MmxCoopValidState(&s) && s.players[0].status==MMX_COOP_ALIVE && s.players[1].status==MMX_COOP_ALIVE,
       "both players remain alive with independent contexts");

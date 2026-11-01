@@ -54,7 +54,7 @@ label = "Saber Zero"
 feature = "coop"
 id = "cameras"
 label = "Netplay cameras"
-description = "Unified keeps both players on one shared screen. Independent is experimental and may show graphics glitches or camera shaking. The host chooses for both peers; offline play always uses Unified."
+description = "Unified keeps both players on one shared screen. Independent is experimental and may show graphics glitches or camera shaking. The host chooses for both peers. Local co-op display is a separate setting."
 type = "choice"
 default = "unified"
 [[option.choice]]
@@ -63,6 +63,20 @@ label = "Unified"
 [[option.choice]]
 value = "independent"
 label = "Independent (Experimental)"
+
+[[option]]
+feature = "coop"
+id = "local_cameras"
+label = "Local co-op display"
+description = "Unified shares one screen. Side by side gives each local player an independent camera and HUD, at 5:4 per screen by default. Widescreen applies to each screen; Adaptive fits each half of the window. Shared menus and story scenes appear in both screens. Requires a restart; online cameras are unchanged."
+type = "choice"
+default = "unified"
+[[option.choice]]
+value = "unified"
+label = "Unified"
+[[option.choice]]
+value = "split"
+label = "Side by side (Experimental)"
 
 [[option]]
 feature = "coop"
