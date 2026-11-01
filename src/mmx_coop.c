@@ -66,7 +66,7 @@ static bool scene_tick(uint8_t *r);
 static unsigned word(const uint8_t *p) {return p[0]|p[1]<<8;}
 static void putword(uint8_t *p,unsigned v) {p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
 static unsigned weapon_view(const uint8_t *r,bool vertical) {
-  if(!MmxCoopViewsOnline() || !state.initialized || state.menu_owner || state.scene_owner)
+  if(!MmxCoopViewsActive() || !state.initialized || state.menu_owner || state.scene_owner)
     return word(r+(vertical?0x1e50:0x1e4d));
   MmxCoopView v=MmxCoopViewForPlayer(r,&state,state.current);
   return (unsigned)(vertical?v.y:v.x);
@@ -980,10 +980,10 @@ static bool scene_tick(uint8_t *r) {
    * he keeps falling into the native death zone. The partner is also
    * beamed as soon as an unentered Dr. Light capsule ($4D) exists while he
    * is away: its camera lock is about to leave him behind. */
-  if(!state.scene_owner && MmxCoopViewsOnline() && state.players[0].status==MMX_COOP_ALIVE &&
+  if(!state.scene_owner && MmxCoopViewsActive() && state.players[0].status==MMX_COOP_ALIVE &&
       state.players[1].status==MMX_COOP_ALIVE && (state.players[0].body[0x27]&127) &&
       (state.players[1].body[0x27]&127)) capsule_takes_world(r);
-  if(!state.scene_owner && !MmxCoopViewsOnline() && state.players[0].status==MMX_COOP_ALIVE &&
+  if(!state.scene_owner && !MmxCoopViewsActive() && state.players[0].status==MMX_COOP_ALIVE &&
       state.players[1].status==MMX_COOP_ALIVE && (state.players[0].body[0x27]&127) &&
       (state.players[1].body[0x27]&127)) {
     /* MmxCoopFrameTick has just captured the current body: both stored
@@ -1105,7 +1105,7 @@ static void learner_tick(uint8_t *r) {
   if(!gameplay || !(r[0xbcf]&127) || r[0xbaa]==12) return;
   if(state.learner_away!=LEARNER_RESCUE) {
     /* Online views give P2 his own camera; only hazards rescue him there. */
-    if(MmxCoopViewsOnline() || learner_on_screen(r,p->body)) {state.learner_away=0;return;}
+    if(MmxCoopViewsActive() || learner_on_screen(r,p->body)) {state.learner_away=0;return;}
     if(++state.learner_away<LEARNER_AWAY_FRAMES) return;
   }
   learner_scene(r,MMX_COOP_SCENE_LIVE);
@@ -1949,7 +1949,7 @@ static bool lift_elevator(unsigned d);
 static bool capsule_slot(unsigned d);
 static bool platform_item(unsigned d);
 static bool object_ghost_wanted(unsigned d) {
-  if(MmxCoopViewsOnline() || state.menu_owner || state.scene_owner || state.contact_pass ||
+  if(MmxCoopViewsActive() || state.menu_owner || state.scene_owner || state.contact_pass ||
       state.object_pass || g_ram[0xd3]!=4 || state.current!=state.anchor || !ghost_partner_ready()) return false;
   bool enemy=d>=0xe68 && d<0x1228 && !((d-0xe68)%64);
   bool projectile=d>=0x1428 && d<0x1628 && !((d-0x1428)%64);
@@ -2216,7 +2216,7 @@ static bool shared_screen(void) {
       !g_ram[0x1f0c] && !g_ram[0x1f23] && !g_ram[0x1f48];
 }
 static void constrain_player(uint8_t *r) {
-  bool independent=MmxCoopViewsOnline();
+  bool independent=MmxCoopViewsActive();
   if(independent || shared_screen()) {
     if(state.scene_owner || state.menu_owner || r[0xd3]!=4) return;
     /* Native camera clamping only sees the world actor. Clamp each
@@ -2270,12 +2270,12 @@ static void camera_hook(CpuState *cpu,uint32_t pc) {
      * screen too. Its native check then uses the same level bound, so only
      * a real pit kills him; scene_tick beams him out otherwise. */
     unsigned bound=word(g_ram+0x1e5c)+224;
-    if (!learner_mode && !MmxCoopViewsOnline() && state.current==state.anchor && p->status==MMX_COOP_ALIVE &&
+    if (!learner_mode && !MmxCoopViewsActive() && state.current==state.anchor && p->status==MMX_COOP_ALIVE &&
         (p->body[0x27]&127) && word(g_ram)<bound) putword(g_ram,bound);
     return;
   }
   /* Learner Mode: the camera follows P1 alone. */
-  if (!shared_screen() || MmxCoopViewsOnline() || learner_mode) return;
+  if (!shared_screen() || MmxCoopViewsActive() || learner_mode) return;
   unsigned axis=((pc&65535)==0xdebf || (pc&65535)==0xdeca) ? 8 : 5;
   /* Round the midpoint toward the world actor. Plain (a+b)/2 floors, so
    * two bodies falling at the same speed one subpixel phase apart (1 px gap
@@ -2502,7 +2502,7 @@ void MmxCoopTraceFrame(const uint8_t *r) {
   if (g_mmx_coop_trace && enabled && state.initialized) MmxCoopTraceFrameEnd(&state,r);
 }
 static void view_world_hook(CpuState *cpu,uint32_t pc) {
-  if(!MmxCoopViewsOnline() || !enabled || !state.initialized || state.stage_pending ||
+  if(!MmxCoopViewsActive() || !enabled || !state.initialized || state.stage_pending ||
       state.menu_owner || state.scene_owner || g_ram[0xd3]!=4) {
     MmxWsCullHook(cpu,pc);return;
   }
@@ -2595,7 +2595,7 @@ static void view_actor_hook(CpuState *cpu,uint32_t pc) {
     }
     MmxCoopViewsActorReturn(state.current+1);MmxCoopSelect(g_ram,xs);return;
   }
-  if(!MmxCoopViewsOnline() && !(returning ? world.actor_return :
+  if(!MmxCoopViewsActive() && !(returning ? world.actor_return :
       (at==0xd4f6 || at==0xd515) && couch_nearest_target(cpu->D))) return;
   if(returning) {
     if(world.actor_return) {

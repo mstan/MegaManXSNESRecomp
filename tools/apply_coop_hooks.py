@@ -58,7 +58,7 @@ def apply(text):
             if key in POLICIES:
                 decl, test = f'{POLICIES[key]}(const CpuState *)', f'{POLICIES[key]}(cpu)'
             else:
-                policy = 'MmxCoopViewsOnline' if key in VIEW_TARGETS else 'MmxCoopEnabled'
+                policy = 'MmxCoopViewsActive' if key in VIEW_TARGETS else 'MmxCoopEnabled'
                 decl, test = f'{policy}(void)', f'{policy}()'
             output.append(f'  {MARKER} {{ extern bool {decl}; if ({test}) {{ RecompReturn r = interp_tier_dispatch_bank_miss(cpu, 0x{native_pc:06x}u, _entry_s, _hrv); RecompStackPop(); return r; }} }}\n')
             found.add(native_pc & 0x7fffff)

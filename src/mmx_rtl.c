@@ -1448,7 +1448,7 @@ void MmxWsSpawnRunNativePass(CpuState *cpu) {
  * and collected flags; an owned upgrade's capsule still removes itself. */
 static void MmxCoopCapsulePass(CpuState *cpu) {
   extern uint8_t g_ram[0x20000];
-  if (!MmxCoopEnabled() || MmxCoopViewsOnline() || !MmxWidePolicy_IsStageScene(g_ram)) return;
+  if (!MmxCoopEnabled() || MmxCoopViewsActive() || !MmxWidePolicy_IsStageScene(g_ram)) return;
   MmxCoopState coop = MmxCoopGetState();
   if (!coop.initialized || coop.menu_owner || coop.scene_owner) return;
   int seat = -1;

@@ -1,11 +1,13 @@
 #pragma once
 #include "mmx_coop.h"
 
-/* Session policy is identical on both peers. The local seat affects only
- * presentation; it must never select a simulation camera or active region. */
+/* The active independent-world policy is shared by local split and online
+ * independent cameras. Selecting a presentation seat never changes it. */
 typedef struct MmxCoopView { int x, y; unsigned player; } MmxCoopView;
-void MmxCoopViewsSetOnline(bool online);
-bool MmxCoopViewsOnline(void);
+void MmxCoopViewsSetActive(bool active);
+bool MmxCoopViewsActive(void);
+void MmxCoopViewsSetLocalSplit(bool enabled);
+bool MmxCoopViewsLocalSplit(void);
 void MmxCoopViewsSetIndependent(bool independent);
 bool MmxCoopViewsIndependent(void);
 

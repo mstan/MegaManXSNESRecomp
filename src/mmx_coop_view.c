@@ -1,8 +1,11 @@
 #include "mmx_coop_view.h"
 #include "mmx_wide_policy.h"
 
-static bool online;
-/* Agreed mod option; actual session gating forces shared views offline. */
+static bool active;
+static bool local_split;
+void MmxCoopViewsSetLocalSplit(bool enabled) { local_split=enabled; }
+bool MmxCoopViewsLocalSplit(void) { return local_split; }
+/* Agreed online camera option; local layout is a separate preference. */
 static bool independent=false;
 void MmxCoopViewsSetIndependent(bool enabled) { independent=enabled; }
 bool MmxCoopViewsIndependent(void) { return independent; }
@@ -37,8 +40,8 @@ void MmxCoopViewsMark(unsigned flag,bool seen) {
   unsigned n=(flag-0xf800)>>3,bit=1u<<(flag&7);
   if(seen) world.seen[n]|=bit;else world.seen[n]&=~bit;
 }
-void MmxCoopViewsSetOnline(bool active) { online=active; }
-bool MmxCoopViewsOnline(void) { return online; }
+void MmxCoopViewsSetActive(bool enabled) { active=enabled; }
+bool MmxCoopViewsActive(void) { return active; }
 static int word(const uint8_t *r) { return r[0]|r[1]<<8; }
 static void putword(uint8_t *r,unsigned value) {r[0]=(uint8_t)value;r[1]=(uint8_t)(value>>8);}
 static int clamp(int v,int lo,int hi) { if(hi<lo) hi=lo;return v<lo?lo:v>hi?hi:v; }
@@ -56,7 +59,7 @@ static unsigned rom_byte(unsigned address) {
 static void player_limits(const uint8_t *r,const MmxCoopState *s,unsigned seat,
                           const MmxCoopViewBoundsState *b,int out[4]) {
   for(unsigned i=0;i<4;++i) out[i]=word(r+0x1e56+i*2);
-  if(online && s->initialized && !s->scene_owner && !s->stage_pending &&
+  if(active && s->initialized && !s->scene_owner && !s->stage_pending &&
       seat<2 && b->stage==r[0x1f7a] && (b->valid&(1u<<seat)))
     for(unsigned i=0;i<4;++i) out[i]=b->limits[seat][i];
 }
@@ -64,7 +67,7 @@ void MmxCoopViewsPlayerLimits(const uint8_t *r,const MmxCoopState *s,unsigned se
   player_limits(r,s,seat,&bounds,out);
 }
 void MmxCoopViewsUpdateBounds(const uint8_t *r,const MmxCoopState *s) {
-  if(!online || !s->initialized || r[0x1f7a]>12) return;
+  if(!active || !s->initialized || r[0x1f7a]>12) return;
   unsigned stage=r[0x1f7a];
   if(bounds.stage!=stage) {memset(&bounds,0,sizeof(bounds));bounds.stage=(uint8_t)stage;}
   /* Native scripted rooms and transport still own both cameras. Re-seed
@@ -113,7 +116,7 @@ void MmxCoopViewsUpdateBounds(const uint8_t *r,const MmxCoopState *s) {
 MmxCoopView MmxCoopViewWithBounds(const uint8_t *r,const MmxCoopState *s,unsigned seat,
                                  const MmxCoopViewBoundsState *b) {
   MmxCoopView v={word(r+0x1e4d),word(r+0x1e50),s->anchor};
-  if(!online || !s->initialized || seat>1) return v;
+  if(!active || !s->initialized || seat>1) return v;
   /* A transported partner watches the native script from its first frame,
    * including the teleport beams. Fallen/withdrawn seats watch the survivor. */
   if(s->scene_owner || s->stage_pending || r[0xd3]!=4) return v;
@@ -133,7 +136,7 @@ MmxCoopView MmxCoopViewForPlayer(const uint8_t *r,const MmxCoopState *s,unsigned
   return MmxCoopViewWithBounds(r,s,seat,&bounds);
 }
 void MmxCoopViewsAdoptPlayer(uint8_t *r,const MmxCoopState *s,unsigned seat) {
-  if(!online || !s->initialized || seat>1 || seat==s->anchor || s->scene_owner ||
+  if(!active || !s->initialized || seat>1 || seat==s->anchor || s->scene_owner ||
       s->stage_pending || r[0xd3]!=4 || bounds.stage!=r[0x1f7a] ||
       !(bounds.valid&(1u<<seat)) || !living(&s->players[seat]) ||
       s->players[seat].zero.swap_phase) return;

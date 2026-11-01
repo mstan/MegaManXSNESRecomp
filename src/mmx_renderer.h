@@ -152,6 +152,9 @@ void MmxRendererHardwareVramChanged(void);
 void MmxRendererEndHardwareRaster(void);
 bool MmxRendererEndFrame(const uint32_t stock[256 * 224]);
 bool MmxRendererDraw(uint32_t *output, MmxRenderView view, bool anchor_hud);
+/* Render both seats from the same immutable frame and publish the pair only
+ * after both succeed. The caller duplicates its canonical fallback on failure. */
+bool MmxRendererDrawLocalPair(uint8_t *output, size_t pitch, MmxRenderView view, bool anchor_hud);
 MmxRenderStats MmxRendererGetStats(void);
 MmxRasterStats MmxRendererGetRasterStats(void);
 bool MmxRendererStageTile(const uint8_t ram[0x20000], unsigned layer,

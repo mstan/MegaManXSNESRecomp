@@ -73,6 +73,9 @@ static void mode_changed(int enabled) {
   s_mods->feature_enable(s_mods->ctx, kZero, "zero", 0);
   if (!s_mods->feature_enable(s_mods->ctx, kCoop, "coop", 1))
     fail("The X + Zero co-op mod is missing. Restore the bundled mods.");
+  /* The offline layout is not part of an online room. This temporary plan
+   * restores the player's saved local preference when they leave Netplay. */
+  s_mods->feature_set_option(s_mods->ctx, kCoop, "coop", "local_cameras", "unified");
   /* Preserve an existing fixed choice; Adaptive becomes 16:9 in this
    * temporary plan only. Disabled widescreen remains the native view. */
   char aspect[32] = {0};
@@ -112,12 +115,15 @@ static int set_enabled(void *ctx, const char *pkg, int enabled) {
   s_error[0] = 0;
   return s_mods->set_enabled(ctx, pkg, enabled);
 }
+static int hidden_camera_option(const char *id) {
+  return !strcmp(id, s_active ? "local_cameras" : "cameras");
+}
 static int feature_get(void *ctx, int index, RecompLauncherCModFeature *out) {
   if (!s_mods->feature_get(ctx, index, out)) return 0;
-  if (!s_active && !strcmp(out->package_id, kCoop)) {
+  if (!strcmp(out->package_id, kCoop)) {
     RecompLauncherCModOption option;
     for (int i=0; s_mods->feature_option_get(ctx, kCoop, out->id, i, &option); ++i)
-      if (!strcmp(option.id, "cameras")) --out->option_count;
+      if (hidden_camera_option(option.id)) --out->option_count;
   }
   if (s_active && !strcmp(out->package_id, kZero)) out->hidden = 1;
   if (s_active && !strcmp(out->package_id, kCoop) && !out->has_error)
@@ -126,10 +132,10 @@ static int feature_get(void *ctx, int index, RecompLauncherCModFeature *out) {
 }
 static int option_get(void *ctx, const char *pkg, const char *fid, int index,
                       RecompLauncherCModOption *out) {
-  if (!s_active && !strcmp(pkg, kCoop)) {
+  if (!strcmp(pkg, kCoop)) {
     int visible=0, found=0;
     for (int i=0; s_mods->feature_option_get(ctx, pkg, fid, i, out); ++i) {
-      if (!strcmp(out->id, "cameras")) continue;
+      if (hidden_camera_option(out->id)) continue;
       if (visible++==index) { found=1; break; }
     }
     if (!found) return 0;
@@ -156,7 +162,9 @@ static int choice_get(void *ctx, const char *pkg, const char *fid, const char *o
 static int set_option(void *ctx, const char *pkg, const char *fid, const char *option, const char *value) {
   s_error[0] = 0;
   if (!s_active && !strcmp(pkg, kCoop) && !strcmp(option, "cameras"))
-    return fail("Offline play always uses Unified cameras. Open Netplay to choose the room's cameras.");
+    return fail("Choose Local co-op display for offline play. Open Netplay to choose the room's cameras.");
+  if (s_active && !strcmp(pkg, kCoop) && !strcmp(option, "local_cameras"))
+    return fail("Local co-op display is available offline. Choose Netplay cameras for the room.");
   if (!strcmp(option, "behavior") &&
       ((!strcmp(pkg, kZero) && !strcmp(fid, "zero")) ||
        (!strcmp(pkg, kCoop) && !strcmp(fid, "coop")))) {

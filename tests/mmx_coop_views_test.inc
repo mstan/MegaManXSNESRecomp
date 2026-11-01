@@ -55,9 +55,72 @@ static void coop_region_replay_checks(const char *assets,const char *fixture,
   }
   puts(wrap?"MMX ISSUE110 WRAP REPLAY CHECKS PASSED":"MMX ISSUE110 REGION REPLAY CHECKS PASSED");
 }
+static void local_view_presentation_checks(uint8_t *start,uint8_t *actual,size_t cap) {
+  static uint32_t pixels[kSnesDesktopMaxFrameWidth*224];
+  int w,h;SnesDisplayViewport viewport;
+  check(MmxLocalSplit() && MmxCoopViewsActive() && !MmxNetplayActive(),
+      "local split activates independent world without a network session");
+  g_config.widescreen=false;
+  for(unsigned aspect=0;aspect<3;++aspect) {
+    g_config.display_aspect=aspect;MmxPrepareFrame(1600,900,&w,&h);
+    check(w==512 && h==224 && g_mmx_custom_view.aspect==5.0/4,
+        "default local panes are 5:4 across display preferences");
+  }
+  MmxViewport(w,h,1600,900,&viewport);
+  check(viewport.width==1600 && viewport.height==640 && viewport.y==130 && MmxWindowWidth(w)==600,
+      "native pair has a 5:2 canvas and a 600x240 base window");
+  size_t n=RtlSaveSnapshotToMemory(start,cap);
+  MmxRendererSetPeerView(1);
+  check(MmxDrawFrame((uint8_t *)pixels,(size_t)w*4,g_my_pixels,w,h,1),
+      "real desktop adapter composes the separated local pair");
+  check(MmxRendererGetPeerView()==1,"pair rendering restores the caller's presentation seat");
+  bool different=false;
+  for(int y=0;y<h;++y) different|=memcmp(pixels+y*w,pixels+y*w+w/2,(size_t)w*2)!=0;
+  check(different,"separated local panes show different world images");
+  same(start,n,actual,RtlSaveSnapshotToMemory(actual,cap),"two local renders leave simulation untouched");
+  const char *capture=getenv("MMX_ZERO_TEST_CAPTURE");
+  if(capture) {
+    char path[1024];snprintf(path,sizeof(path),"%s.local-native.bmp",capture);
+    SDL_Surface *surface=SDL_CreateSurfaceFrom(w,h,SDL_PIXELFORMAT_ARGB8888,pixels,w*4);
+    check(surface && SDL_SaveBMP(surface,path),"local composed capture writes");SDL_DestroySurface(surface);
+  }
+  g_config.widescreen=true;
+  for(unsigned mode=MMX_ASPECT_16_9;mode<=MMX_ASPECT_32_9;++mode) {
+    g_mmx_custom_aspect=(MmxRenderAspect)mode;MmxPrepareFrame(3840,1080,&w,&h);
+    double aspect=mode==MMX_ASPECT_16_9?16.0/9:mode==MMX_ASPECT_21_9?21.0/9:32.0/9;
+    check(w==2*g_mmx_custom_view.width && g_mmx_custom_view.aspect==aspect,
+        "fixed widescreen applies independently to each half");
+    check(MmxDrawFrame((uint8_t *)pixels,(size_t)w*4,g_my_pixels,w,h,1),
+        "wide pair renders within the host surface");
+    same(start,n,actual,RtlSaveSnapshotToMemory(actual,cap),"widening local presentation does not advance gameplay");
+  }
+  g_mmx_custom_aspect=MMX_ASPECT_ADAPTIVE;MmxPrepareFrame(3840,1080,&w,&h);
+  MmxViewport(w,h,3840,1080,&viewport);
+  check(w==728 && viewport.width==3840 && viewport.height==1080,
+      "adaptive uses half of the drawable for each 16:9 pane");
+  MmxPrepareFrame(20000,400,&w,&h);
+  check(w==2048 && g_mmx_custom_view.width==1024,
+      "extreme adaptive resize clamps each pane separately");
+  check(MmxDrawFrame((uint8_t *)pixels,(size_t)w*4,g_my_pixels,w,h,1),
+      "two maximum-width panes render without truncation");
+  g_config.widescreen=false;MmxPrepareFrame(1600,900,&w,&h);
+  /* A missing private frame duplicates the current canonical raster, keeping
+   * the paired canvas through reset/load and shared frontend transitions. */
+  bool valid=s_render_valid;s_render_valid=false;
+  check(MmxDrawFrame((uint8_t *)pixels,(size_t)w*4,g_my_pixels,w,h,1),
+      "canonical fallback retains the local canvas");
+  bool same_panes=true;
+  for(int y=0;y<h;++y) same_panes&=!memcmp(pixels+y*w,pixels+y*w+w/2,(size_t)w*2);
+  check(same_panes,"fallback publishes matching panes");
+  s_render_valid=valid;
+  MmxRendererSetPeerView(-1);g_config.display_aspect=0;
+}
 static void coop_view_boot_checks(const char *assets,uint8_t *start,uint8_t *expected,uint8_t *actual,size_t cap) {
+  bool local=getenv("MMX_LOCAL_VIEWS_TEST")!=NULL;
+  if(local) {MmxCoopViewsSetLocalSplit(true);g_config.widescreen=false;}
   check(assets && MmxZeroLoad(assets),"online world test loads owned X3 source");
-  MmxZeroRegisterHooks();MmxCoopRegisterHooks();check(MmxCoopEnable(0),"online world roster enables");
+  MmxZeroRegisterHooks();MmxCoopRegisterHooks();
+  check(MmxCoopEnable(local && getenv("MMX_LOCAL_VIEWS_P1_ZERO")?1:0),"independent world roster enables");
   zero_replay(1400);
   for(unsigned n=0;n<3;++n) {
     coop_frames(30,SNES_PAD_START,0);if(n<2) zero_replay(181);
@@ -96,6 +159,33 @@ static void coop_view_boot_checks(const char *assets,uint8_t *start,uint8_t *exp
   coop_frames(24,0,SNES_PAD_RIGHT|SNES_PAD_Y);
   same(expected,en,actual,RtlSaveSnapshotToMemory(actual,cap),"remote native AI, spawns and shots replay together");
   check(RtlLoadSnapshotFromMemory(start,n),"restore remote encounter before retirement");
+  if(local) {
+    /* Loading a machine snapshot invalidates private drawing data. Follow
+     * the real host's next simulation/raster boundary before inspecting it. */
+    coop_frames(1,0,0);
+    local_view_presentation_checks(expected,actual,cap);
+    for(unsigned owner=0;owner<2;++owner) {
+      check(RtlLoadSnapshotFromMemory(start,n),"restore separated players before native pause");
+      coop_frames(2,0,0);coop_frames(1,owner?0:SNES_PAD_START,owner?SNES_PAD_START:0);coop_frames(75,0,0);
+      check(MmxCoopGetState().menu_owner==owner+1,"either local player opens their existing pause menu");
+      int w,h;MmxPrepareFrame(1600,900,&w,&h);
+      static uint32_t menu[512*224];
+      check(w==512 && MmxDrawFrame((uint8_t *)menu,512*4,g_my_pixels,w,h,1),
+          "native menu keeps both local panes");
+      for(int y=0;y<224;++y) if(memcmp(menu+y*512,menu+y*512+256,256*4)) {
+        check(0,"shared native menu is duplicated to both panes");
+      }
+      size_t paused=RtlSaveSnapshotToMemory(expected,cap);
+      coop_frames(1,owner?0:SNES_PAD_START,owner?SNES_PAD_START:0);coop_frames(75,0,0);
+      check(!MmxCoopGetState().menu_owner,"native pause resumes both local players");
+      size_t resumed=RtlSaveSnapshotToMemory(actual,cap);
+      /* Reuse start as the replay buffer after the remote fixture is restored. */
+      check(RtlLoadSnapshotFromMemory(expected,paused),"local paused save restores");
+      coop_frames(1,owner?0:SNES_PAD_START,owner?SNES_PAD_START:0);coop_frames(75,0,0);
+      same(actual,resumed,expected,RtlSaveSnapshotToMemory(expected,cap),"local menu save/load replay is deterministic");
+    }
+    check(RtlLoadSnapshotFromMemory(start,n),"restore remote encounter after local menu checks");
+  }
   unsigned flag=eagle_word(g_ram+remote+12);
   fprintf(stderr,"remote source=%x id=%x seen=%u live=%u\n",flag,g_ram[remote+10],MmxCoopViewsSeen(flag),g_ram[remote]);
   check(MmxCoopViewsSeen(flag),"native remote allocation enters rollback-owned spawn history");
@@ -206,7 +296,7 @@ static void coop_view_checks(const char *fixture,uint8_t *start,uint8_t *expecte
         abs((int)coop_x(&s.players[0])-(int)coop_x(&s.players[1]))<=64,
         "scene exit returns distant partner beside owner with its HP intact");
   }
-  MmxCoopViewsSetOnline(false);a=MmxCoopViewForPlayer(g_ram,&s,1);
+  MmxCoopViewsSetActive(false);a=MmxCoopViewForPlayer(g_ram,&s,1);
   check(a.x==eagle_word(g_ram+0x1e4d) && a.y==eagle_word(g_ram+0x1e50),"couch co-op retains its shared camera");
   MmxRendererSetPeerView(-1);
   puts("MMX CO-OP INDEPENDENT VIEW CHECKS PASSED");

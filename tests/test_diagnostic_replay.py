@@ -92,10 +92,13 @@ def main():
         print(f"PASS {label}", flush=True)
         return folder
 
-    for mode in ("solo", "x", "zero", "online"):
+    for mode in ("solo", "x", "zero", "online", "local"):
         settings = {"MMX_REPLAY_TEST": mode}
         folder = run(f"record-{mode}", settings)
         capture = next(folder.glob("*.replay"))
+        if mode == "local":
+            assert all(int(line.split()[3], 16) & 128 for line in capture.read_text().splitlines()
+                       if line.startswith("I ")), "recordings retain the local paired layout"
         assert sum(line.startswith("S ") for line in capture.read_text().splitlines()) == 3, \
             "capture needs initial, backward rollback and same-frame restore checkpoints"
         run(f"fresh-{mode}", settings | {"MMX_REPLAY_INPUT": str(capture)}, contains="90 executions")
