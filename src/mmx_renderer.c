@@ -1020,7 +1020,7 @@ bool MmxRendererSaveCapture(const char *path) {
   FILE *f = fopen(path, "wb");
   if (!f) { free(saved); return false; }
   uint32_t count = vram_snapshots.count;
-  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 31 : 30,
+  uint32_t header[] = {0x4d4d5843, frame_coop.initialized ? 33 : 32,
       (uint32_t)(sizeof(frame) + sizeof(count) + sizeof(indices) + count * 0x10000u +
       sizeof(frame_zero) + sizeof(frame_weapons) + sizeof(frame_weapon_combat) +
       (frame_coop.initialized ? sizeof(frame_coop) : 0) + sizeof(frame_rush) +
@@ -1063,7 +1063,7 @@ bool MmxRendererLoadCapture(const char *path) {
   memset(&frame_rush, 0, sizeof(frame_rush));
   memset(&frame_rush_visual, 0, sizeof(frame_rush_visual));
   bool ok = fread(h, sizeof(h), 1, f) == 1 && h[0] == 0x4d4d5843 &&
-      (h[1]==26 || h[1]==27 || h[1]==30 || h[1]==31) && fread(&frame, sizeof(frame), 1, f) == 1;
+      (h[1]==32 || h[1]==33) && fread(&frame, sizeof(frame), 1, f) == 1;
   const bool valid = true;
   ok = ok && !memcmp(&frame.valid, &valid, sizeof(valid)) &&
       frame.captured == 224 && frame.piece_count <= MAX_PIECES && frame.expanded_count <= MAX_PIECES;

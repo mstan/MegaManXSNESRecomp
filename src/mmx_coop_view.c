@@ -16,9 +16,13 @@ static size_t rom_size;
 void MmxCoopViewsSetRom(const uint8_t *bytes,size_t size) {rom=bytes;rom_size=size;}
 MmxCoopViewBoundsState MmxCoopViewsGetBoundsState(void) {return bounds;}
 bool MmxCoopViewsValidBoundsState(const MmxCoopViewBoundsState *b) {
-  if(!b || b->valid>3 || b->stage>12) return false;
+  if(!b || b->valid>3 || b->camera_valid>3 || b->stage>12) return false;
   for(unsigned seat=0;seat<2;++seat) for(unsigned i=0;i<4;++i)
     if((b->valid&(1u<<seat)) && b->limits[seat][i]>8192) return false;
+  for(unsigned seat=0;seat<2;++seat) if(b->camera_valid&(1u<<seat)) {
+    for(unsigned i=0;i<4;++i) if(b->current[seat][i]>8192) return false;
+    for(unsigned i=0;i<2;++i) if(b->camera[seat][i]>8192) return false;
+  }
   return true;
 }
 void MmxCoopViewsSetBoundsState(const MmxCoopViewBoundsState *b) {bounds=*b;}
@@ -40,7 +44,10 @@ void MmxCoopViewsMark(unsigned flag,bool seen) {
   unsigned n=(flag-0xf800)>>3,bit=1u<<(flag&7);
   if(seen) world.seen[n]|=bit;else world.seen[n]&=~bit;
 }
-void MmxCoopViewsSetActive(bool enabled) { active=enabled; }
+void MmxCoopViewsSetActive(bool enabled) {
+  if(active!=enabled) bounds.camera_valid=0;
+  active=enabled;
+}
 bool MmxCoopViewsActive(void) { return active; }
 static int word(const uint8_t *r) { return r[0]|r[1]<<8; }
 static void putword(uint8_t *r,unsigned value) {r[0]=(uint8_t)value;r[1]=(uint8_t)(value>>8);}
@@ -113,6 +120,62 @@ void MmxCoopViewsUpdateBounds(const uint8_t *r,const MmxCoopState *s) {
     }
   }
 }
+/* $00:DE9D/DEBC keep the player inside a native dead zone; DE7E/DE5F
+ * limit tracking speed. E1B5..E2BA ease each room bound at $1E52 pixels per
+ * frame. Preserve those two phases instead of clamping to the final bound. */
+static int follow(int body,int camera,int low,int high,int speed) {
+  int delta=body-camera;
+  int desired=delta<low?body-low:delta>high?body-high:camera;
+  return clamp(desired,camera-speed,camera+speed);
+}
+static int limit_step(int target,int current,int camera,int body,int previous,
+                      int zone,int speed,bool minimum) {
+  if(target==current) return current;
+  if(minimum ? target>=camera : target<camera)
+    return minimum ? (camera+speed<target?camera+speed:target) :
+        (camera-speed>=target?camera-speed:target);
+  if((uint16_t)(body-camera-zone+2)<4) return target;
+  int movement=(int16_t)(body-previous);
+  if(minimum) {if(movement>0) movement=0;}
+  else if(movement<0) movement=0;
+  int next=camera+movement+(minimum?-speed:speed);
+  return minimum?(next>=target?next:target):(next<target?next:target);
+}
+void MmxCoopViewsEndFrame(const uint8_t *r,const MmxCoopState *s) {
+  if(!active || !s->initialized || s->scene_owner || s->stage_pending || r[0xd3]!=4) {
+    bounds.camera_valid=0;return;
+  }
+  if(s->menu_owner || r[0x1f10]>=6) return;
+  for(unsigned seat=0;seat<2;++seat) {
+    unsigned bit=1u<<seat;
+    const MmxCoopPlayer *p=&s->players[seat];
+    if(!living(p) || p->zero.swap_phase) {bounds.camera_valid&=(uint8_t)~bit;continue;}
+    const uint8_t *body=seat==s->current?r+0xba8:p->body;
+    /* Shared encounters own the native camera. Retain their actual final
+     * position/current bounds so release starts the same pan on both seats. */
+    if(seat==s->anchor || !(bounds.valid&bit)) {
+      bounds.camera[seat][0]=(uint16_t)word(r+0x1e4d);
+      bounds.camera[seat][1]=(uint16_t)word(r+0x1e50);
+      for(unsigned i=0;i<4;++i) bounds.current[seat][i]=(uint16_t)word(r+0x1e56+i*2);
+      bounds.camera_valid|=(uint8_t)bit;continue;
+    }
+    int x=word(body+5),y=word(body+8);
+    int zones[4]={word(r+0x1e74),word(r+0x1e76),word(r+0x1e70),word(r+0x1e72)};
+    if(!(bounds.camera_valid&bit)) {
+      for(unsigned i=0;i<4;++i) bounds.current[seat][i]=bounds.limits[seat][i];
+      bounds.camera[seat][0]=(uint16_t)clamp(x-zones[0],bounds.current[seat][0],bounds.current[seat][1]);
+      bounds.camera[seat][1]=(uint16_t)clamp(y-zones[2],bounds.current[seat][2],bounds.current[seat][3]);
+      bounds.camera_valid|=(uint8_t)bit;
+    }
+    int tracking=word(r+0x1e54),pan=word(r+0x1e52);
+    int cx=clamp(follow(x,bounds.camera[seat][0],zones[0],zones[1],tracking),bounds.current[seat][0],bounds.current[seat][1]);
+    int cy=clamp(follow(y,bounds.camera[seat][1],zones[2],zones[3],tracking),bounds.current[seat][2],bounds.current[seat][3]);
+    bounds.camera[seat][0]=(uint16_t)cx;bounds.camera[seat][1]=(uint16_t)cy;
+    for(unsigned i=0;i<4;++i) bounds.current[seat][i]=(uint16_t)limit_step(
+        bounds.limits[seat][i],bounds.current[seat][i],i<2?cx:cy,i<2?x:y,
+        word(body+(i<2?0x22:0x24)),zones[i],pan,!(i&1));
+  }
+}
 MmxCoopView MmxCoopViewWithBounds(const uint8_t *r,const MmxCoopState *s,unsigned seat,
                                  const MmxCoopViewBoundsState *b) {
   MmxCoopView v={word(r+0x1e4d),word(r+0x1e50),s->anchor};
@@ -124,6 +187,9 @@ MmxCoopView MmxCoopViewWithBounds(const uint8_t *r,const MmxCoopState *s,unsigne
   if(!living(p) || p->zero.swap_phase) seat=s->anchor;
   v.player=seat;
   if(seat==s->anchor) return v;
+  if(b->stage==r[0x1f7a] && (b->camera_valid&(1u<<seat))) {
+    v.x=b->camera[seat][0];v.y=b->camera[seat][1];return v;
+  }
   const uint8_t *body=seat==s->current?r+0xba8:s->players[seat].body;
   /* Use the authored stage/room camera limits, not the other player's view.
    * X1's feet lie in the lower dead zone of the 224px native viewport. */

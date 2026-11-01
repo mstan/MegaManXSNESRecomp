@@ -18,6 +18,8 @@ Players can separate using the existing independent-camera simulation rules.
 The world, enemies, audio, pickups and stage progression still update once.
 Story events and doors retain the existing co-op ownership and reunion rules;
 fallen or withdrawn players follow the surviving player's camera.
+Both cameras retain the native tracking dead zones and gradual room pans,
+including the Highway camera transition after Bee Blader is defeated.
 
 Native pause menus keep their existing ownership: either player opens their
 own inventory, which appears in both panes while the world pauses. Shared

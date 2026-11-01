@@ -145,7 +145,7 @@ static void hashes(uint32_t *w, uint32_t *c, uint32_t *v, uint32_t *p) {
   MmxCoopViewWorldState views=MmxCoopViewsGetWorldState();
   *w=hash(g_ram,0x20000); *c=hash(&coop,sizeof(coop)); *v=hash(&views,sizeof(views));
   MmxCoopViewBoundsState bounds=MmxCoopViewsGetBoundsState();
-  if(playback_format>=3 && bounds.valid) *v=hash_continue(*v,&bounds,sizeof(bounds));
+  if(playback_format>=3 && (bounds.valid || bounds.camera_valid)) *v=hash_continue(*v,&bounds,sizeof(bounds));
   *p=hash(g_ppu->vram,sizeof(g_ppu->vram));
 }
 static void error(const char *why) {
@@ -451,7 +451,7 @@ void MmxReplayEnd(void) {
     MmxCoopViewBoundsState bounds=MmxCoopViewsGetBoundsState();
     uint8_t views[sizeof(world)+sizeof(bounds)];
     memcpy(views,&world,sizeof(world));memcpy(views+sizeof(world),&bounds,sizeof(bounds));
-    size_t view_size=bounds.valid?sizeof(views):sizeof(world);
+    size_t view_size=(bounds.valid || bounds.camera_valid)?sizeof(views):sizeof(world);
     if(!SnesReplayWriterFrame(writer,(unsigned)snes_frame_counter,g_ram,0x20000,
         &coop,sizeof(coop),&views,view_size,g_ppu->vram,sizeof(g_ppu->vram)))
       error(SnesReplayWriterError(writer));

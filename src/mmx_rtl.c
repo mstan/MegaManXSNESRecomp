@@ -368,7 +368,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 24u /* donor X armor and charged projectiles */
+#define MMX_SAV_CHUNK_VERSION 25u /* independent native camera pan history */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -491,7 +491,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_chunk, 0, sizeof(g_load_chunk));
   sli->func(sli, &g_load_chunk, sizeof(g_load_chunk));
   if (g_load_chunk.magic == MMX_SAV_CHUNK_MAGIC &&
-      g_load_chunk.version >= 1 && g_load_chunk.version != 23 && g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
+      g_load_chunk.version >= 1 && (g_load_chunk.version<22 || g_load_chunk.version>=25) &&
+      g_load_chunk.version <= MMX_SAV_CHUNK_VERSION)
     g_load_chunk_ok = 1;
   /* The adaptive playtest wrote a 464-byte v2 chunk, while the shared-host
    * branch used v2 with appended execution/CHR data. Only the latter has a

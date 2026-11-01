@@ -301,3 +301,49 @@ static void coop_view_checks(const char *fixture,uint8_t *start,uint8_t *expecte
   MmxRendererSetPeerView(-1);
   puts("MMX CO-OP INDEPENDENT VIEW CHECKS PASSED");
 }
+
+/* Retail inputs defeat Bee Blader normally; observe the native room pan and
+ * the partner's continuous camera, then restore in the middle of that pan. */
+static void coop_camera_pan_checks(const char *assets,const char *path,
+    uint8_t *start,uint8_t *expected,uint8_t *actual,size_t cap) {
+  static CoopReplay r;coop_replay_load(path,&r);coop_replay_start(assets);
+  MmxCoopViewsSetLocalSplit(true);
+  unsigned bee=0,pans=0,shared=0;bool seen=false,defeated=false;
+  size_t snapshot=0;unsigned restore_tick=0;bool restored=false;
+  MmxCoopView previous={0};
+  for(unsigned tick=0;tick<r.ticks;++tick) {
+    coop_frames(1,r.p1[tick],r.p2[tick]);MmxCoopState s=MmxCoopGetState();
+    if(!s.initialized || g_ram[0xd3]!=4) continue;
+    bool live=false;
+    for(unsigned d=0xe68;d<0x1228;d+=64) if(g_ram[d] && g_ram[d+10]==0x22) live=true;
+    if(live) {seen=true;++bee;}else if(seen) defeated=true;
+    MmxCoopView v=MmxCoopViewForPlayer(g_ram,&s,s.anchor^1);
+    MmxCoopViewBoundsState b=MmxCoopViewsGetBoundsState();
+    if(seen && (live || tick%30==0)) {
+      if(tick%30==0) fprintf(stderr,"pan tick=%u bee=%u body=%u,%u/%u,%u camera=%u,%u/%d,%d bounds=%u,%u targets=%u,%u valid=%u\n",
+          tick,live,coop_replay_x(0),coop_replay_y(0),coop_replay_x(1),coop_replay_y(1),
+          eagle_word(g_ram+0x1e4d),eagle_word(g_ram+0x1e50),v.x,v.y,
+          eagle_word(g_ram+0x1e5a),eagle_word(g_ram+0x1e5c),eagle_word(g_ram+0x1e68),eagle_word(g_ram+0x1e6e),b.valid);
+    }
+    bool pan=eagle_word(g_ram+0x1e5a)!=eagle_word(g_ram+0x1e68) ||
+        eagle_word(g_ram+0x1e5c)!=eagle_word(g_ram+0x1e6e);
+    if(seen && pan) {
+      ++pans;
+      if(!b.valid) {check(v.y==eagle_word(g_ram+0x1e50),"shared encounter keeps both native pan phases");++shared;}
+      if(!snapshot && !restored) {snapshot=RtlSaveSnapshotToMemory(start,cap);restore_tick=tick+1;}
+    }
+    if(defeated && tick>1 && b.camera_valid==3)
+      check(abs(v.y-previous.y)<=8,"released partner camera stays within native tracking speed");
+    previous=v;
+    if(snapshot && tick==restore_tick+90) {
+      size_t en=RtlSaveSnapshotToMemory(expected,cap);
+      check(RtlLoadSnapshotFromMemory(start,snapshot),"mid-pan checkpoint loads");
+      for(unsigned t=restore_tick;t<=tick;++t) coop_frames(1,r.p1[t],r.p2[t]);
+      same(expected,en,actual,RtlSaveSnapshotToMemory(actual,cap),"camera pan history replays byte-exactly");
+      snapshot=0;restored=true;
+    }
+  }
+  fprintf(stderr,"Bee Blader pan frames: encounter=%u pans=%u shared=%u defeated=%u\n",bee,pans,shared,defeated);
+  check(seen && defeated && pans && shared,"retail route defeats Bee Blader and exercises its room pan");
+  puts("MMX CO-OP CAMERA PAN CHECKS PASSED");
+}
