@@ -43,6 +43,9 @@ static void independent_camera_pan(void) {
     assert(!MmxCoopViewsGetBoundsState().camera_valid);
     MmxCoopViewsSetBoundsState(&b);
     assert(MmxCoopViewForPlayer(ram,&s,anchor^1).x==0); /* shared script */
+    MmxCoopViewsSetActive(false);MmxCoopViewsSetBoundsState(&b);
+    MmxCoopViewsSetActive(true);s.scene_owner=0;
+    assert(MmxCoopViewForPlayer(ram,&s,anchor^1).x==(int)target);
   }
   MmxCoopViewsResetWorld();MmxCoopViewsSetActive(false);
 }

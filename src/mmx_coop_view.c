@@ -45,7 +45,9 @@ void MmxCoopViewsMark(unsigned flag,bool seen) {
   if(seen) world.seen[n]|=bit;else world.seen[n]&=~bit;
 }
 void MmxCoopViewsSetActive(bool enabled) {
-  if(active!=enabled) bounds.camera_valid=0;
+  /* Enabling after a checkpoint load must retain its restored pan history.
+   * An inactive simulation discards history before it can become stale. */
+  if(!enabled) bounds.camera_valid=0;
   active=enabled;
 }
 bool MmxCoopViewsActive(void) { return active; }
