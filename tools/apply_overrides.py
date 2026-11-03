@@ -444,9 +444,12 @@ def apply_bank00(lines, verbose):
     return out, n
 
 
+# The emitter may elide the redundant uint16 cast around cpu_read16. Keep
+# its optional wrapper balanced and retain the exact record pointer below.
 RE_SPAWN_TYPE_READ = re.compile(
-    r"^(\s*)uint8 (_v\d+) = cpu_read8\(cpu, cpu->DB, \(uint16\)\("
-    r"cpu_read16\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0018\)\)\)\);\s*$")
+    r"^(\s*)uint8 (_v\d+) = cpu_read8\(cpu, cpu->DB, "
+    r"(?P<cast>\(uint16\)\()?cpu_read16\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0018\)\)"
+    r"(?(cast)\))\);\s*$")
 RE_SPAWN_POST_CALL = re.compile(
     r"^(\s*)goto L_DC92_M0X0; /\* implicit fall-through \*/\s*$")
 
