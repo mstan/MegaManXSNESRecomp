@@ -45,7 +45,7 @@ hitboxes. Without it, Saber Zero uses RaphaelAzev's defaults.
 
 The Saber sprites and sound effects come from the
 [Zashiko Mod](assets/saber-zero/CREDITS.md). They are included with permission
-for non-commercial use only. Controls, timings, the priority ladder and every
+under PolyForm Noncommercial with the additional permissions in `PERMISSIONS.md`. Controls, timings, the priority ladder and every
 option are in the [Saber Zero reference](docs/saber-zero.md).
 
 <a href="https://www.youtube.com/watch?v=TDysNWWJ25g">
@@ -514,6 +514,16 @@ Reviewed project names keep precedence. Search with
 `python tools/diz_annotations.py --query charge`.
 
 ## License
+
+For this project's code covered by the [PolyForm Noncommercial License](LICENSE),
+[PERMISSIONS.md](PERMISSIONS.md) grants standing permission for voluntary
+donations, sponsorships, and advertising revenue, including support for broader
+development initiatives. Payment must not buy access to the software, games
+built with it, or their updates, features, or game content, including early access.
+
+Matthew Stanley has authority from the relevant copyright holders to grant
+these permissions for the project's PolyForm-covered code. Third-party
+components and code explicitly licensed under other terms retain those terms.
 
 PolyForm Noncommercial 1.0.0. See `LICENSE`. Code in this repo is
 original; vendored dependencies under `third_party/` retain their own
