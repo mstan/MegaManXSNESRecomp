@@ -17,7 +17,7 @@ id = "widescreen"
 name = "Widescreen"
 description = "Extend the stage view with live enemies, preserved encounter timing, and anchored health bars."
 group = "Display"
-default_enabled = false
+default_enabled = true
 
 [[option]]
 feature = "widescreen"
