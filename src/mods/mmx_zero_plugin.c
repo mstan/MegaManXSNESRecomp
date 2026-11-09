@@ -178,7 +178,7 @@ static void hook(CpuState *cpu, uint32_t pc) {
     }
     case 0x049e76: {
       unsigned original = cpu_read8(cpu, cpu->DB, (uint16_t)(0xef37 + cpu->Y));
-      unsigned damage = MmxDamageDealt(MmxWeaponsDamage(g_ram, cpu->D, cpu->X,
+      unsigned damage = MmxDamageDealt(g_ram,cpu->D,MmxWeaponsDamage(g_ram, cpu->D, cpu->X,
           MmxZeroDamage(g_ram, cpu->D, cpu->X, original)));
       if (damage == original) break;
       /* Post-SBC: retain the interpreter's instruction timing, but recompute

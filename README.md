@@ -145,9 +145,11 @@ and choose its **Damage multiplier**. The two mods are independent: 0.5x halves
 damage, 1x keeps normal damage, and 2x doubles it. Choices range from 0.1x to
 10x; both mods start disabled with 1x selected. X's multiplier includes native
 and imported weapons and leaves Zero's attacks unchanged. Received damage
-applies to both characters after armor reduction. Positive damage rounds to
-the nearest whole HP (halves round up), with a minimum of 1 and maximum of 127.
-Immunities and instant-death hazards keep their native behavior.
+applies to both characters after armor reduction. Fractional damage carries
+between hits, separately for each enemy and player: at 0.1x, five 2-HP hits
+cost 1 HP in total. Individual hits can cause no HP loss while retaining their
+normal hurt reaction. Damage caps safely at 127 HP. Immunities and instant-death
+hazards keep their native behavior. Save states and rewind preserve fractions.
 
 ### Which ROM?
 

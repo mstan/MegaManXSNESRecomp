@@ -39,7 +39,7 @@ static void damage_runtime_checks(const char *rom_path) {
       p->feature_set_option(p->ctx,in,"damage","multiplier","0.5") &&
       p->commit(p->ctx,rom_path), "launcher commits independent multipliers");
   snes_mod_runtime_activate_plugins_c();
-  check(MmxDamageDealt(4) == 8 && MmxDamageReceived(4,false) == 2,
+  check(MmxDamageDealt(g_ram,0xe68,4) == 8 && MmxDamageReceived(g_ram,4,false) == 2,
       "real plugins activate outgoing 2x and incoming 0.5x");
   check(!p->feature_set_option(p->ctx,out,"damage","multiplier","100000"),
       "launcher rejects out-of-range multiplier");
@@ -48,8 +48,7 @@ static void damage_runtime_checks(const char *rom_path) {
     MmxDamageSetDealt(scales[i]);
     weakness_actor_setup(2,9,0,4,0); /* Fire Wave against Chill Penguin: 3 HP. */
     damage_call(path,0,0);
-    unsigned expected = (3 * scales[i] + 50) / 100;
-    if (!expected) expected = 1;
+    unsigned expected = 3 * scales[i] / 100;
     check((g_ram[0xe8f]&127) == 32-expected,"native X1 weakness damage scales in each execution path");
     for (unsigned row = 0; row <= 5; row += 5) {
       weakness_actor_setup(2,row,0,4,0); damage_call(path,0,0);
@@ -101,14 +100,43 @@ static void damage_runtime_checks(const char *rom_path) {
     g_ram[0xc30]=g_ram[0xc32]=0;g_ram[0xbcf]=32;g_ram[0xbce]=8;
     g_ram[enemy+0x26]=8;g_ram[0x1f99]=armor?4:0;
     damage_call(path,kind,enemy);
-    unsigned expected=((armor?4:8)*scales[i]+50)/100;
-    if (!expected) expected=1;
+    unsigned expected=(armor?4:8)*scales[i]/100;
     if ((g_ram[0xbcf]&127)!=(expected>=32?0:32-expected))
       fprintf(stderr,"damage mismatch kind=%u path=%u armor=%u scale=%u enemy=%04x class=%02x HP=%u expected=%u scratch=%u hurt=%u\n",
           kind,path,armor,scales[i],enemy,g_ram[enemy+10],g_ram[0xbcf]&127,
           expected>=32?0:32-expected,g_ram[0],g_ram[0xbaa]);
     check((g_ram[0xbcf]&127)==(expected>=32?0:32-expected),
         "native enemy and scripted damage scale after armor without health wrap");
+  }
+  for(unsigned kind=1;kind<=2;++kind) for(unsigned path=0;path<2;++path) {
+    memcpy(g_ram,world,sizeof(world));MmxDamageSetReceived(10);
+    memcpy(g_ram+0xbad,g_ram+enemy+5,2);memcpy(g_ram+0xbb0,g_ram+enemy+8,2);
+    g_ram[0xbcf]=16;g_ram[0xbce]=2;g_ram[enemy+0x26]=2;g_ram[0x1f99]=0;
+    uint8_t *snapshot=malloc(2*1024*1024);size_t saved=0;
+    check(snapshot!=NULL,"fractional damage snapshot allocates");
+    for(unsigned hit=0;hit<10;++hit) {
+      g_ram[0xc30]=g_ram[0xc32]=0;g_ram[0xbcf]&=127;
+      damage_call(path,kind,enemy);
+      if((g_ram[0xbcf]&127)!=16-(hit+1)*2/10)
+        fprintf(stderr,"fraction hit=%u kind=%u path=%u HP=%u carry=%u scratch=%u contact=%u actor=%u\n",
+            hit,kind,path,g_ram[0xbcf]&127,MmxDamageGetState().received[0],g_ram[0xbce],g_ram[enemy+0x26],g_ram[0xbaa]);
+      check((g_ram[0xbcf]&127)==16-(hit+1)*2/10,
+          "0.1x native damage loses exactly 1 HP per five 2-HP hits");
+      if(hit==2) {
+        frame(0);
+        saved=RtlSaveSnapshotToMemory(snapshot,2*1024*1024);
+        check(saved!=0 && MmxDamageGetState().received[0]==60,
+            "save captures a partial incoming HP");
+      }
+    }
+    check(RtlLoadSnapshotFromMemory(snapshot,saved) && MmxDamageGetState().received[0]==60,
+        "current-build save/load restores fractional damage");
+    for(unsigned hit=0;hit<2;++hit) {
+      g_ram[0xc30]=g_ram[0xc32]=0;g_ram[0xbcf]&=127;damage_call(path,kind,enemy);
+    }
+    check((g_ram[0xbcf]&127)==15 && MmxDamageGetState().received[0]==0,
+        "replaying restored fractional damage reaches the same HP");
+    free(snapshot);
   }
   for (unsigned path=0;path<2;++path) for (unsigned armor=0;armor<2;++armor) {
     memcpy(g_ram,world,sizeof(world));g_ram[0xbcf]=32;g_ram[0xbce]=127;g_ram[0x1f99]=armor?4:0;
@@ -118,7 +146,7 @@ static void damage_runtime_checks(const char *rom_path) {
   check(p->feature_enable(p->ctx,out,"damage",0) && p->feature_enable(p->ctx,in,"damage",0) &&
       p->commit(p->ctx,rom_path),"launcher disables both mods");
   snes_mod_runtime_activate_plugins_c();
-  check(MmxDamageDealt(4)==4 && MmxDamageReceived(4,false)==4,
+  check(MmxDamageDealt(g_ram,0xe68,4)==4 && MmxDamageReceived(g_ram,4,false)==4,
       "disabling mods resets both multipliers to native behavior");
   puts("MMX DAMAGE RUNTIME CHECKS PASSED");
 }

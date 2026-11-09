@@ -22,7 +22,7 @@ def apply(text):
         load = re.search(r'uint8 (_v\d+) = cpu_read8\(cpu, cpu->DB, \(uint16\)\(0x0000\)\);', line)
         if load:
             lethal = 'g_ram[(cpu->D + 0x26) & 65535]' if (pc & 65535) == 0x9d50 else 'g_ram[0xbce]'
-            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxDamageReceived(unsigned, bool); {load[1]} = (uint8)MmxDamageReceived({load[1]}, {lethal} >= 127); }}\n')
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxDamageReceived(const uint8_t *, unsigned, bool); {load[1]} = (uint8)MmxDamageReceived(g_ram, {load[1]}, {lethal} >= 127); }}\n')
             found.add(pc)
     return ''.join(output), found
 

@@ -10,7 +10,7 @@ static void received_hook(CpuState *cpu, uint32_t pc) {
   bool contact = (pc & 65535) == 0x9d59;
   unsigned original = g_ram[0];
   bool lethal = (contact ? g_ram[(cpu->D + 0x26) & 65535] : g_ram[0xbce]) >= 127;
-  unsigned damage = MmxDamageReceived(original, lethal);
+  unsigned damage = MmxDamageReceived(g_ram, original, lethal);
   if (damage == original) return;
   /* Post-SBC / pre-STA: keep guest instruction timing, carry/overflow and
    * both accumulator bytes identical to a native SBC using the new operand. */

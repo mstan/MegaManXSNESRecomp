@@ -1,6 +1,6 @@
 format_version = 1
 id = "megaman-x.gameplay.damage-received"
-version = "1.0.0"
+version = "1.0.1"
 name = "Player damage received"
 author = "mstan"
 description = "Multiply damage received by either player after armor reduction. Instant-death hazards retain their native behavior."
@@ -23,7 +23,7 @@ default_enabled = false
 feature = "damage"
 id = "multiplier"
 label = "Damage multiplier"
-description = "1x is normal, 0.5x is half, 2x is double. Rounded to the nearest HP with a minimum of 1 for damaging hits and a maximum of 127. Immunities remain unchanged."
+description = "1x is normal, 0.5x is half, 2x is double. Fractional damage carries between hits; some hits cost no HP. Maximum 127 HP per hit. Immunities remain unchanged."
 type = "choice"
 default = "1"
 

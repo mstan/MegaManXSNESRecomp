@@ -1,4 +1,5 @@
 #include "mmx_coop.h"
+#include "mmx_damage.h"
 #include "mmx_coop_view.h"
 #include "mmx_renderer.h"
 #include "mmx_coop_trace.h"
@@ -1903,6 +1904,7 @@ static struct {
   uint8_t pass,kind,p,db;uint16_t a,x,y,s,d;uint32_t resume;
   uint8_t body[0x90];
   MmxWeaponCombatState combat;MmxZeroState zero;MmxRendererPieceMark pieces;
+  MmxDamageState damage;
   MmxCoopViewWorldState world;
 } shot_ghost;
 static MmxBossRushAudioState shot_ghost_audio;
@@ -1975,6 +1977,7 @@ static void shot_ghost_begin(CpuState *cpu,unsigned kind,uint32_t resume) {
   shot_ghost.kind=(uint8_t)kind;shot_ghost.resume=resume;
   memcpy(shot_ghost_ram,g_ram,sizeof(shot_ghost_ram));
   shot_ghost.combat=MmxWeaponsGetCombatState();shot_ghost.zero=MmxZeroGetState();
+  shot_ghost.damage=MmxDamageGetState();
   shot_ghost.pieces=MmxRendererMarkPieces();shot_ghost.world=MmxCoopViewsGetWorldState();
   shot_ghost_state=state;shot_ghost_audio=MmxBossRushAudioGetState();
   memcpy(shot_ghost_lift,&lift,sizeof(lift));memcpy(shot_ghost_cart,&cart,sizeof(cart));
@@ -1994,6 +1997,8 @@ static void shot_ghost_end(CpuState *cpu,uint32_t pc) {
   memcpy(g_ram,shot_ghost_ram,sizeof(shot_ghost_ram));
   memcpy(g_ram+GHOST_SPC_MIRROR,spc,sizeof(spc));
   MmxWeaponsSetCombatState(shot_ghost.combat);MmxZeroSelectState(shot_ghost.zero);
+  if(shot_ghost.kind==GHOST_SHOTS) MmxDamageSetState(&shot_ghost.damage);
+  else MmxDamageRestoreWorld(&shot_ghost.damage);
   MmxRendererRewindPieces(shot_ghost.pieces);MmxCoopViewsSetWorldState(&shot_ghost.world);
   state=shot_ghost_state;MmxBossRushAudioSetState(&shot_ghost_audio);
   memcpy(&lift,shot_ghost_lift,sizeof(lift));memcpy(&cart,shot_ghost_cart,sizeof(cart));

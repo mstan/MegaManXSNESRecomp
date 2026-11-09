@@ -1,6 +1,6 @@
 format_version = 1
 id = "megaman-x.gameplay.damage-dealt"
-version = "1.0.0"
+version = "1.0.1"
 name = "X damage dealt"
 author = "mstan"
 description = "Multiply damage dealt by X, including native and imported weapons. Zero retains his own damage."
@@ -23,7 +23,7 @@ default_enabled = false
 feature = "damage"
 id = "multiplier"
 label = "Damage multiplier"
-description = "1x is normal, 0.5x is half, 2x is double. Rounded to the nearest HP with a minimum of 1 for damaging hits and a maximum of 127. Immunities remain unchanged."
+description = "1x is normal, 0.5x is half, 2x is double. Fractional damage carries between hits; some hits cost no HP. Maximum 127 HP per hit. Immunities remain unchanged."
 type = "choice"
 default = "1"
 

@@ -133,7 +133,7 @@ def apply(text):
         # Override only the final subtraction in the positive-damage path.
         if (pc & 0x7fffff) == 0x049e6e and 'uint8 ' in line and 'cpu_read8' in line and '0xef37' in line:
             variable = re.search(r'uint8 (_v\d+)', line)[1]
-            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxWeaponsDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxDamageDealt(unsigned); {variable} = (uint8)MmxDamageDealt(MmxWeaponsDamage(g_ram, cpu->D, cpu->X, MmxZeroDamage(g_ram, cpu->D, cpu->X, {variable}))); }}\n')
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxWeaponsDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxDamageDealt(const uint8_t *, unsigned, unsigned); {variable} = (uint8)MmxDamageDealt(g_ram,cpu->D,MmxWeaponsDamage(g_ram, cpu->D, cpu->X, MmxZeroDamage(g_ram, cpu->D, cpu->X, {variable}))); }}\n')
             found.add(0x849e73)
         if pc in PCS:
             load = re.search(r'uint8 (_v\d+) = cpu_read8\(cpu, cpu->DB, \(uint16\)\(0x1f99\)\);', line)
