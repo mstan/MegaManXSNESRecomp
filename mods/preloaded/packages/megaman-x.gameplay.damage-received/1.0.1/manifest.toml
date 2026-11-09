@@ -1,0 +1,92 @@
+format_version = 1
+id = "megaman-x.gameplay.damage-received"
+version = "1.0.1"
+name = "Player damage received"
+author = "mstan"
+description = "Multiply damage received by either player after armor reduction. Instant-death hazards retain their native behavior."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "requires-same-mods"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "damage"
+name = "Player damage received"
+description = "Multiply damage received by either player after armor reduction. Instant-death hazards retain their native behavior."
+group = "Gameplay"
+default_enabled = false
+
+[[option]]
+feature = "damage"
+id = "multiplier"
+label = "Damage multiplier"
+description = "1x is normal, 0.5x is half, 2x is double. Fractional damage carries between hits; some hits cost no HP. Maximum 127 HP per hit. Immunities remain unchanged."
+type = "choice"
+default = "1"
+
+[[option.choice]]
+value = "0.1"
+label = "0.1x"
+
+[[option.choice]]
+value = "0.25"
+label = "0.25x"
+
+[[option.choice]]
+value = "0.5"
+label = "0.5x"
+
+[[option.choice]]
+value = "0.75"
+label = "0.75x"
+
+[[option.choice]]
+value = "1"
+label = "1x"
+
+[[option.choice]]
+value = "1.25"
+label = "1.25x"
+
+[[option.choice]]
+value = "1.5"
+label = "1.5x"
+
+[[option.choice]]
+value = "1.75"
+label = "1.75x"
+
+[[option.choice]]
+value = "2"
+label = "2x"
+
+[[option.choice]]
+value = "2.5"
+label = "2.5x"
+
+[[option.choice]]
+value = "3"
+label = "3x"
+
+[[option.choice]]
+value = "4"
+label = "4x"
+
+[[option.choice]]
+value = "5"
+label = "5x"
+
+[[option.choice]]
+value = "7.5"
+label = "7.5x"
+
+[[option.choice]]
+value = "10"
+label = "10x"
+
+[[plugin]]
+feature = "damage"
+id = "megaman-x.damage-received"

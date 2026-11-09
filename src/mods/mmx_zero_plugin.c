@@ -5,6 +5,7 @@
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
 #include "mmx_armor.h"
+#include "mmx_damage.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
 #include "mmx_source_assets.h"
@@ -62,7 +63,7 @@ static void weapon_menu_hook(CpuState *cpu, uint32_t pc) {
   cpu->P = (cpu->P & ~0x82) | (cpu->_flag_Z ? 2 : 0) | (cpu->_flag_N ? 128 : 0);
 }
 static void hook(CpuState *cpu, uint32_t pc) {
-  if (!MmxZeroEnabled() && !MmxWeaponsEnabled() && !MmxArmorEnabled()) return;
+  if (!MmxZeroEnabled() && !MmxWeaponsEnabled() && !MmxArmorEnabled() && !MmxDamageDealtEnabled()) return;
   switch (pc & 0x7fffff) {
     case 0x019ef9:
       /* Intercept the STA, which preserves the native ADC flags. */
@@ -177,8 +178,8 @@ static void hook(CpuState *cpu, uint32_t pc) {
     }
     case 0x049e76: {
       unsigned original = cpu_read8(cpu, cpu->DB, (uint16_t)(0xef37 + cpu->Y));
-      unsigned damage = MmxWeaponsDamage(g_ram, cpu->D, cpu->X,
-          MmxZeroDamage(g_ram, cpu->D, cpu->X, original));
+      unsigned damage = MmxDamageDealt(g_ram,cpu->D,MmxWeaponsDamage(g_ram, cpu->D, cpu->X,
+          MmxZeroDamage(g_ram, cpu->D, cpu->X, original)));
       if (damage == original) break;
       /* Post-SBC: retain the interpreter's instruction timing, but recompute
        * its value and all arithmetic flags with our damage operand. The HP

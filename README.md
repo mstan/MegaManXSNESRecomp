@@ -96,6 +96,7 @@ Rev 1 build.
 | &#9745; | **[Boss Rush](docs/boss-rush.md)** | Endless fights against two different Mavericks, solo or co-op, from the game's title menu. |
 | &#9745; | **X2 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
 | &#9745; | **X3 weapons** | All eight boss weapons and their charged attacks, adapted for X and Zero. |
+| &#9745; | **Damage multipliers** | Separate mods for X's damage dealt and player damage received, from 0.1x to 10x. |
 | &#9745; | **X2 / X3 Armor (experimental)** | Donor X graphics and abilities, unlocked through X1's armor capsules. X3 Gold Armor is awarded by the Hadouken capsule. |
 | &#9745; | **Netplay** | Two-player online co-op with lobbies and rollback, plus optional fixed widescreen. |
 
@@ -138,6 +139,17 @@ No ROMs or extracted assets are included in the downloads.
 
 For Storm Eagle's speedrun trick and local practice saves, see the
 [Magic Carpet guide](docs/magic-carpet.md).
+
+In **Mods > Gameplay**, enable **X damage dealt** or **Player damage received**
+and choose its **Damage multiplier**. The two mods are independent: 0.5x halves
+damage, 1x keeps normal damage, and 2x doubles it. Choices range from 0.1x to
+10x; both mods start disabled with 1x selected. X's multiplier includes native
+and imported weapons and leaves Zero's attacks unchanged. Received damage
+applies to both characters after armor reduction. Fractional damage carries
+between hits, separately for each enemy and player: at 0.1x, five 2-HP hits
+cost 1 HP in total. Individual hits can cause no HP loss while retaining their
+normal hurt reaction. Damage caps safely at 127 HP. Immunities and instant-death
+hazards keep their native behavior. Save states and rewind preserve fractions.
 
 ### Which ROM?
 

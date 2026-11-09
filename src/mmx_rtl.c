@@ -2,6 +2,7 @@
 #include "mmx_wide_policy.h"
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
+#include "mmx_damage.h"
 #include "mmx_armor.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
@@ -368,7 +369,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 25u /* independent native camera pan history */
+#define MMX_SAV_CHUNK_VERSION 26u /* fractional damage accumulation */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -404,6 +405,7 @@ static MmxWeaponCombatState g_load_weapon_combat;
 static MmxCoopState g_load_coop;
 static MmxKncBugfixState g_load_knc_bugfix;
 static MmxArmorState g_load_armor;
+static MmxDamageState g_load_damage;
 static MmxCoopViewWorldState g_load_views;
 static MmxCoopViewBoundsState g_load_view_bounds;
 static uint8_t g_load_zero_extension[MMX_ZERO_EXTENSION_STATE_BYTES];
@@ -470,6 +472,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&bounds,sizeof(bounds));
   MmxArmorState armor=MmxArmorGetState();
   sli->func(sli,&armor,sizeof(armor));
+  MmxDamageState damage=MmxDamageGetState();
+  sli->func(sli,&damage,sizeof(damage));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -482,6 +486,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_coop, 0, sizeof(g_load_coop));
   memset(&g_load_knc_bugfix,0,sizeof(g_load_knc_bugfix));
   memset(&g_load_armor,0,sizeof(g_load_armor));
+  memset(&g_load_damage,0,sizeof(g_load_damage));
   memset(&g_load_views,0,sizeof(g_load_views));
   memset(&g_load_view_bounds,0,sizeof(g_load_view_bounds));
   memset(g_load_zero_extension,0,sizeof(g_load_zero_extension));
@@ -574,7 +579,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
     bool rush=g_load_chunk.version>=21 || !extension;
     size_t expected=(extension?sizeof(g_load_zero_extension):0)+(rush?rush_bytes:0)+
         (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0)+
-        (g_load_chunk.version>=24?sizeof(g_load_armor):0);
+        (g_load_chunk.version>=24?sizeof(g_load_armor):0)+
+        (g_load_chunk.version>=26?sizeof(g_load_damage):0);
     if(remaining!=expected) g_load_chunk_ok=0;
     if(g_load_chunk_ok && extension)
       sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
@@ -602,6 +608,13 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
     else {
       sli->func(sli,&g_load_armor,sizeof(g_load_armor));
       if(!MmxArmorValidState(&g_load_armor))g_load_chunk_ok=0;
+    }
+  }
+  if(g_load_complete && g_load_chunk_ok && g_load_chunk.version>=26) {
+    if(RtlStateBytesRemaining(sli)<sizeof(g_load_damage))g_load_chunk_ok=0;
+    else {
+      sli->func(sli,&g_load_damage,sizeof(g_load_damage));
+      if(!MmxDamageValidState(&g_load_damage))g_load_chunk_ok=0;
     }
   }
   if (!g_load_chunk_ok)
@@ -641,6 +654,7 @@ void MmxOnStateLoaded(uint32_t version) {
   MmxWideStateApply(complete);
   MmxZeroSetState(g_load_zero);
   MmxArmorSetState(g_load_armor);
+  MmxDamageSetState(complete?&g_load_damage:NULL);
   if (complete) MmxZeroExtLoadState(g_load_zero_extension);
   MmxWeaponsSetState(g_load_weapons);
   MmxWeaponsSetCombatState(g_load_weapon_combat);
@@ -948,6 +962,7 @@ void MmxDrawPpuFrame(void) {
 }
 
 void RunOneFrameOfGame(void) {
+  MmxDamageFrame(g_ram);
   RtlSetPadState(0,MmxBossRushFilterInput(RtlGetPadState(0)));
   s_graphics_frame_start = g_cpu.master_cycles;
   s_graphics_frame_active = g_did_reset;
@@ -2073,6 +2088,7 @@ static void MmxWideStateApply(bool loaded) {
  * recovers (GitHub #45). Runs on the main fiber, never inside a slot fiber,
  * so every slot fiber can be deleted here. */
 void MmxOnHardwareReset(void) {
+  MmxDamageClearState();
   MmxArmorResetState();
   MmxBossRushReset();MmxBossRushAudioReset();
   MmxCoopReset();

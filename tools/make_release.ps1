@@ -34,7 +34,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$build = Join-Path $root $BuildDir
+$build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
 $exe = Join-Path $build 'MegaManXSNESRecomp.exe'
 $assets = Join-Path $build 'assets'
 # Stage the checked-in catalog, never a player's writable mods/state/cache.

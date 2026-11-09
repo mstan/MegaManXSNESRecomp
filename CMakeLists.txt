@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 2.3.12 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 2.3.13 LANGUAGES C CXX)
 # Qualified Windows x64 default; retain explicit selections and other-target floors.
 set(_MMX_RASTER_IMPL_DEFAULT "LLE")
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _MMX_RASTER_IMPL_PROCESSOR)
@@ -99,6 +99,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/main.c src/mmx_startup.c src/mmx_netplay.c src/mmx_display.c ${MMX_RENDERER_SOURCE} src/mmx_render_assets.c src/mmx_wide_policy.c
         src/mmx_00.c src/gen_stubs.c src/mmx_cpu_infra.c src/mmx_rtl.c
         src/mmx_spc_player.c src/mmx_replay.c src/mods/mmx_diagnostics_plugin.c
+        src/mmx_damage.c src/mods/mmx_damage_plugin.c
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
         src/mods/mmx_hadouken_plugin.c src/mods/mmx_password_plugin.c src/mods/mmx_boss_rush_plugin.c src/mmx_password_save.cpp
         src/mods/mmx_zero_plugin.c src/mods/mmx_armor_plugin.c src/mmx_zero.c src/mmx_armor.c src/mmx_armor_launcher.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
@@ -141,6 +142,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_renderer_capture.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_password_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_zero_hooks.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_coop_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_weapon_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py)
@@ -158,6 +160,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_coop_hooks.py
                         --gen-dir ${GEN_DIR}
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py
+                        --gen-dir ${GEN_DIR}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
                         --gen-dir ${GEN_DIR}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 COMMENT "Applying Mega Man X generated-code mod hooks" VERBATIM)
@@ -191,6 +195,14 @@ add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(mmx_damage_test tests/mmx_damage_test.c src/mmx_damage.c)
+    target_include_directories(mmx_damage_test PRIVATE src)
+    add_test(NAME mmx_damage_multipliers COMMAND mmx_damage_test)
+    if(MSVC)
+        target_compile_options(mmx_damage_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_damage_test PRIVATE -UNDEBUG)
+    endif()
     add_executable(mmx_armor_launcher_test tests/mmx_armor_launcher_test.c src/mmx_armor_launcher.c)
     target_include_directories(mmx_armor_launcher_test PRIVATE src ${RECOMP_UI_ROOT}/src)
     target_compile_definitions(mmx_armor_launcher_test PRIVATE RECOMP_LAUNCHER=1)
@@ -355,6 +367,15 @@ if(TARGET mmx_state_tests)
     set_property(TARGET mmx_state_tests PROPERTY SOURCES
         tests/mmx_adaptive_state_test.c ${mmx_state_sources})
     if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set(damage_test_dir "${CMAKE_CURRENT_BINARY_DIR}/damage-runtime")
+        file(MAKE_DIRECTORY "${damage_test_dir}")
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded/" DESTINATION "${damage_test_dir}/catalog")
+        add_test(NAME mmx_damage_runtime
+            COMMAND ${CMAKE_COMMAND} -E env SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=dummy
+                MMX_REPLAY_RECORD=0 MMX_DAMAGE_TEST=1
+                $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_damage_runtime PROPERTIES
+            WORKING_DIRECTORY "${damage_test_dir}" LABELS "rom;damage")
         set(rush_report_dir "${CMAKE_CURRENT_BINARY_DIR}/boss-rush-reports")
         set(render_rollback_dir "${CMAKE_CURRENT_BINARY_DIR}/render-rollback")
         file(MAKE_DIRECTORY "${render_rollback_dir}")
