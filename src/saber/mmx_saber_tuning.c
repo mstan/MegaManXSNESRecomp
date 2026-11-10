@@ -24,6 +24,8 @@ static MmxSaberTuning g_tuning = {
   false,
 };
 
+static unsigned buster_button_index = 9;
+
 static MmxSaberTuningOption k_options[] = {
   {"slash1_damage", 3, 1, 32,
    &g_tuning.normal_damage[MMX_SABER_TUNING_DAMAGE_SLASH1]},
@@ -122,6 +124,13 @@ static bool parse_boolean(const char *text, bool *out) {
 }
 
 void MmxSaberTuningLoad(MmxSaberTuningOptionReader reader, void *context) {
+  char button[16] = {0};
+  buster_button_index = 9;
+  if (reader && reader("buster_button", button, sizeof(button), context)) {
+    button[sizeof(button) - 1] = '\0';
+    if (!strcmp(button, "a")) buster_button_index = 8;
+    else if (!strcmp(button, "b")) buster_button_index = 0;
+  }
   for (unsigned i = 0; i < sizeof(k_options) / sizeof(k_options[0]); ++i) {
     char text[64] = {0};
     int parsed;
@@ -177,6 +186,10 @@ int MmxSaberTuningFinisherWindowFrames(void) {
 
 int MmxSaberTuningSaberSwingVolume(void) {
   return g_tuning.saber_swing_volume;
+}
+
+unsigned MmxSaberTuningBusterButtonIndex(void) {
+  return buster_button_index;
 }
 
 bool MmxSaberTuningShowHitboxes(void) {

@@ -61,6 +61,8 @@ int MmxSaberTuningPriority(MmxSaberTuningPriorityKind kind);
 int MmxSaberTuningPriorityWindowFrames(void);
 int MmxSaberTuningFinisherWindowFrames(void);
 int MmxSaberTuningSaberSwingVolume(void);
+/* Serial SNES pad index: B=0, A=8, X=9. */
+unsigned MmxSaberTuningBusterButtonIndex(void);
 bool MmxSaberTuningShowHitboxes(void);
 
 /* Short name for call sites that already establish the Saber context. */

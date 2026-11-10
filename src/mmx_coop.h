@@ -101,8 +101,8 @@ void MmxCoopDiagnosticFrame(const uint8_t ram[0x20000]);
 bool MmxCoopSelect(uint8_t ram[0x20000], unsigned player);
 void MmxCoopPoll(uint16_t p1, uint16_t p2);
 void MmxCoopApplyInput(uint8_t ram[0x20000]);
-/* The live seat's physical X held and Y newly pressed, in joypad terms. */
-void MmxCoopSeatButtons(bool *x_held, bool *y_pressed);
+/* The live seat's Buster button held and Y newly pressed, in joypad terms. */
+void MmxCoopSeatButtons(unsigned buster_index, bool *buster_held, bool *y_pressed);
 bool MmxCoopFrameTick(uint8_t ram[0x20000]);
 bool MmxCoopTransitionActive(void);
 bool MmxCoopFindLanding(const uint8_t ram[0x20000],uint16_t *x,uint16_t *y);

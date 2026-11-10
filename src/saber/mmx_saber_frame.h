@@ -16,7 +16,7 @@ bool MmxSaberFrameNativeFireAction(uint8_t action);
  * native joypad words ($A7 held, $A9 previous, $AC newly pressed); co-op
  * supplies each seat's own pad, and Saber then tracks X's previous state. */
 typedef struct MmxSaberFramePad {
-  bool x_held, y_pressed;
+  bool buster_held, y_pressed;
 } MmxSaberFramePad;
 typedef void (*MmxSaberFramePadSource)(const uint8_t *ram, MmxSaberFramePad *pad);
 void MmxSaberFrameSetPadSource(MmxSaberFramePadSource source);

@@ -4662,6 +4662,54 @@ static void saber_finisher_checks(const char *fixture) {
   puts("ok: saber-finisher");
 }
 
+static void saber_buster_button_checks(void) {
+  check(MmxSaberTuningBusterButtonIndex() == 9, "Buster defaults to X");
+  check(g_mod_provider->feature_set_option(g_mod_provider->ctx,
+      "megaman-x.character.saber-zero", "saber-zero", "buster_button", "a"),
+      "launcher catalog accepts a different Buster button");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxSaberTuningBusterButtonIndex() == 8, "committed Buster button is A");
+  idle(1400);
+  for(unsigned n=0;n<3;++n) {
+    for(unsigned i=0;i<30;++i) frame(SNES_PAD_START);
+    if(n<2)idle(181);
+  }
+  unsigned waited=0;
+  while(waited<1200 && !(MmxZeroActive() && g_ram[0xd1]==2 &&
+      g_ram[0xd2]==4 && g_ram[0xd3]==4 && g_ram[0xba9]==2 &&
+      !g_ram[0xbaa] && (g_ram[0xbd3]&4))) {
+    frame(0);++waited;
+  }
+  check(waited<1200,"fresh boot reaches grounded Zero on the Highway");
+  size_t cap=2u*1024u*1024u;
+  uint8_t *state=malloc(cap);
+  check(state!=NULL,"remap snapshot allocates");
+  size_t bytes=RtlSaveSnapshotToMemory(state,cap);
+  check(bytes>0,"current-build remap snapshot saves");
+  /* The native Options screen writes this same Dash mask for X. */
+  g_ram[0xffc2] = 0x10;
+  frame(SNES_PAD_X|SNES_PAD_RIGHT);
+  check(!MmxZeroGetState().charge && (g_ram[0x0bde] & 0x80),
+      "X starts Dash without activating the remapped Buster");
+  check(RtlLoadSnapshotFromMemory(state,bytes),"current-build remap snapshot restores");
+  g_ram[0xffc2] = 0x10;
+  for (unsigned i=0;i<85;++i) frame(SNES_PAD_A);
+  check(MmxZeroGetState().charge >= 81, "A holds the native Buster charge");
+  frame(0);
+  check(!MmxZeroGetState().charge, "A release stops charging");
+  check(RtlLoadSnapshotFromMemory(state,bytes),"current-build remap snapshot restores for Saber");
+  free(state);
+  frame(SNES_PAD_Y);
+  check(MmxSaberAttackSnapshotGet().phase != SABER_PHASE_IDLE,
+      "Y still starts Saber after changing Buster to A");
+  check(g_mod_provider->feature_set_option(g_mod_provider->ctx,
+      "megaman-x.character.saber-zero", "saber-zero", "buster_button", "x"),
+      "launcher catalog restores the original Buster button");
+  snes_mod_runtime_activate_plugins_c();
+  check(MmxSaberTuningBusterButtonIndex() == 9, "restored Buster button is X");
+  puts("ok: separate Buster button");
+}
+
 static void saber_tuning_checks(void) {
   check(g_mod_provider->feature_set_option(
             g_mod_provider->ctx, "megaman-x.character.saber-zero",
@@ -8624,6 +8672,7 @@ int main(int argc, char **argv) {
   } else if (saber_tuning) {
     check(MmxSaberEnabled(),
           "saber-tuning runs with the Saber package enabled");
+    saber_buster_button_checks();
     saber_tuning_checks();
   } else if (saber_hitbox_debug) {
     check(MmxSaberEnabled(),

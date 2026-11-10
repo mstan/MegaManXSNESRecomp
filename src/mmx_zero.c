@@ -74,7 +74,7 @@ bool MmxZeroValidState(const MmxZeroState *value) {
   return s.combo <= 2 && s.slash <= 44 && s.charge <= 201 &&
       s.modern.enabled <= 1 && s.modern.jump_used <= 1 && s.modern.dash_used <= 1 &&
       s.modern.dash_ticks <= 18 && (s.modern.dash_facing == 0 || s.modern.dash_facing == 64) &&
-      s.modern.slash_buffer <= 6 && s.modern.hit_phase <= 1 && !s.modern.reserved &&
+      s.modern.slash_buffer <= 6 && s.modern.hit_phase <= 1 && s.modern.saber_held <= 1 &&
       s.active_x <= 1 && s.swap_phase <= 6 && s.swap_tick <= 30 && s.swap_y <= 0 && s.swap_y >= -320 &&
       s.hp_valid <= 1 && s.hp_max <= 32 && s.hp[0] <= 32 && s.hp[1] <= 32 &&
       (!s.hp_valid || (s.hp_max >= 16 && s.hp[0] <= s.hp_max && s.hp[1] <= s.hp_max)) &&
@@ -765,6 +765,14 @@ static MmxZeroLegacyIntent legacy_intent_from_mapped(const uint8_t *r) {
 }
 void MmxZeroPlayerTick(uint8_t r[0x20000]) {
   if (!MmxZeroActive() || !r) return;
+  bool pressed = (r[0xbe3] & 64) != 0;
+  if (modern_behavior) {
+    /* The native mapper uses last frame's held action bits to form edges.
+     * We consume its fire bit for Saber below, so it cannot retain that
+     * history. Keep the true hold in the same per-seat snapshot as the swing. */
+    pressed = pressed && !state.modern.saber_held;
+    state.modern.saber_held = (r[0xbdf] & 64) != 0;
+  }
   unsigned action = r[0xbaa];
   bool stage = r[0xd1] == 2 && r[0xd2] == 4 && r[0xba9] == 2 &&
       r[0xd3]<10 && (r[0xbcf] & 127) && !r[0x1f0c] && !r[0xbdb];
@@ -777,13 +785,12 @@ void MmxZeroPlayerTick(uint8_t r[0x20000]) {
   if (!playable && stage && action == 0x0e && state.charge &&
       !state.combo && !state.burst && !state.slash) return;
   if (!playable) { MmxZeroCancel(r); return; }
-  bool pressed = (r[0xbe3] & 64) != 0;
   if (modern_behavior) {
-    /* Movement takes priority over an ongoing direct swing. Preserve the
-     * native jump and ladder inputs instead of masking them into a forced
-     * pose. Air-dash/double-jump cancellation happens in MovementTick. */
-    if(state.slash && ((r[0xbdf]&12) || ((r[0xbd3]&4) &&
-        ((r[0xbe3]&128) || (r[0xbe2]&128))))) {
+    /* Movement takes priority if the player starts a swing and dash/jump
+     * together, just as when dash/jump cancels an existing swing.
+     * Air-dash/double-jump cancellation happens in MovementTick. */
+    const bool ground_move = (r[0xbd3]&4) && ((r[0xbe3]&128) || (r[0xbe2]&128));
+    if((state.slash && (r[0xbdf]&12)) || ((state.slash || pressed) && ground_move)) {
       MmxZeroCancel(r);
       r[0xbdf]&=(uint8_t)~64;r[0xbe3]&=(uint8_t)~64;
       return;

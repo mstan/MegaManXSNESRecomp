@@ -21,6 +21,26 @@ default_enabled = false
 
 [[option]]
 feature = "saber-zero"
+id = "buster_button"
+label = "Buster button"
+description = "Choose an unused SNES face button for Zero's Buster. Y still swings the Saber. If your in-game Dash is on X, move Buster to a free button here."
+type = "choice"
+default = "x"
+
+[[option.choice]]
+value = "x"
+label = "X (default)"
+
+[[option.choice]]
+value = "a"
+label = "A"
+
+[[option.choice]]
+value = "b"
+label = "B"
+
+[[option]]
+feature = "saber-zero"
 id = "show_hitboxes"
 label = "Show hitboxes"
 description = "Debug: outline enemy, Zero and Saber attack hitboxes (custom renderer only)"

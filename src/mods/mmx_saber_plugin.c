@@ -47,7 +47,8 @@ static bool saber_overlay_provider(const uint8_t *ram, const MmxZeroState *zero,
 
 static void coop_seat_pad(const uint8_t *ram, MmxSaberFramePad *pad) {
   (void)ram;
-  MmxCoopSeatButtons(&pad->x_held, &pad->y_pressed);
+  MmxCoopSeatButtons(MmxSaberTuningBusterButtonIndex(), &pad->buster_held,
+                     &pad->y_pressed);
 }
 
 static void saber_activation_failed(void) {
