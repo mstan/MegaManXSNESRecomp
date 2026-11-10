@@ -642,11 +642,12 @@ void MmxCoopPoll(uint16_t p1, uint16_t p2) {
     state.players[i].input = inputs[i];
   }
 }
-void MmxCoopSeatButtons(bool *x_held, bool *y_pressed) {
+void MmxCoopSeatButtons(unsigned buster_index, bool *buster_held, bool *y_pressed) {
   /* Seat input bit n is joypad bit 15-n: Y is bit 1 and X is bit 9. */
   const MmxCoopPlayer *p = &state.players[state.current];
   bool live = enabled && state.initialized;
-  if (x_held) *x_held = live && (p->input & (1u << 9));
+  if (buster_held) *buster_held = live && buster_index < 12 &&
+      (p->input & (1u << buster_index));
   if (y_pressed) *y_pressed = live && (p->pressed & (1u << 1));
 }
 /* A seat's previous actions, taken at its first MmxCoopApplyInput of the
