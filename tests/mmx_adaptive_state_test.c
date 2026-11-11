@@ -1954,6 +1954,17 @@ int main(int argc, char **argv) {
     g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
   }
   g_config.display_aspect = kSnesDisplayAspect_Crt4x3;
+  check(MmxWindowWidth(256) == 427, "legacy adaptive Auto starts with a wide canvas");
+  check(MmxWindowWidth(256) == 320, "later native-width sizing keeps the selected geometry");
+  s_initial_window_width = true; g_config.widescreen = false;
+  check(MmxWindowWidth(256) == 320, "saved native choice keeps native startup sizing");
+  s_initial_window_width = true; g_config.widescreen = true;
+  g_config.window_width = 800; g_config.window_height = 600;
+  check(MmxWindowWidth(256) == 320, "saved custom window bypasses adaptive startup seeding");
+  g_config.window_width = g_config.window_height = 0;
+  s_initial_window_width = true; g_mmx_custom_aspect = MMX_ASPECT_16_9;
+  check(MmxWindowWidth(256) == 320, "saved fixed aspect keeps its startup sizing policy");
+  g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE; s_initial_window_width = true;
   check(FindCmdForSdlKey(SDLK_F7, 0) == kKeys_SaveStateMenu &&
         FindCmdForSdlKey(SDLK_F8, 0) == kKeys_Rewind &&
         FindCmdForSdlKey(SDLK_F11, 0) == kKeys_Load + 6 &&

@@ -50,7 +50,9 @@ if(_MMX_RASTER_IMPL_DEFAULT STREQUAL "NATIVE" AND MMX_RASTER_IMPL STREQUAL "NATI
     set(_MMX_NATIVE_ROW_PLAN_DEFAULT ON)
 endif()
 option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
-option(MMX_NATIVE_BG_SPANS "Bind reconstructed background tiles and palettes per source span" OFF)
+# Match the qualified native row-plan default; preserve explicit cache choices
+# and the portable/reference defaults on other configurations.
+option(MMX_NATIVE_BG_SPANS "Bind reconstructed background tiles and palettes per source span" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
 set_property(SOURCE src/mmx_renderer_native.c tests/mmx_native_renderer_test.c
     src/main.c tests/mmx_adaptive_state_test.c
     APPEND PROPERTY COMPILE_DEFINITIONS
