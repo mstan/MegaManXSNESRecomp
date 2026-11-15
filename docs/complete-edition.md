@@ -12,14 +12,14 @@ Mega Man X USA Rev 1 ROM. No additional ROM or patch selection is needed.
 | Text Corrections | Homing Torpedo spelling in the weapon-acquisition text and ending enemy roll. |
 | Hoganmer Shieldless Behaviour | A charged Rolling Shield can break Hoganmer's shield and expose its unused shieldless behaviour. |
 | Consistent Buster and Hadouken Damage | Two buster damage corrections, plus Hadouken damage against Wolf Sigma. |
-| Complete Edition Debug Menu | A native practice menu and access to the game's original map editor. |
+| Complete Edition Practice Menu | An in-game menu for armour upgrades, refill, free camera, restart and ghost mode. |
 
 During gameplay, hold **L + X + A** on player one's controller to open the
 practice menu. **Up/Down** selects an entry, **Y** sets or activates it, **B**
 clears an upgrade or ghost mode, and **Start** returns to gameplay. It includes
 helmet, buster, body and dash upgrades, health refill, free scrolling, restart,
-and ghost mode. Select **Map Editor** with Y to enter the game editor;
-**L + R + X** returns to the practice menu. Shortcut instructions belong here
+and ghost mode. The original developer map editor is excluded from this
+integration. Shortcut instructions belong here
 and on Mods, with the original title and main menu presentation preserved.
 
 The data mods have disjoint byte ownership. They retain the existing X1
@@ -32,13 +32,12 @@ inventory and the currently projected player body; Zero retains its own body
 and animation setup when the menu changes X's upgrade inventory.
 
 The practice menu pauses game logic and consumes its navigation input. Its
-selection, held input, and map-editor mode are included in current-build
-snapshots and rewind. All six feature selections participate in the existing
-netplay mod identity. A native frame driver pauses the gameplay scheduler and
-calls the stock editor's bounded palette, tilemap and editing routines. Its
-temporary original-aspect view preserves the player's renderer and widescreen
-settings, including local co-op. No injected debugger program or separately
-recompiled hack is used. Native in-game saves and the ROM file are untouched.
+selection and held input are included in current-build snapshots and rewind.
+All six feature selections participate in the existing netplay mod identity.
+The menu uses the resident game lettering and a pause-screen-inspired metal
+frame and green field. Its panel stays readable at native and adaptive widths.
+No injected debugger program or separately recompiled hack is used. Native
+in-game saves and the ROM file are untouched.
 
 ## Original release and attribution
 
@@ -77,7 +76,7 @@ The C and Python data checks cover all 32 data-feature combinations against the
 original IPS inputs, full reversal, and atomic overlap refusal. The ROM-backed
 test exercises launcher defaults and independent selection, both collision
 execution tiers, outgoing damage multipliers, Easy Hadouken, real retail boot,
-practice controls and drawing, current-build menu/editor snapshot replay,
+practice controls and drawing, current-build menu snapshot replay,
 native Hoganmer shield destruction and AI transition, and both co-op rosters
 with the original Zero and X2/X3 weapon packs.
 Run it from the CMake-created disposable profile, without native file dialogs.

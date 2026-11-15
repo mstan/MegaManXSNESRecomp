@@ -113,6 +113,9 @@ static void complete_runtime_checks(const char *rom_path) {
   uint32_t pixels[256*224];
   check(MmxCompleteDebugDraw(pixels,256,224,g_ram),"practice menu draws at native aspect");
   hitbox_bmp(pixels,256,"complete-debug");
+  {uint32_t wide[342*224];
+    check(MmxCompleteDebugDraw(wide,342,224,g_ram),"practice menu draws in adaptive widescreen");
+    hitbox_bmp(wide,342,"complete-debug-wide");}
   unsigned hp=g_ram[0xbcf],x=g_ram[0xbad],y=g_ram[0xbb0];
   for(unsigned i=0;i<12;++i)frame(0);
   check(g_ram[0xbcf]==hp && g_ram[0xbad]==x && g_ram[0xbb0]==y,"practice menu freezes gameplay without forwarding pad input");
@@ -131,29 +134,13 @@ static void complete_runtime_checks(const char *rom_path) {
   complete_key(SNES_PAD_DOWN);complete_key(SNES_PAD_UP);
   check(RtlLoadSnapshotFromMemory(saved,sn) && MmxCompleteDebugGetState().open &&
       MmxCompleteDebugGetState().selection==9,"current-build snapshot restores practice selection and input history");
+  complete_key(SNES_PAD_DOWN);complete_key(SNES_PAD_UP);
+  size_t an=RtlSaveSnapshotToMemory(after,cap);check(an>0,"practice continuation saves");
+  check(RtlLoadSnapshotFromMemory(saved,sn),"practice checkpoint restores for replay");
+  complete_key(SNES_PAD_DOWN);complete_key(SNES_PAD_UP);
+  sn=RtlSaveSnapshotToMemory(saved,cap);same(saved,sn,after,an,"practice input replays byte-identically after save/load");
   complete_key(SNES_PAD_START);check(!MmxCompleteDebugGetState().open,"Start exits practice menu");
-  check(RtlLoadSnapshotFromMemory(start,n),"restore pristine gameplay before editor");
-  complete_key(chord);complete_select(0);complete_key(SNES_PAD_Y);
-  unsigned wait;
-  for(wait=0;wait<120 && !MmxCompleteDebugGetState().map_active;++wait)frame(0);
-  check(MmxCompleteDebugGetState().map_active,"stock editing routines enter through the native frame driver");
-  check(!g_mmx_custom_renderer && g_config.widescreen,"stock editor uses original presentation without changing the player's widescreen choice");
-  for(unsigned i=0;i<20;++i)frame(0);
-  hitbox_bmp((const uint32_t *)g_my_pixels,256,"complete-map");
-  unsigned map_x=g_ram[0x1e0c]|g_ram[0x1e0d]<<8,map_camera_x=g_ram[0x1e18]|g_ram[0x1e19]<<8;
-  sn=RtlSaveSnapshotToMemory(saved,cap);check(sn>0,"stock map editor continuation saves");
-  for(unsigned i=0;i<24;++i)frame(SNES_PAD_RIGHT);frame(0);
-  check(map_x!=(unsigned)(g_ram[0x1e0c]|g_ram[0x1e0d]<<8) || map_camera_x!=(unsigned)(g_ram[0x1e18]|g_ram[0x1e19]<<8),"stock editor responds to real directional input");
-  size_t an=RtlSaveSnapshotToMemory(after,cap);check(an>0,"editor movement snapshot saves");
-  check(RtlLoadSnapshotFromMemory(saved,sn),"editor checkpoint restores");
-  for(unsigned i=0;i<24;++i)frame(SNES_PAD_RIGHT);frame(0);
-  sn=RtlSaveSnapshotToMemory(saved,cap);same(saved,sn,after,an,"map-editor replay is byte-identical after save/load");
-  for(unsigned i=0;i<24;++i)frame(SNES_PAD_L|SNES_PAD_R|SNES_PAD_X);frame(0);
-  for(wait=0;wait<180 && MmxCompleteDebugGetState().map_active;++wait)frame(0);
-  if(MmxCompleteDebugGetState().map_active)fprintf(stderr,"Map editor resume=%06x pad=%02x DP=%02x/%02x/%02x\n",interp_bridge_lle_resume_pc(),g_ram[0xa7],g_ram[0x1e08],g_ram[0x1e09],g_ram[0x1e0a]);
-  check(!MmxCompleteDebugGetState().map_active && MmxCompleteDebugGetState().open,"stock editor returns to native practice menu");
-  {int w,h;MmxPrepareFrame(1280,720,&w,&h);check(g_mmx_custom_renderer && g_config.widescreen,"leaving the editor restores the selected renderer");}
-  check(RtlLoadSnapshotFromMemory(start,n),"restore gameplay after editor");
+  check(RtlLoadSnapshotFromMemory(start,n),"restore gameplay after practice menu");
   check(MmxCompleteSetEnabled(MMX_COMPLETE_DEBUG,false),"debug feature disables");complete_key(chord);
   check(!MmxCompleteDebugGetState().open,"disabled debugger leaves the shortcut inactive");
   MmxCompleteSetEnabled(MMX_COMPLETE_DEBUG,true);
@@ -180,15 +167,7 @@ static void complete_runtime_checks(const char *rom_path) {
       complete_key(SNES_PAD_START);coop_frames(30,SNES_PAD_RIGHT,SNES_PAD_Y);
       coop=MmxCoopGetState();check(MmxCoopValidState(&coop) && MmxWeaponsPageEnabled(1) && MmxWeaponsPageEnabled(2),"co-op movement and attacks continue with both weapon pages");
       check(g_snes->cart->rom[0x36fcb]==9 && g_snes->cart->rom[0x3719d]==32,"existing character collision patches retain Complete Edition combat data");
-      if(character==0) {
-        complete_key(chord);complete_select(0);complete_key(SNES_PAD_Y);
-        check(MmxCompleteDebugGetState().map_active && !g_mmx_custom_renderer,"co-op temporarily uses the shared stock editor view");
-        for(unsigned i=0;i<12;++i)frame(0);
-        for(unsigned i=0;i<12;++i)frame(SNES_PAD_L|SNES_PAD_R|SNES_PAD_X);
-        check(!MmxCompleteDebugGetState().map_active && MmxCompleteDebugGetState().open,"co-op returns from the map editor");
-        complete_key(SNES_PAD_START);coop_frames(8,0,0);
-        coop=MmxCoopGetState();check(MmxCoopValidState(&coop),"both co-op characters remain valid after editing");
-      }
+
       sn=RtlSaveSnapshotToMemory(saved,cap);check(sn>0,"combined-mod snapshot saves");
       coop_frames(8,0,0);check(RtlLoadSnapshotFromMemory(saved,sn),"combined-mod snapshot loads");
       MmxCoopDisable();MmxZeroDisable();MmxWeaponsDisable();

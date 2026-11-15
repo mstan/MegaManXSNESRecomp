@@ -51,9 +51,6 @@ static void complete_review_prepare(const char *rom_path) {
   complete_review_text(0xc3);complete_review_save("torpedo");
   check(RtlLoadSnapshotFromMemory(start,n),"restore baseline");
   complete_key(SNES_PAD_L|SNES_PAD_X|SNES_PAD_A);complete_review_save("practice");
-  complete_select(0);complete_key(SNES_PAD_Y);
-  for(unsigned i=0;i<20;++i)complete_key(0);
-  complete_review_save("editor");
   check(RtlLoadSnapshotFromMemory(start,n),"restore baseline");
   complete_review_stage(7,0);complete_review_save("kuwanger");
   g_ram[0x1f99]=15;g_ram[0x1f8c]=0xdc;g_ram[0xbdb]=6;g_ram[0xbd8]|=8;

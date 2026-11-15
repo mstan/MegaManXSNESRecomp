@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Owner-operated scenario selector and persistent notes for replay review."""
 import argparse
+import configparser
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -56,6 +57,18 @@ class ReviewGame:
         with (self.runtime/'controller-commands.jsonl').open('a',encoding='utf-8') as f:
             f.write(json.dumps(dict(at=stamp(),command=command,reply=reply))+'\n')
         return reply
+
+    def keyboard_help(self):
+        binds=configparser.ConfigParser()
+        binds.read(self.player/'keybinds.ini')
+        def key(name,fallback):
+            value=binds.get('player1',name,fallback=fallback)
+            return 'Enter' if value=='Return' else value
+        b,y,a,x,l,r,start=(key(n,d) for n,d in
+            [('b','Z'),('y','A'),('a','X'),('x','S'),('l','C'),('r','V'),('start','Return')])
+        return (f'Keyboard: {b} jump | {y} fire | {a} dash | {start} Start\n'
+                f'Practice menu: {l} + {x} + {a} opens | {y} sets | {b} clears\n'
+                'Click the game to play. Initial setup is paused. Closing this panel closes its test game.')
 
     def close(self):
         if self.stream:self.stream.close();self.stream=None
@@ -177,7 +190,7 @@ def run_ui(root):
     history=tk.StringVar()
     ttk.Label(body,textvariable=history,wraplength=670).pack(anchor='w',pady=4)
     ttk.Label(body,textvariable=status,foreground='#174e7a',wraplength=670).pack(anchor='w',pady=5)
-    ttk.Label(body,text='Keyboard: arrows move | X = SNES B/jump | S = Y/fire | Z = A/dash | A = X | C = L | V = R | Enter = Start\nClick the game to play. Initial setup is paused. Closing this panel closes its test game.',wraplength=670,foreground='#555555').pack(anchor='w',pady=5)
+    ttk.Label(body,text=game.keyboard_help(),wraplength=670,foreground='#555555').pack(anchor='w',pady=5)
     current=[None]
 
     def save_draft():

@@ -64,7 +64,7 @@ static bool s_composed_hud;
 static bool s_composed_split;
 #endif
 static bool MmxLocalSplit(void) {
-  return !MMX_VARIANT_JP && !MmxNetplayActive() && !MmxCompleteDebugMapActive() &&
+  return !MMX_VARIANT_JP && !MmxNetplayActive() &&
       MmxCoopEnabled() && MmxCoopViewsLocalSplit();
 }
 static void MmxRomLoaded(const uint8_t *rom, size_t size) {
@@ -74,9 +74,6 @@ static void MmxRomLoaded(const uint8_t *rom, size_t size) {
 }
 
 static void MmxPrepareFrame(int dw, int dh, int *w, int *h) {
-  if (MmxCompleteDebugMapActive()) {
-    g_mmx_custom_renderer=false;*w=256;*h=224;return;
-  }
   bool split=MmxLocalSplit();
   /* A room has one logical field. Window size and each peer's offline pixel
    * preference cannot widen it. The offline setting is never overwritten. */
@@ -116,9 +113,7 @@ static void MmxBeforeFrame(void) {
 #if SNESRECOMP_TRACE
   MmxArmorDebugHostFrame();
 #endif
-  if (MmxCompleteDebugMapActive()) {
-    MmxCoopViewsSetActive(false);MmxRendererSetPeerView(-1);
-  } else if(!MmxReplayPlaying()) {
+  if(!MmxReplayPlaying()) {
 #if SNESRECOMP_NET
   bool online=snes_netplay_active() && MmxCoopEnabled() && MmxCoopViewsIndependent();
   MmxCoopViewsSetActive(online || MmxLocalSplit());
@@ -132,7 +127,7 @@ static void MmxBeforeFrame(void) {
   if (g_snes->cart) {
     MmxZeroSetCollisionRom(g_snes->cart->rom, g_snes->cart->romSize);
     MmxWeaponsCollisionRom(g_snes->cart->rom, g_snes->cart->romSize);
-    if (!MmxCompleteDebugMapActive()) {MmxCoopHostFrame();MmxBossRushHostFrame();}
+    MmxCoopHostFrame();MmxBossRushHostFrame();
   }
   MmxRendererHoldFrame(MmxCoopTransitionActive());
   if (g_mmx_custom_renderer) MmxRendererLatchSprites();

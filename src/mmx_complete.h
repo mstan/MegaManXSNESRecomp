@@ -16,10 +16,10 @@ bool MmxCompleteSetEnabled(MmxCompleteFeature feature, bool enabled);
 bool MmxCompleteEnabled(MmxCompleteFeature feature);
 void MmxCompleteReset(void);
 
-/* All input history and pending map-editor calls belong to simulation state. */
+/* Practice input and selection belong to simulation state. */
 typedef struct MmxCompleteDebugState {
   uint16_t held;
-  uint8_t open, selection, map_pending, map_active, suppress, reserved;
+  uint8_t open, selection, suppress, reserved[3];
 } MmxCompleteDebugState;
 MmxCompleteDebugState MmxCompleteDebugGetState(void);
 bool MmxCompleteDebugValidState(const MmxCompleteDebugState *state);
@@ -27,4 +27,3 @@ void MmxCompleteDebugSetState(const MmxCompleteDebugState *state);
 void MmxCompleteDebugReset(void);
 bool MmxCompleteDebugFrame(uint8_t *ram, uint16_t input);
 bool MmxCompleteDebugDraw(uint32_t *pixels, int width, int height, const uint8_t *ram);
-bool MmxCompleteDebugMapActive(void);
