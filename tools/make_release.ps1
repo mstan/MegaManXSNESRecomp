@@ -73,13 +73,19 @@ Copy-Item -LiteralPath $exe -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'config.ini') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'logging.ini') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $root 'PERMISSIONS.md') -Destination $stage
 # Keep the README's local screenshot links usable in the extracted download.
 $stageDocs = Join-Path $stage 'docs'
 New-Item -ItemType Directory -Path $stageDocs -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'docs/screenshots') -Destination $stageDocs -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'docs/boss-rush.md') -Destination $stageDocs
 Copy-Item -LiteralPath (Join-Path $root 'docs/local-independent-views.md') -Destination $stageDocs
+Copy-Item -LiteralPath (Join-Path $root 'docs/complete-edition.md') -Destination $stageDocs
 Copy-Item -LiteralPath $assets -Destination $stage -Recurse
+$saberCredits = Join-Path $stage 'assets/saber-zero'
+New-Item -ItemType Directory -Path $saberCredits -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $root 'assets/saber-zero/CREDITS.md') -Destination $saberCredits
 if (Test-Path -LiteralPath $mods) {
   Copy-Item -LiteralPath $mods -Destination $stage -Recurse
 }
