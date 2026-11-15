@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.complete.script"
+version = "1.0.0"
+name = "Complete Edition: Retranslated Dialogue"
+author = "CF; Windii Gitlord"
+description = "Use CF and Windii Gitlord's script, faithful to Rock Man X while keeping localized names. Includes the original hack's ending credit."
+license = "Original hack: no license specified; see CREDITS.md"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "script"
+name = "Retranslated Dialogue"
+description = "Use CF and Windii Gitlord's script, faithful to Rock Man X while keeping localized names. Includes the original hack's ending credit."
+group = "Localization"
+default_enabled = true
+
+[[plugin]]
+feature = "script"
+id = "megaman-x.complete.script"

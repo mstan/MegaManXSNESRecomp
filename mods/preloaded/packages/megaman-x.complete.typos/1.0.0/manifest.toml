@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.complete.typos"
+version = "1.0.0"
+name = "Complete Edition: Text Corrections"
+author = "CF"
+description = "Correct Homing Torpedo in the weapon-acquisition screen and ending enemy roll."
+license = "Original hack: no license specified; see CREDITS.md"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "typos"
+name = "Text Corrections"
+description = "Correct Homing Torpedo in the weapon-acquisition screen and ending enemy roll."
+group = "Localization"
+default_enabled = true
+
+[[plugin]]
+feature = "typos"
+id = "megaman-x.complete.typos"

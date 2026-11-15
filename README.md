@@ -151,6 +151,12 @@ cost 1 HP in total. Individual hits can cause no HP loss while retaining their
 normal hurt reaction. Damage caps safely at 127 HP. Immunities and instant-death
 hazards keep their native behavior. Save states and rewind preserve fractions.
 
+Six [Complete Edition mods](docs/complete-edition.md) adapt CF's retranslation,
+dialogue colours, text corrections, Hoganmer restoration, damage corrections
+and debug access. Each is enabled by default and independently switchable in
+**Mods**. During gameplay, **L + X + A** opens the practice menu. See the guide
+for controls, compatibility, and the original authors' credits.
+
 ### Which ROM?
 
 The game needs the **v1.1 (Rev 1)** cartridge dump. The original v1.0 release

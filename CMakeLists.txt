@@ -98,7 +98,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         endif()
     endif()
     add_executable(${TARGET} ${SNESRECOMP_RUNNER_SOURCES}
-        src/main.c src/mmx_startup.c src/mmx_netplay.c src/mmx_display.c ${MMX_RENDERER_SOURCE} src/mmx_render_assets.c src/mmx_wide_policy.c
+        src/main.c src/mmx_complete.c src/mmx_complete_debug.c src/mods/mmx_complete_plugin.c src/mmx_startup.c src/mmx_netplay.c src/mmx_display.c ${MMX_RENDERER_SOURCE} src/mmx_render_assets.c src/mmx_wide_policy.c
         src/mmx_00.c src/gen_stubs.c src/mmx_cpu_infra.c src/mmx_rtl.c
         src/mmx_spc_player.c src/mmx_replay.c src/mods/mmx_diagnostics_plugin.c
         src/mmx_damage.c src/mods/mmx_damage_plugin.c
@@ -197,6 +197,16 @@ add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(mmx_complete_data_test tests/mmx_complete_data_test.c src/mmx_complete.c)
+    target_include_directories(mmx_complete_data_test PRIVATE src)
+    if(MSVC)
+        target_compile_options(mmx_complete_data_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_complete_data_test PRIVATE -UNDEBUG)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        add_test(NAME mmx_complete_data COMMAND mmx_complete_data_test "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+    endif()
     add_executable(mmx_damage_test tests/mmx_damage_test.c src/mmx_damage.c)
     target_include_directories(mmx_damage_test PRIVATE src)
     add_test(NAME mmx_damage_multipliers COMMAND mmx_damage_test)
@@ -369,6 +379,15 @@ if(TARGET mmx_state_tests)
     set_property(TARGET mmx_state_tests PROPERTY SOURCES
         tests/mmx_adaptive_state_test.c ${mmx_state_sources})
     if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set(complete_test_dir "${CMAKE_CURRENT_BINARY_DIR}/complete-runtime")
+        file(MAKE_DIRECTORY "${complete_test_dir}")
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded/" DESTINATION "${complete_test_dir}/catalog")
+        add_test(NAME mmx_complete_runtime
+            COMMAND ${CMAKE_COMMAND} -E env SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=dummy
+                MMX_REPLAY_RECORD=0 MMX_COMPLETE_TEST=1
+                $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_complete_runtime PROPERTIES
+            WORKING_DIRECTORY "${complete_test_dir}" LABELS "rom;complete-edition")
         set(damage_test_dir "${CMAKE_CURRENT_BINARY_DIR}/damage-runtime")
         file(MAKE_DIRECTORY "${damage_test_dir}")
         file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded/" DESTINATION "${damage_test_dir}/catalog")

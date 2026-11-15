@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.complete.debug"
+version = "1.0.0"
+name = "Complete Edition: Complete Edition Debug Menu"
+author = "CF; MottZilla; native integration by mstan"
+description = "During gameplay hold L + X + A. Up/Down selects; Y sets or activates; B clears; Start returns. Includes upgrades, refill, free scroll, restart, ghost mode and the stock map editor. In the stock editor, L + R + X returns."
+license = "Original hack: no license specified; see CREDITS.md"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "debug"
+name = "Complete Edition Debug Menu"
+description = "During gameplay hold L + X + A. Up/Down selects; Y sets or activates; B clears; Start returns. Includes upgrades, refill, free scroll, restart, ghost mode and the stock map editor. In the stock editor, L + R + X returns."
+group = "Developer"
+default_enabled = true
+
+[[plugin]]
+feature = "debug"
+id = "megaman-x.complete.debug"

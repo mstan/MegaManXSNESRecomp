@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.complete.colours"
+version = "1.0.0"
+name = "Complete Edition: Character Dialogue Colours"
+author = "CF"
+description = "Give each speaker the dialogue colour chosen by Complete Edition. Works with either script."
+license = "Original hack: no license specified; see CREDITS.md"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "colours"
+name = "Character Dialogue Colours"
+description = "Give each speaker the dialogue colour chosen by Complete Edition. Works with either script."
+group = "Localization"
+default_enabled = true
+
+[[plugin]]
+feature = "colours"
+id = "megaman-x.complete.colours"

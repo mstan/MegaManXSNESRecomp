@@ -23,6 +23,7 @@
 #include "mmx_default_config.h"
 #include "mmx_netplay.h"
 #include "mmx_startup.h"
+#include "mmx_complete.h"
 #include "mod_runtime.h"
 #include "mmx_coop_trace.h"
 #include "mmx_coop.h"
@@ -63,15 +64,19 @@ static bool s_composed_hud;
 static bool s_composed_split;
 #endif
 static bool MmxLocalSplit(void) {
-  return !MMX_VARIANT_JP && !MmxNetplayActive() &&
+  return !MMX_VARIANT_JP && !MmxNetplayActive() && !MmxCompleteDebugMapActive() &&
       MmxCoopEnabled() && MmxCoopViewsLocalSplit();
 }
 static void MmxRomLoaded(const uint8_t *rom, size_t size) {
+  MmxCompleteBindRom(NULL, 0); /* Forget the old machine before its cartridge is freed. */
   if ((size & 0x7fff) == 512) { rom += 512; size -= 512; }
   MmxRendererSetRom(rom, size);
 }
 
 static void MmxPrepareFrame(int dw, int dh, int *w, int *h) {
+  if (MmxCompleteDebugMapActive()) {
+    g_mmx_custom_renderer=false;*w=256;*h=224;return;
+  }
   bool split=MmxLocalSplit();
   /* A room has one logical field. Window size and each peer's offline pixel
    * preference cannot widen it. The offline setting is never overwritten. */
@@ -111,7 +116,9 @@ static void MmxBeforeFrame(void) {
 #if SNESRECOMP_TRACE
   MmxArmorDebugHostFrame();
 #endif
-  if(!MmxReplayPlaying()) {
+  if (MmxCompleteDebugMapActive()) {
+    MmxCoopViewsSetActive(false);MmxRendererSetPeerView(-1);
+  } else if(!MmxReplayPlaying()) {
 #if SNESRECOMP_NET
   bool online=snes_netplay_active() && MmxCoopEnabled() && MmxCoopViewsIndependent();
   MmxCoopViewsSetActive(online || MmxLocalSplit());
@@ -125,8 +132,7 @@ static void MmxBeforeFrame(void) {
   if (g_snes->cart) {
     MmxZeroSetCollisionRom(g_snes->cart->rom, g_snes->cart->romSize);
     MmxWeaponsCollisionRom(g_snes->cart->rom, g_snes->cart->romSize);
-    MmxCoopHostFrame();
-    MmxBossRushHostFrame();
+    if (!MmxCompleteDebugMapActive()) {MmxCoopHostFrame();MmxBossRushHostFrame();}
   }
   MmxRendererHoldFrame(MmxCoopTransitionActive());
   if (g_mmx_custom_renderer) MmxRendererLatchSprites();
@@ -197,6 +203,10 @@ static int MmxDrawFrame(uint8_t *dst, size_t pitch, const uint8_t *field,
                         int w, int h, double alpha) {
   (void)alpha;
   uint32_t *output=s_composed_pixels;
+  if (MmxCompleteDebugDraw(output, w, h, g_ram)) {
+    RtlWidescreenPresent(dst, pitch, (const uint8_t *)output, w, h);
+    return 1;
+  }
   if (!g_mmx_custom_renderer) {
     /* The overlay never enables the compositor: that also widens culling
      * and spawn policy, which would make a drawing aid change the game. */

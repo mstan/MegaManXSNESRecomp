@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.complete.hoganmer"
+version = "1.0.0"
+name = "Complete Edition: Hoganmer Shieldless Behaviour"
+author = "CF; PowerPanda (damage disassembly)"
+description = "Charged Rolling Shield breaks Hoganmer's shield and activates its original shieldless AI."
+license = "Original hack: no license specified; see CREDITS.md"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "hoganmer"
+name = "Hoganmer Shieldless Behaviour"
+description = "Charged Rolling Shield breaks Hoganmer's shield and activates its original shieldless AI."
+group = "Gameplay"
+default_enabled = true
+
+[[plugin]]
+feature = "hoganmer"
+id = "megaman-x.complete.hoganmer"

@@ -1,3 +1,4 @@
+#include "mmx_complete.h"
 #include "mmx_rtl.h"
 #include "mmx_wide_policy.h"
 #include "mmx_renderer.h"
@@ -369,7 +370,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 26u /* fractional damage accumulation */
+#define MMX_SAV_CHUNK_VERSION 27u /* Complete Edition practice input and native editor mode */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -406,6 +407,7 @@ static MmxCoopState g_load_coop;
 static MmxKncBugfixState g_load_knc_bugfix;
 static MmxArmorState g_load_armor;
 static MmxDamageState g_load_damage;
+static MmxCompleteDebugState g_load_complete_debug;
 static MmxCoopViewWorldState g_load_views;
 static MmxCoopViewBoundsState g_load_view_bounds;
 static uint8_t g_load_zero_extension[MMX_ZERO_EXTENSION_STATE_BYTES];
@@ -474,6 +476,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&armor,sizeof(armor));
   MmxDamageState damage=MmxDamageGetState();
   sli->func(sli,&damage,sizeof(damage));
+  MmxCompleteDebugState complete_debug=MmxCompleteDebugGetState();
+  sli->func(sli,&complete_debug,sizeof(complete_debug));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -487,6 +491,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_knc_bugfix,0,sizeof(g_load_knc_bugfix));
   memset(&g_load_armor,0,sizeof(g_load_armor));
   memset(&g_load_damage,0,sizeof(g_load_damage));
+  memset(&g_load_complete_debug,0,sizeof(g_load_complete_debug));
   memset(&g_load_views,0,sizeof(g_load_views));
   memset(&g_load_view_bounds,0,sizeof(g_load_view_bounds));
   memset(g_load_zero_extension,0,sizeof(g_load_zero_extension));
@@ -580,7 +585,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
     size_t expected=(extension?sizeof(g_load_zero_extension):0)+(rush?rush_bytes:0)+
         (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0)+
         (g_load_chunk.version>=24?sizeof(g_load_armor):0)+
-        (g_load_chunk.version>=26?sizeof(g_load_damage):0);
+        (g_load_chunk.version>=26?sizeof(g_load_damage):0)+
+        (g_load_chunk.version>=27?sizeof(g_load_complete_debug):0);
     if(remaining!=expected) g_load_chunk_ok=0;
     if(g_load_chunk_ok && extension)
       sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
@@ -615,6 +621,13 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
     else {
       sli->func(sli,&g_load_damage,sizeof(g_load_damage));
       if(!MmxDamageValidState(&g_load_damage))g_load_chunk_ok=0;
+    }
+  }
+  if(g_load_complete && g_load_chunk_ok && g_load_chunk.version>=27) {
+    if(RtlStateBytesRemaining(sli)<sizeof(g_load_complete_debug))g_load_chunk_ok=0;
+    else {
+      sli->func(sli,&g_load_complete_debug,sizeof(g_load_complete_debug));
+      if(!MmxCompleteDebugValidState(&g_load_complete_debug))g_load_chunk_ok=0;
     }
   }
   if (!g_load_chunk_ok)
@@ -655,6 +668,7 @@ void MmxOnStateLoaded(uint32_t version) {
   MmxZeroSetState(g_load_zero);
   MmxArmorSetState(g_load_armor);
   MmxDamageSetState(complete?&g_load_damage:NULL);
+  MmxCompleteDebugSetState(complete?&g_load_complete_debug:NULL);
   if (complete) MmxZeroExtLoadState(g_load_zero_extension);
   MmxWeaponsSetState(g_load_weapons);
   MmxWeaponsSetCombatState(g_load_weapon_combat);
@@ -1090,6 +1104,7 @@ void RunOneFrameOfGame(void) {
     }
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2002, "before_Internal");
+  if (MmxCompleteDebugFrame(g_ram,RtlGetPadState(0))) return;
   if(MmxArmorEnabled()) {
     uint16_t pad=RtlGetPadState(0);bool available=!MmxZeroActive();
     if(MmxCoopEnabled()) {
@@ -2088,6 +2103,7 @@ static void MmxWideStateApply(bool loaded) {
  * recovers (GitHub #45). Runs on the main fiber, never inside a slot fiber,
  * so every slot fiber can be deleted here. */
 void MmxOnHardwareReset(void) {
+  MmxCompleteDebugReset();
   MmxDamageClearState();
   MmxArmorResetState();
   MmxBossRushReset();MmxBossRushAudioReset();

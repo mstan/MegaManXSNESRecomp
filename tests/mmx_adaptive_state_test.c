@@ -1901,6 +1901,8 @@ static void render_rollback_checks(uint8 *start, uint8 *expected, uint8 *actual,
   puts("MMX RENDER ROLLBACK CHECKS PASSED");
 }
 
+#include "mmx_complete_runtime_test.inc"
+
 int main(int argc, char **argv) {
   setvbuf(stdout,NULL,_IONBF,0);
   check(argc == 2 || argc == 3, "ROM supplied");
@@ -2001,6 +2003,7 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
+  if (getenv("MMX_COMPLETE_TEST")) { complete_runtime_checks(argv[1]); return 0; }
   if (getenv("MMX_DAMAGE_TEST")) { damage_runtime_checks(argv[1]); return 0; }
   if (getenv("MMX_WEAKNESS_TEST")) {
     weapon_weakness_checks();

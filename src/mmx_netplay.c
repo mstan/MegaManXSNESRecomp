@@ -4,6 +4,7 @@
 #include "mmx_coop.h"
 #include "mmx_weapons.h"
 #include "mmx_armor.h"
+#include "mmx_complete.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -23,6 +24,16 @@ static char s_error[512];
 int MmxNetplayActive(void) { return s_active; }
 
 int MmxNetplayReady(char *reason, size_t cap) {
+  static const char *const complete_keys[] = {"script","colours","typos","hoganmer","damage","debug"};
+  static const char *const complete_names[] = {"Retranslated Dialogue","Character Dialogue Colours",
+      "Text Corrections","Hoganmer Shieldless Behaviour","Consistent Buster and Hadouken Damage","Complete Edition Debug Menu"};
+  for (unsigned i=0;i<MMX_COMPLETE_COUNT;++i) {
+    char package[96];snprintf(package,sizeof(package),"megaman-x.complete.%s",complete_keys[i]);
+    if (snes_mod_runtime_feature_enabled_c(package,complete_keys[i]) && !MmxCompleteEnabled((MmxCompleteFeature)i)) {
+      snprintf(reason,cap,"%s could not activate. Check the log for an overlapping ROM-data mod.",complete_names[i]);
+      return 0;
+    }
+  }
   if(snes_mod_runtime_feature_enabled_c("megaman-x.armor","armor") && !MmxArmorEnabled()) {
     snprintf(reason,cap,"The selected X armor could not load. Check its source ROM and cache directory.");
     return 0;

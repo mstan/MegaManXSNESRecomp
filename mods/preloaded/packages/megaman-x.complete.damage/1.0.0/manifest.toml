@@ -1,0 +1,24 @@
+format_version = 1
+id = "megaman-x.complete.damage"
+version = "1.0.0"
+name = "Complete Edition: Consistent Buster and Hadouken Damage"
+author = "CF; PowerPanda (damage disassembly)"
+description = "Apply Complete Edition's two buster damage corrections and let Hadouken hit Wolf Sigma. Existing damage multipliers still apply."
+license = "Original hack: no license specified; see CREDITS.md"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "damage"
+name = "Consistent Buster and Hadouken Damage"
+description = "Apply Complete Edition's two buster damage corrections and let Hadouken hit Wolf Sigma. Existing damage multipliers still apply."
+group = "Gameplay"
+default_enabled = true
+
+[[plugin]]
+feature = "damage"
+id = "megaman-x.complete.damage"
