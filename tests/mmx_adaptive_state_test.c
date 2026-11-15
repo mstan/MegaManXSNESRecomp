@@ -1902,6 +1902,7 @@ static void render_rollback_checks(uint8 *start, uint8 *expected, uint8 *actual,
 }
 
 #include "mmx_complete_runtime_test.inc"
+#include "mmx_complete_review.inc"
 
 int main(int argc, char **argv) {
   setvbuf(stdout,NULL,_IONBF,0);
@@ -2003,6 +2004,7 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
+  if (getenv("MMX_COMPLETE_REVIEW_OUT")) { complete_review_prepare(argv[1]); return 0; }
   if (getenv("MMX_COMPLETE_TEST")) { complete_runtime_checks(argv[1]); return 0; }
   if (getenv("MMX_DAMAGE_TEST")) { damage_runtime_checks(argv[1]); return 0; }
   if (getenv("MMX_WEAKNESS_TEST")) {
