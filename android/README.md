@@ -1,6 +1,6 @@
 # Mega Man X for Android
 
-[Download the Android APK](https://github.com/mstan/MegaManXSNESRecomp/releases/tag/v2.3.13-android.1) | [Desktop release](https://github.com/mstan/MegaManXSNESRecomp/releases/tag/v2.3.13)
+[Download the Android APK](https://github.com/mstan/MegaManXSNESRecomp/releases/tag/v2.3.13) | [Desktop release](https://github.com/mstan/MegaManXSNESRecomp/releases/tag/v2.3.13)
 
 The Android APK accompanies the desktop release. Android 9 or newer, ARM64 or
 x86-64, with OpenGL ES 2.0. No ROM is included. Import an unmodified Mega Man X
