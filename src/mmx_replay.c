@@ -372,12 +372,14 @@ static uint32_t playback_begin(uint32_t inputs) {
 }
 static uint32_t record_begin(uint32_t inputs) {
   static int env_record=-1;
-  /* Automatic capture must also work after an upgrade with saved Developer
-   * options disabled. MMX_REPLAY_RECORD=0 opts out of this default; explicitly
-   * enabled diagnostic mods can still request a capture. */
-  if(env_record<0) { const char *e=getenv("MMX_REPLAY_RECORD"); env_record=!e || *e!='0'; }
-  if(failed || finished) return inputs;
-  if(!enabled && !env_record && !g_mmx_coop_trace) return inputs;
+  /* Fresh settings enable the visible diagnostics mod. Its saved choice
+   * controls recording; explicit overrides support mobile settings and QA. */
+  if(env_record<0) {
+    const char *e=getenv("MMX_REPLAY_RECORD");
+    env_record=(!e || !*e) ? 0 : (*e=='0' ? 2 : 1);
+  }
+  if(failed || finished || env_record==2) return inputs;
+  if(!enabled && env_record!=1 && !g_mmx_coop_trace) return inputs;
   const char *writer_error=SnesReplayWriterError(writer);
   if(writer_error) {error(writer_error);return inputs;}
   if(snes_runahead_active() || RtlSpeculativeFrame()) {

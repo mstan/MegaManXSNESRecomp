@@ -1,9 +1,9 @@
 format_version = 1
 id = "megaman-x.developer.tier2-diagnostics"
 version = "1.0.0"
-name = "Mega Man X Tier 2 Diagnostics"
+name = "Crash diagnostics and replay"
 author = "mstan"
-description = "Writes tier-2 interpreter coverage JSON and JSONL diagnostics for developer promotion work, and netplay connection diagnostics."
+description = "Record gameplay inputs and checkpoints to help diagnose crashes and other problems."
 license = "MIT"
 resolver = "declarative"
 save_compatibility = "shared"
@@ -14,10 +14,10 @@ rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
 
 [[feature]]
 id = "tier2-diagnostics"
-name = "Tier 2 diagnostics"
-description = "Add tier2_mmx_*.json and .jsonl coverage files and saves/netplay/net_diag.jsonl connection logs. Replay diagnostics already record by default in logs/mmx-replay-*; include their checkpoint and settings sidecars. Disable run-ahead while recording."
-group = "Developer"
-default_enabled = false
+name = "Crash diagnostics and replay"
+description = "Record gameplay inputs and checkpoints independently of presentation mods. Turn this off to stop automatic recordings; your choice is remembered."
+group = "Diagnostics"
+default_enabled = true
 
 [[plugin]]
 feature = "tier2-diagnostics"

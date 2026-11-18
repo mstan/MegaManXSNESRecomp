@@ -35,7 +35,6 @@ static void mmx_tier2_diagnostics_activate(void) {
   mmx_enable_netplay_diagnostics();
 }
 static void mmx_coop_diagnostics_activate(void) {
-  MmxReplayEnable(true);
   MmxCoopSetDiagnosticsEnabled(true);
 }
 static void mmx_hitbox_overlay_activate(void) {
