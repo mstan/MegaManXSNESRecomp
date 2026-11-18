@@ -1,0 +1,10 @@
+<resources>
+ <style name="MegaManXTheme" parent="android:style/Theme.Material.NoActionBar">
+  <item name="android:colorAccent">#6CE1E9</item>
+  <item name="android:colorControlActivated">#6CE1E9</item>
+  <item name="android:windowBackground">#091421</item>
+  <item name="android:navigationBarColor">#091421</item>
+  <item name="android:statusBarColor">#091421</item>
+  <item name="android:fontFamily">sans</item>
+ </style>
+</resources>

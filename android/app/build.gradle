@@ -1,0 +1,49 @@
+plugins { id 'com.android.application' }
+
+def gameVersion = '2.3.13-android.1'
+def nativeArgs = ['-DANDROID_STL=c++_static', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON',
+                  '-DBUILD_TESTING=OFF', '-DCMAKE_BUILD_TYPE=Release']
+['SNESRECOMP_ROOT','RECOMP_UI_ROOT','MMX_GEN_DIR','MMX_SABER_SFX_CACHE',
+ 'SNESRECOMP_RECOMP_NET_ROOT','SNESRECOMP_RBENGINE_ROOT','Python3_EXECUTABLE'].each { name ->
+    if (System.getenv(name)) nativeArgs.add('-D' + name + '=' + System.getenv(name).replace('\\','/'))
+}
+
+android {
+    namespace 'org.retroporting.megamanx'
+    compileSdk 35
+    ndkVersion '27.1.12297006'
+    buildFeatures { buildConfig true }
+    defaultConfig {
+        applicationId 'org.retroporting.megamanx'
+        minSdk 28
+        targetSdk 35
+        versionCode 2031301
+        versionName gameVersion
+        externalNativeBuild { cmake {
+            arguments(*nativeArgs)
+            abiFilters(*((project.findProperty('abis') ?: 'arm64-v8a,x86_64').split(',')))
+            targets 'MegaManXSNESRecomp'
+        } }
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    externalNativeBuild { cmake { path '../../CMakeLists.txt'; version '3.22.1' } }
+    sourceSets.main.java.srcDir '../external/SDL/android-project/app/src/main/java'
+    signingConfigs {
+        release {
+            if (System.getenv('MMX_KEYSTORE')) {
+                storeFile file(System.getenv('MMX_KEYSTORE'))
+                storePassword System.getenv('MMX_STORE_PASSWORD')
+                keyAlias System.getenv('MMX_KEY_ALIAS')
+                keyPassword System.getenv('MMX_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+    }
+    lint { abortOnError true; lintConfig file('lint.xml') }
+}
+dependencies {
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'junit:junit:4.13.2'
+}

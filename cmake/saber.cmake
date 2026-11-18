@@ -29,6 +29,7 @@ set(_saber_wave_test_cache_dir "${_saber_cache_dir}")
 file(GLOB _saber_sfx_inputs CONFIGURE_DEPENDS
     "${_saber_sfx_source_dir}/*.ogg")
 
+if(NOT ANDROID)
 add_executable(mmx_saber_sfx_convert
     "${_saber_sfx_converter_source}" "${_saber_sfx_codec_source}"
     "${_saber_sfx_vorbis_source}")
@@ -39,6 +40,7 @@ if(NOT WIN32)
     target_link_libraries(mmx_saber_sfx_convert PRIVATE m)
 endif()
 
+endif()
 # The donor art and sound are tracked in the repository and the plugin is
 # always compiled in, so missing inputs mean a broken checkout. Fail the build
 # rather than ship an executable whose Saber Zero cannot load.
@@ -47,6 +49,13 @@ if(NOT (EXISTS "${_saber_sfx_source_dir}/saber_1.ogg" AND
         EXISTS "${_saber_sfx_source_dir}/saber_3.ogg" AND _saber_sfx_inputs))
     message(FATAL_ERROR "Saber Zero sound sources missing from ${_saber_sfx_source_dir}")
 endif()
+if(ANDROID)
+    set(MMX_SABER_SFX_CACHE "" CACHE FILEPATH "Host-generated Saber Zero sound cache")
+    if(NOT EXISTS "${MMX_SABER_SFX_CACHE}")
+        message(FATAL_ERROR "Set MMX_SABER_SFX_CACHE to the verified host-generated cache")
+    endif()
+    configure_file("${MMX_SABER_SFX_CACHE}" "${_saber_sfx_cache}" COPYONLY)
+else()
 add_custom_command(
     OUTPUT "${_saber_sfx_cache}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${_saber_cache_dir}"
@@ -56,6 +65,7 @@ add_custom_command(
     DEPENDS mmx_saber_sfx_convert ${_saber_sfx_inputs}
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     VERBATIM)
+endif()
 add_custom_target(saber_sfx_cache DEPENDS "${_saber_sfx_cache}")
 
 # The tracked donor sheets build the same deterministic v1 sidecars as the old
@@ -67,6 +77,15 @@ if(NOT (EXISTS "${_saber_source_dir}" AND _saber_donor_files AND
         EXISTS "${_saber_manifest}" AND EXISTS "${_ride_manifest}"))
     message(FATAL_ERROR "Saber Zero donor sprites or manifests missing from ${_saber_source_dir}")
 endif()
+if(ANDROID)
+    get_filename_component(_android_host_cache "${MMX_SABER_SFX_CACHE}" DIRECTORY)
+    foreach(_cache saber-v1.bin ride-zero-v1.bin)
+        if(NOT EXISTS "${_android_host_cache}/${_cache}")
+            message(FATAL_ERROR "Missing verified host-generated cache ${_cache}")
+        endif()
+        configure_file("${_android_host_cache}/${_cache}" "${_saber_cache_dir}/${_cache}" COPYONLY)
+    endforeach()
+else()
 add_custom_command(
     OUTPUT "${_saber_cache}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${_saber_cache_dir}"
@@ -87,6 +106,7 @@ add_custom_command(
     DEPENDS "${_saber_converter}" "${_ride_manifest}" ${_saber_donor_files}
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     VERBATIM)
+endif()
 add_custom_target(saber_asset_caches DEPENDS "${_saber_cache}" "${_ride_cache}")
 
 # Compile the three donor-built sidecars into every target that links the

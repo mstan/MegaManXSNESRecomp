@@ -453,6 +453,10 @@ int MMX_DESKTOP_ENTRY(int argc, char **argv) {
   MmxArmorSetBusterQuery(MmxArmorBusterSelected);
   MmxArmorSetActorQuery(MmxCoopActorIsX);
   MmxArmorSetBodyQuery(MmxArmorBody);
+#ifdef __ANDROID__
+  extern void MmxAndroidPrepare(void);
+  MmxAndroidPrepare();
+#endif
   MmxStartupLogging();
   for(int arg=1;arg+1<argc;++arg)
     if(!strcmp(argv[arg],"--config")) MmxReplaySetConfigPath(argv[arg+1]);

@@ -28,6 +28,14 @@ jump, and an air dash, or [Saber Zero](#saber-zero) by RaphaelAzev.
 [Download](https://github.com/mstan/MegaManXSNESRecomp/releases/latest) |
 [Getting started](#quick-start-pre-built-release) | [Netplay setup](docs/netplay.md)
 
+## Android
+
+A native Android APK is available alongside the desktop release, with the classic
+X campaign, optional Boss Rush, touch controls and Fit to screen by default.
+Import your own unmodified Mega Man X (USA) (Rev 1) ROM. See
+[Android downloads and setup](android/README.md) for platform scope and build details.
+The desktop release continues to provide the full mod catalog and online play.
+
 ## Saber Zero
 
 **Saber Zero** is contributed by [RaphaelAzev](https://github.com/RaphaelAzev),

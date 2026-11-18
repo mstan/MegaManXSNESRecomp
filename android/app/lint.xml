@@ -1,0 +1,12 @@
+<lint>
+    <!-- SDL gates Bluetooth HID initialization on the runtime permission in
+         HIDDeviceManager.initializeBluetooth. Its asynchronous device callbacks
+         inherit that gate; lint cannot follow it across the vendor classes.
+         This app uses Android's paired gamepad input and requests no Bluetooth
+         discovery permission. SDL microphone capture is likewise never enabled. -->
+    <issue id="MissingPermission">
+        <ignore path="../external/SDL/android-project/app/src/main/java/org/libsdl/app/HIDDeviceBLESteamController.java" />
+        <ignore path="../external/SDL/android-project/app/src/main/java/org/libsdl/app/HIDDeviceManager.java" />
+        <ignore path="../external/SDL/android-project/app/src/main/java/org/libsdl/app/SDLAudioManager.java" />
+    </issue>
+</lint>

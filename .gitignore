@@ -127,3 +127,7 @@ ghidra/*
 !/assets/saber-zero/sprites/*.png
 !/assets/saber-zero/sfx/
 !/assets/saber-zero/sfx/*.ogg
+
+/private-android-inputs/
+
+/qa/

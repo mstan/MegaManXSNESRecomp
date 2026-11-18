@@ -19,6 +19,10 @@ static void mmx_widescreen_reset(void) {
 }
 
 static void mmx_widescreen_activate(void) {
+#ifdef __ANDROID__
+  extern int MmxAndroidWide(void);
+  if(!MmxAndroidWide()) return;
+#endif
   g_mmx_custom_renderer = true;
   g_mmx_custom_aspect = MMX_ASPECT_ADAPTIVE;
   g_mmx_custom_hud = true;
@@ -34,6 +38,10 @@ static void mmx_widescreen_activate(void) {
       if (!strcmp(option.value, "32:9")) g_mmx_custom_aspect = MMX_ASPECT_32_9;
     }
   }
+#endif
+#ifdef __ANDROID__
+  extern int MmxAndroidAspect(void);
+  g_mmx_custom_aspect = MmxAndroidAspect();
 #endif
   MmxDisplay_SetWidescreenEnabled(true);
 }
