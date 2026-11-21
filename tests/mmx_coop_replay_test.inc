@@ -43,7 +43,7 @@ static unsigned coop_replay_y(unsigned seat) { const uint8_t *b = coop_replay_bo
 static void coop_replay_start(const char *assets) {
   check(assets && MmxZeroLoad(assets), "replay loads owned X3 Zero");
   MmxZeroRegisterHooks(); MmxCoopRegisterHooks();
-  check(MmxCoopEnable(0), "replay enables co-op with P1 as X");
+  check(MmxCoopEnable(getenv("MMX_COOP_REPLAY_ZERO_P1") ? MMX_COOP_ZERO : MMX_COOP_X), "replay enables the selected co-op roster");
   g_config.widescreen = false;
   g_mmx_custom_renderer = true;
   g_mmx_custom_view = (MmxRenderView){256, 0, 4.0 / 3.0};
@@ -75,6 +75,8 @@ static void coop_replay_probe(const char *assets, const char *path) {
   fprintf(stderr, "replay: %u ticks, %u checkpoints, %s; end P1 %u,%u P2 %u,%u\n", r.ticks, r.checks,
           diverged == UINT_MAX ? "no divergence" : "diverged",
           coop_replay_x(0), coop_replay_y(0), coop_replay_x(1), coop_replay_y(1));
+  fprintf(stderr,"replay stage=%u mode=%u/%u/%u camera=%u/%u\n",g_ram[0x1f7a],g_ram[0xd1],g_ram[0xd2],g_ram[0xd3],eagle_word(g_ram+0x1e4d),eagle_word(g_ram+0x1e50));
+  zero_capture(getenv("MMX_ZERO_TEST_CAPTURE"),".car-route.cap");
 }
 
 /* Highway after Bee Blader (tests/data/coop_highway_collapse.replay): one

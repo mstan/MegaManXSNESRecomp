@@ -65,6 +65,8 @@ static void zero_capture(const char *base, const char *suffix) {
 #include "mmx_boss_rush_runtime_test.inc"
 #include "mmx_magic_carpet_test.inc"
 #include "mmx_zero_blocks_test.inc"
+#include "mmx_coop_car_test.inc"
+#include "mmx_coop_armor_transport_test.inc"
 static void zero_motion_checks(const char *fixture) {
   const char *path = getenv("MMX_ZERO_MOTION_REFERENCE");
   if (!path) path = MMX_ZERO_MOTION_REFERENCE_DEFAULT;
@@ -2004,6 +2006,8 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
+  if (getenv("MMX_COOP_HIGHWAY_CAR_TEST")) { coop_highway_car_checks(getenv("MMX_ZERO_TEST_ASSETS")); return 0; }
+  if (getenv("MMX_COOP_ARMOR_DOOR_TEST")) { coop_armor_transport_checks(getenv("MMX_ZERO_TEST_ASSETS")); return 0; }
   if (getenv("MMX_DAMAGE_TEST")) { damage_runtime_checks(argv[1]); return 0; }
   if (getenv("MMX_WEAKNESS_TEST")) {
     weapon_weakness_checks();

@@ -1609,6 +1609,43 @@ static void zero_blink_submission(void) {
       assert(output[40*view.width+view.extra+x]==(active?0xffffffu:0));
     }
   }
+  /* Native hurt protection alternates body/armor submissions. Rebuilding
+   * an omitted center piece must not turn a hidden X into detached armor.
+   * An expanded off-screen piece has no native OAM observer and remains. */
+  ram[0xc32]=8;
+  MmxRendererReset();MmxRendererObserveObject(ram,0xe68);
+  MmxRendererLatchSprites();capture();assert(MmxRendererDraw(output,view,false));
+  for(unsigned j=0;j<3;++j) {
+    unsigned x=j==2?300:40+j*8;
+    assert(output[40*view.width+view.extra+x]==(j==2?0xffffffu:0));
+  }
+  /* The same native omission belongs to X with either co-op seat/anchor. */
+  for(unsigned current=0;current<2;++current) {
+    MmxCoopState c={0};c.initialized=1;c.current=c.anchor=(uint8_t)current;
+    for(unsigned seat=0;seat<2;++seat) {
+      c.players[seat].status=MMX_COOP_ALIVE;
+      c.players[seat].character=seat==current?MMX_COOP_X:MMX_COOP_ZERO;
+      c.players[seat].zero.active_x=seat==current;
+      c.players[seat].body[1]=2;c.players[seat].body[0x27]=16;
+    }
+    MmxRendererReset();MmxRendererObserveObject(ram,0xe68);MmxRendererLatchSprites();
+    capture();MmxRendererCoopFrame(&c);assert(MmxRendererDraw(output,view,false));
+    assert(output[40*view.width+view.extra+40]==0);
+    assert(output[40*view.width+view.extra+48]==0);
+    assert(output[40*view.width+view.extra+300]==0xffffffu);
+  }
+  MmxRendererCoopFrame(NULL);
+  /* A genuinely submitted armor piece still belongs to this OAM epoch,
+   * even after the next native update has toggled its visibility byte. */
+  ppu.oam[32]=0x2828;ppu.oam[33]=0x2000;
+  put_word(0,40);put_word(2,40);put_word(0x18,0x8000);ram[0x1a]=0x80;ram[0xf]=0x20;
+  MmxRendererReset();MmxRendererObserveObject(ram,0xc38);
+  MmxRendererRecordPiece(ram,0);MmxRendererLatchSprites();ram[0xc46]=0;
+  capture();assert(MmxRendererDraw(output,view,false));
+  assert(output[40*view.width+view.extra+40]==0xffffffu);
+  assert(output[40*view.width+view.extra+48]==0);
+  assert(output[40*view.width+view.extra+300]==0xffffffu);
+  ppu.oam[32]=0xe000;ram[0xc32]=0;
   MmxBossRushReset();
   coop_player_overlap();wide_penguin_blizzard();
   MmxZeroDisable(); g_mmx_custom_renderer = false; g_mmx_render_asset_repairs = true;
