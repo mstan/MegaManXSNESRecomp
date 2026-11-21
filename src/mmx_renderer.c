@@ -2646,6 +2646,14 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       if(coop_special && oam_match) continue;
       if(frame_rush.mode==MMX_RUSH_PLAYING && !frame.expand && s.object>=0xe68 && s.object<0x1d08 &&
           frame_rush.owner[(s.object-0xe68)/32] && !oam_match) continue;
+      /* Native hurt protection deliberately omits X and his armor on alternate
+       * OAM submissions. Reconstructed pieces are only candidates: adding a
+       * missing visible-center piece here resurrects detached armor. Test its
+       * native coordinates before reprojection so both local views retain the
+       * same omission; off-screen expanded pieces still have no OAM observer. */
+      if(stage && frame_zero.active_x && frame.ram[0xc32] &&
+          s.object>=0xba8 && s.object<0xc98 && !oam_match &&
+          s.x<256 && s.x+s.size>0 && s.y<224 && s.y+s.size>0) continue;
       /* Match original OAM before reprojection. HUD and native script panels
        * keep screen coordinates; world pieces use the selected peer origin. */
       if(stage) {s.x-=view_dx;s.y-=view_dy;}
