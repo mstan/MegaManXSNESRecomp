@@ -992,13 +992,25 @@ static bool capsule_takes_world(uint8_t *r) {
     }
   return false;
 }
+static bool sealed_arena_excludes_partner(const uint8_t *r) {
+  if(!r[0xc16]) return false;
+  unsigned left=word(r+0x1e5e),right=word(r+0x1e60);
+  if(left!=right) return false;
+  /* Miniboss introductions can seal the camera without the door/capsule
+   * flags. A partner still on the approach ledge cannot cross that wall.
+   * Reuse scene transport only for a body actually outside the sealed room;
+   * ordinary combat locks and partners already inside remain independent. */
+  unsigned x=word(state.players[state.anchor^1].body+5);
+  return x<left || x>=right+256u;
+}
 static bool scene_tick(uint8_t *r) {
   /* Capsule acquisition deliberately clears the body lock ($87:CD20).
    * $1F48 stays set through the subsequent recorded-input demonstration,
    * until $87:CE06. $1F3B clears earlier, before that demonstration starts. */
   if(!state.scene_owner && state.players[state.anchor^1].status==MMX_COOP_ALIVE &&
       (r[0xbcf]&127) && r[0xbaa]!=12 &&
-      (vile_capture(r) || r[0x1f0c] || r[0x1f23] || r[0x1f48] || (r[0xc16] && (r[0x1f31] || r[0x1f3b])))) begin_scene(r);
+      (vile_capture(r) || r[0x1f0c] || r[0x1f23] || r[0x1f48] || sealed_arena_excludes_partner(r) ||
+       (r[0xc16] && (r[0x1f31] || r[0x1f3b])))) begin_scene(r);
   /* Unified view only: a player the shared camera leaves below the screen
    * is beamed out, and returns beside the other once there is a landing.
    * Over a real pit (no floor down to the level's lowest camera position)
