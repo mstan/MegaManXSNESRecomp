@@ -10,6 +10,7 @@
 #include "mmx_knc_bugfix.h"
 #include "mmx_coop_trace.h"
 #include "mmx_replay.h"
+#include "mmx_msu1.h"
 #include "mmx_coop_view.h"
 #include "mmx_boss_rush.h"
 #include "mmx_boss_rush_audio.h"
@@ -369,7 +370,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 26u /* fractional damage accumulation */
+#define MMX_SAV_CHUNK_VERSION 27u /* local MSU playback bookmark */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -412,6 +413,7 @@ static uint8_t g_load_zero_extension[MMX_ZERO_EXTENSION_STATE_BYTES];
 static MmxBossRushState g_load_rush;
 static MmxBossRushAudioState g_load_rush_audio;
 static MmxBossRushVisualState g_load_rush_visual;
+static MmxMsu1State g_load_msu1;
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -474,6 +476,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&armor,sizeof(armor));
   MmxDamageState damage=MmxDamageGetState();
   sli->func(sli,&damage,sizeof(damage));
+  MmxMsu1State msu1=MmxMsu1GetState();
+  sli->func(sli,&msu1,sizeof(msu1));
 }
 
 void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
@@ -487,6 +491,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_knc_bugfix,0,sizeof(g_load_knc_bugfix));
   memset(&g_load_armor,0,sizeof(g_load_armor));
   memset(&g_load_damage,0,sizeof(g_load_damage));
+  memset(&g_load_msu1,0,sizeof(g_load_msu1));
   memset(&g_load_views,0,sizeof(g_load_views));
   memset(&g_load_view_bounds,0,sizeof(g_load_view_bounds));
   memset(g_load_zero_extension,0,sizeof(g_load_zero_extension));
@@ -580,7 +585,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
     size_t expected=(extension?sizeof(g_load_zero_extension):0)+(rush?rush_bytes:0)+
         (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0)+
         (g_load_chunk.version>=24?sizeof(g_load_armor):0)+
-        (g_load_chunk.version>=26?sizeof(g_load_damage):0);
+        (g_load_chunk.version>=26?sizeof(g_load_damage):0)+
+        (g_load_chunk.version>=27?sizeof(g_load_msu1):0);
     if(remaining!=expected) g_load_chunk_ok=0;
     if(g_load_chunk_ok && extension)
       sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
@@ -617,6 +623,13 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
       if(!MmxDamageValidState(&g_load_damage))g_load_chunk_ok=0;
     }
   }
+  if(g_load_complete && g_load_chunk_ok && g_load_chunk.version>=27) {
+    if(RtlStateBytesRemaining(sli)<sizeof(g_load_msu1))g_load_chunk_ok=0;
+    else {
+      sli->func(sli,&g_load_msu1,sizeof(g_load_msu1));
+      if(!MmxMsu1ValidState(&g_load_msu1))g_load_chunk_ok=0;
+    }
+  }
   if (!g_load_chunk_ok)
     fprintf(stderr, "[mmx_state] load: bad game chunk (magic=%08x ver=%u)\n",
             g_load_chunk.magic, g_load_chunk.version);
@@ -634,6 +647,8 @@ void MmxOnStateLoaded(uint32_t version) {
   MmxBossRushAudioReset();
   if(g_load_chunk_ok && g_load_complete) MmxBossRushAudioSetState(&g_load_rush_audio);
   if(!RtlIsRollbackLoad()) MmxBossRushAudioLoaded();
+  if(g_load_chunk_ok && g_load_complete && g_load_chunk.version>=27)
+    MmxMsu1StateLoaded(&g_load_msu1);
   MmxKncBugfixSetState(g_load_knc_bugfix);
   s_ws_recover_armor = g_mmx_custom_renderer && MmxWidePolicy_PrematureRideArmor(g_ram);
   if (g_mmx_custom_renderer && !g_load_native_streakers) {

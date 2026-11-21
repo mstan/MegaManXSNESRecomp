@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 2.3.13 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 2.3.14 LANGUAGES C CXX)
 # Qualified Windows x64 default; retain explicit selections and other-target floors.
 set(_MMX_RASTER_IMPL_DEFAULT "LLE")
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _MMX_RASTER_IMPL_PROCESSOR)
@@ -402,6 +402,15 @@ if(TARGET mmx_state_tests)
     set_property(TARGET mmx_state_tests PROPERTY SOURCES
         tests/mmx_adaptive_state_test.c ${mmx_state_sources})
     if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set(msu_state_test_dir "${CMAKE_CURRENT_BINARY_DIR}/msu-state-runtime")
+        file(MAKE_DIRECTORY "${msu_state_test_dir}")
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods" DESTINATION "${msu_state_test_dir}")
+        add_test(NAME mmx_msu_state_runtime
+            COMMAND $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_msu_state_runtime PROPERTIES
+            WORKING_DIRECTORY "${msu_state_test_dir}"
+            ENVIRONMENT "MMX_MSU_STATE_TEST=1;MMX_REPLAY_RECORD=0;SDL_AUDIODRIVER=dummy;SDL_AUDIO_DRIVER=dummy;SDL_VIDEODRIVER=dummy;SDL_VIDEO_DRIVER=dummy"
+            TIMEOUT 0)
         set(damage_test_dir "${CMAKE_CURRENT_BINARY_DIR}/damage-runtime")
         file(MAKE_DIRECTORY "${damage_test_dir}")
         file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded/" DESTINATION "${damage_test_dir}/catalog")

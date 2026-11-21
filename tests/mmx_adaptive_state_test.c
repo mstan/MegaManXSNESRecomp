@@ -1901,6 +1901,8 @@ static void render_rollback_checks(uint8 *start, uint8 *expected, uint8 *actual,
   puts("MMX RENDER ROLLBACK CHECKS PASSED");
 }
 
+#include "mmx_msu1_state_test.inc"
+
 int main(int argc, char **argv) {
   setvbuf(stdout,NULL,_IONBF,0);
   check(argc == 2 || argc == 3, "ROM supplied");
@@ -1997,6 +1999,7 @@ int main(int argc, char **argv) {
   MmxRendererSetRom(rom, rom_size);
   g_last_drawable_width = 1280; g_last_drawable_height = 720;
   g_ppu_render_flags = kPpuRenderFlags_NewRenderer;
+  if (getenv("MMX_MSU_STATE_TEST")) msu_state_setup(argv[1]);
   RtlRegisterGame(&kMmxGameInfo);
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
@@ -2009,6 +2012,9 @@ int main(int argc, char **argv) {
   MkDir("saves");
   size_t cap = 2u * 1024u * 1024u;
   uint8 *start = malloc(cap), *expected = malloc(cap), *actual = malloc(cap);
+  if (getenv("MMX_MSU_STATE_TEST")) {
+    msu_state_checks(argv[1],start,expected,actual,cap);return 0;
+  }
   if (getenv("MMX_RENDER_ROLLBACK_TEST")) {
     render_rollback_checks(start, expected, actual, cap); return 0;
   }
