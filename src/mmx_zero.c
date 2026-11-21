@@ -147,14 +147,20 @@ void MmxZeroDisable(void) {
   free(charge_poses); charge_poses = NULL;
   free(project_assets); project_assets = NULL;
 }
-void MmxZeroAdoptProjectAssets(MmxProjectZeroAssets *assets) {
+static void load_hud(const uint8_t hud[MMX_ZERO_HUD_BYTES]) {
+  memcpy(hud_tiles, hud, sizeof(hud_tiles));
+  for (unsigned i = 0; i < 16; ++i)
+    hud_colors[i] = (uint16_t)(word(hud + sizeof(hud_tiles) + 2 * i) & 0x7fff);
+}
+void MmxZeroAdoptProjectAssets(MmxProjectZeroAssets *assets, const uint8_t hud[MMX_ZERO_HUD_BYTES]) {
   MmxZeroDisable();
   project_assets = assets;
+  load_hud(hud);
 }
 bool MmxZeroLoad(const char *path) {
   FILE *f = path ? fopen(path, "rb") : NULL;
   if (!f) return false;
-  uint8_t header[20], palette[256], bounds[40], hud[160], anim[MMX_ZERO_ANIMATION_BYTES];
+  uint8_t header[20], palette[256], bounds[40], hud[MMX_ZERO_HUD_BYTES], anim[MMX_ZERO_ANIMATION_BYTES];
   uint8_t emission[MMX_ZERO_MUZZLE_BYTES];
   size_t size = (size_t)MMX_ZERO_POSES * MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT;
   uint8_t *data = NULL, *particles = NULL, flash[96];
@@ -193,8 +199,7 @@ bool MmxZeroLoad(const char *path) {
   memcpy(saber_bounds, bounds, sizeof(bounds));
   memcpy(animation, anim, sizeof(animation));
   memcpy(muzzle, emission, sizeof(muzzle));
-  memcpy(hud_tiles, hud, sizeof(hud_tiles));
-  for (unsigned i = 0; i < 16; ++i) hud_colors[i] = (uint16_t)(word(hud + 128 + 2 * i) & 0x7fff);
+  load_hud(hud);
   for (unsigned i = 0; i < 128; ++i) colors[i] = (uint16_t)(word(palette + 2 * i) & 0x7fff);
   return true;
 }
@@ -231,6 +236,12 @@ bool MmxZeroDeathOrbRed(const uint8_t r[0x20000], unsigned orb) {
       r[orb] && r[orb + 10] == 14 && r[orb + 2] == 0x5a;
 }
 const uint8_t *MmxZeroMenuPose(void) { return project_assets ? project_assets->body[0] : poses; }
+int MmxZeroMenuY(void) { return project_assets ? project_assets->menu_y : 152; }
+int MmxZeroProjectLifeColor(unsigned x, unsigned y) {
+  if (!project_assets || x >= 16 || y >= 16) return -1;
+  unsigned pixel = project_assets->life_head[y * 16 + x];
+  return pixel ? project_assets->colors[pixel] : -1;
+}
 static void animation_record(unsigned offset) {
   if (offset < 272 || offset + 3 > sizeof(animation) || !animation[offset] || animation[offset + 2] >= 117) {
     state.anim_valid = 0; return;
@@ -331,11 +342,6 @@ unsigned MmxZeroMuzzle(const uint8_t r[0x20000], unsigned object,
 int MmxZeroHudColor(unsigned x, unsigned y) {
   /* Original X3 tile/palette data, independent of body visibility. */
   if (!MmxZeroEnabled() || x >= 16 || y >= 16) return -1;
-  if (project_assets) {
-    /* Use the imported idle portrait's helmet inside the existing HUD slot. */
-    unsigned color = project_assets->body[0][(36 + y) * MMX_ZERO_WIDTH + 54 + x];
-    return color ? project_assets->colors[color] : -2;
-  }
   unsigned tile = (y / 8) * 2 + x / 8, shift = 7 - (x & 7);
   const uint8_t *p = hud_tiles + tile * 32 + (y & 7) * 2;
   unsigned pixel = ((p[0] >> shift) & 1) | (((p[1] >> shift) & 1) << 1) |

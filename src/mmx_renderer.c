@@ -1438,6 +1438,18 @@ static uint16_t background(const SnesRenderRegisters *p, const Raster *r, unsign
   if (tile & 0x4000) cx = size - 1 - cx;
   if (tile & 0x8000) cy = size - 1 - cy;
   unsigned number = ((tile & 1023) + cx / 8 + cy / 8 * 16) & 1023;
+  int life_color = -1;
+  if (!stage && layer == 1 && size == 8 && bpp == 4 &&
+      (tile & 0xfc00) == 0x0400 && MmxZeroUsesProjectAssets() && zero_weapons_menu() &&
+      ((number >= 0xea && number <= 0xec) || (number >= 0xfa && number <= 0xfc))) {
+    // The six native BG2 life-portrait tiles form a 24x16 cell. Use its own
+    // green backdrop and center the imported 16x16 1-Up portrait in it.
+    unsigned col = (number & 15) - 10;
+    unsigned row = number >= 0xfa;
+    life_color = MmxZeroProjectLifeColor(col * 8 + cx - 4, row * 8 + cy);
+    tile = 0x080f;
+    number = tile & 1023;
+  }
   unsigned address = (PPU_bgTileAdr(p, layer) + number * bpp * 4) & 0x7fff;
   const uint8_t *bits = stage && g_mmx_render_asset_repairs && bpp == 4 && !(frame.ram[0x1f7a] == 1 && layer == 1) ?
       MmxRenderAssetsBackgroundTile(frame.ram, asset_x, address) : NULL;
@@ -1448,6 +1460,7 @@ static uint16_t background(const SnesRenderRegisters *p, const Raster *r, unsign
     pixel = ((bits[0] >> shift) & 1) | (((bits[1] >> shift) & 1) << 1) |
         (((bits[16] >> shift) & 1) << 2) | (((bits[17] >> shift) & 1) << 3);
   } else pixel = tile_pixel(r->vram, address, cx & 7, cy & 7, bpp);
+  if (life_color >= 0) { pixel = 1; *private_color = life_color; }
   if (!pixel) return 0;
   unsigned index = (((tile >> 10) & 7) << bpp) | pixel;
   const MmxBackgroundPalette *palette = stage && g_mmx_render_asset_repairs ?
@@ -2717,7 +2730,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           zero_drawn[menu_body] = true;
           const uint8_t *body = menu_body ? MmxZeroMenuPose() : zero;
           int zx = menu_body ? 128 : (int16_t)(word(frame.ram, 0xbad) - view_camera(frame.ram,0x1e4d));
-          int zy = menu_body ? 152 : (int16_t)(word(frame.ram, 0xbb0) - view_camera(frame.ram,0x1e50)) + MmxZeroPoseOffsetY(frame.ram);
+          int zy = menu_body ? MmxZeroMenuY() : (int16_t)(word(frame.ram, 0xbb0) - view_camera(frame.ram,0x1e50)) + MmxZeroPoseOffsetY(frame.ram);
           bool pilot = !menu_body && (s.animation==0x6a || s.animation==0x6b);
           bool player_overlay = !menu_body && frame_player_overlay.active;
           const int pilot_top = MmxZeroUsesProjectAssets() ? 36 : 44;

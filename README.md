@@ -138,8 +138,9 @@ For **X1 Zero**, choose **X1 Zero (Project Zero)** under **Zero behavior** in
 **Add Zero** or **Co-op**, then select the v1.0 IPS file from the Project Zero ZIP.
 This style uses the hack's playable Zero sprite set, higher ground jump,
 and raised buster muzzle. Mega Man X supplies the combat, stages, music,
-and progression. This style needs the Mega Man X USA Rev 1 game ROM and the
-local IPS. The patch and extracted sprites stay on your device.
+and progression. X1 Zero uses the same original health badge as the other
+Zero styles. Select your Mega Man X3 USA ROM in Mods to supply that badge.
+The patch and extracted sprites stay on your device.
 
 Project Zero is by **CF**, **Falchion22**, and **Programer Peru**. Character
 art credits go to **cerberus-rack**, **brongaa12**, **Kensuyjin33**, and

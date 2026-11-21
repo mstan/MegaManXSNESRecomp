@@ -269,16 +269,20 @@ static bool load_zero(const char *package, const char *feature, const char *beha
 
   const RecompLauncherCModProvider *provider = snes_mod_runtime_launcher_provider_c();
   RecompLauncherCModResource resource = {0};
+  char patch[4096] = {0}, x3_rom[4096] = {0};
   if (provider && provider->feature_resource_get) {
-    for (int i = 0; provider->feature_resource_get(provider->ctx, package, feature, i, &resource); ++i)
-      if (!strcmp(resource.id, "project-zero-ips")) break;
+    for (int i = 0; provider->feature_resource_get(provider->ctx, package, feature, i, &resource); ++i) {
+      if (!strcmp(resource.id, "project-zero-ips")) snprintf(patch, sizeof(patch), "%s", resource.path);
+      if (!strcmp(resource.id, "x3-rom")) snprintf(x3_rom, sizeof(x3_rom), "%s", resource.path);
+    }
   }
   const Cart *cart = g_snes ? g_snes->cart : NULL;
-  const char *patch = !strcmp(resource.id, "project-zero-ips") ? resource.path : NULL;
-  MmxProjectZeroAssets *assets = MmxProjectZeroRead(patch, cart ? cart->rom : NULL,
-      cart ? cart->romImageSize : 0, error, sizeof(error));
+  uint8_t hud[MMX_ZERO_HUD_BYTES];
+  MmxProjectZeroAssets *assets = MmxSourceAssetsReadZeroHud(x3_rom, hud, error, sizeof(error)) ?
+      MmxProjectZeroRead(patch, cart ? cart->rom : NULL, cart ? cart->romImageSize : 0,
+                         error, sizeof(error)) : NULL;
   if (assets) {
-    MmxZeroAdoptProjectAssets(assets);
+    MmxZeroAdoptProjectAssets(assets, hud);
     fprintf(stderr, "[mmx-zero] X1 Zero loaded from the Project Zero IPS\n");
     return true;
   }

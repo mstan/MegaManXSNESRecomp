@@ -41,19 +41,35 @@ static void project_zero_checks(const char *rom, const char *ips) {
   check(p->feature_enable(p->ctx, package, feature, 1) &&
       p->feature_set_option(p->ctx, package, feature, "behavior", "x1"),
       "launcher offers X1 Zero");
+  const char *x3_rom = getenv("MMX_COOP_X3_ROM");
+  char error[512];
+  check(x3_rom && MmxSourceAssetsBuild(x3_rom, 3, 1, "x3-zero-reference.bin", error, sizeof(error)) &&
+      MmxZeroLoad("x3-zero-reference.bin"), "load existing X3 Zero as the HUD reference");
+  int expected_badge[16][16];
+  for (unsigned y = 0; y < 16; ++y)
+    for (unsigned x = 0; x < 16; ++x)
+      expected_badge[y][x] = MmxZeroHudColor(x, y);
+  MmxZeroDisable();
+  check(p->feature_resource_set_path(p->ctx, package, feature, "x3-rom", x3_rom),
+      "launcher accepts the shared X3 badge source");
   check(p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", "") &&
       !p->commit(p->ctx, rom) && strstr(p->last_error(p->ctx), "Project Zero v1.0 IPS"),
       "missing IPS is reported");
   check(p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", rom) &&
       !p->commit(p->ctx, rom), "a wrong IPS source is rejected");
   check(p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", ips) &&
-      p->commit(p->ctx, rom), "verified IPS launches without an X3 ROM");
+      p->commit(p->ctx, rom), "verified IPS and badge source launch X1 Zero");
 
   const unsigned stage_data = 0x376f7;
   uint8_t stock[0x100];
   memcpy(stock, g_snes->cart->rom + stage_data, sizeof(stock));
   snes_mod_runtime_activate_plugins_c();
   check(MmxZeroUsesProjectAssets() && MmxCoopEnabled() == coop, "trusted plugin activates X1 Zero");
+  bool badge_matches = true;
+  for (unsigned y = 0; y < 16; ++y)
+    for (unsigned x = 0; x < 16; ++x)
+      badge_matches &= MmxZeroHudColor(x, y) == expected_badge[y][x];
+  check(badge_matches, "X1 Zero uses the original X3 HUD badge pixel for pixel");
   check(g_snes->cart->romImageSize == 0x180000 &&
       !memcmp(stock, g_snes->cart->rom + stage_data, sizeof(stock)),
       "game still runs with stock cartridge data");
@@ -97,6 +113,33 @@ static void project_zero_checks(const char *rom, const char *ips) {
       changed += stock_pixels[i] != s_composed_pixels[i];
   check(changed > 100, "composited frame uses the imported character pixels");
   hitbox_bmp(s_composed_pixels, 256, "highway");
+
+  frame(SNES_PAD_START);
+  zero_replay(75);
+  check(g_ram[0x1f10] == 6 || g_ram[0x1f10] == 8, "Highway opens the native weapons menu");
+  check(MmxRendererDraw(s_composed_pixels, (MmxRenderView){256,0,4.0/3.0}, false),
+      "draw the X1 Zero weapons menu");
+  stock_pixels = MmxRendererStockFrame();
+  check(stock_pixels != NULL, "native weapons menu frame is available for comparison");
+  unsigned divider = 0, body = 0, life = 0;
+  for (unsigned y = 116; y < 196; ++y) {
+    for (unsigned x = 104; x < 152; ++x)
+      if (stock_pixels[y * 256 + x] != s_composed_pixels[y * 256 + x]) {
+        if (y < 133) ++divider;
+        if (y >= 141) ++body;
+      }
+    if (y >= 140 && y < 163)
+      for (unsigned x = 192; x < 216; ++x)
+        life += stock_pixels[y * 256 + x] != s_composed_pixels[y * 256 + x];
+  }
+  check(divider == 0 && body > 100, "Zero is centered below the pause-menu divider");
+  check(life > 30, "the pause menu substitutes Zero's 1-Up portrait");
+  hitbox_bmp(s_composed_pixels, 256, "pause");
+  if (getenv("MMX_ZERO_TEST_CAPTURE"))
+    check(RtlSaveSnapshot("project-zero-pause.state"), "save the opened pause menu for review");
+  frame(SNES_PAD_START);
+  zero_replay(75);
+
   check(RtlSaveSnapshot("project-zero.state") && RtlLoadSnapshot("project-zero.state") &&
       MmxZeroActive(), "current-build snapshot restores X1 Zero");
   frame(SNES_PAD_SELECT);

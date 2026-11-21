@@ -201,13 +201,13 @@ static int resource_get(void *ctx, const char *package, const char *feature,
                         int index, RecompLauncherCModResource *out) {
   if (!s_mods->feature_resource_get ||
       !s_mods->feature_resource_get(ctx, package, feature, index, out)) return 0;
-  if (zero_feature(package, feature)) {
+  if (zero_feature(package, feature) && !strcmp(out->id, "project-zero-ips")) {
     out->required = !strcmp(out->id, zero_source(package, feature));
     if (out->required && !out->path[0]) {
       out->verified = 0;
       snprintf(out->status, sizeof(out->status), "Required: select a file");
     }
-    if (!strcmp(out->id, "project-zero-ips") && out->path[0])
+    if (out->path[0])
       snprintf(out->status, sizeof(out->status), "%s",
           out->verified ? "Project Zero patch verified" : "Select the Project Zero v1.0 IPS");
   }
@@ -226,13 +226,12 @@ static int validate_zero_source(void *ctx) {
   if (!zero_selection(&package, &feature)) return 1;
   RecompLauncherCModResource resource = {0};
   for (int i = 0; resource_get(ctx, package, feature, i, &resource); ++i) {
-    if (!resource.required) continue;
-    if (resource.verified && resource.path[0]) return 1;
+    if (!resource.required || (resource.verified && resource.path[0])) continue;
     return fail(!strcmp(resource.id, "project-zero-ips") ?
         "Select the Mega Man X: Project Zero v1.0 IPS patch for X1 Zero." :
         "Select your original Mega Man X3 USA ROM for this Zero behavior.");
   }
-  return fail("The selected Zero source is missing from the bundled character mod.");
+  return 1;
 }
 static int commit(void *ctx, const char *rom) {
   s_error[0] = 0;

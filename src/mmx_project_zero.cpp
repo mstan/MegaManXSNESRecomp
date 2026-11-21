@@ -54,8 +54,8 @@ public:
     return ((p[2] & 127) << 15) | ((p[1] & 127) << 8) | p[0];
   }
 
-  void draw(unsigned group, unsigned frame, unsigned dma, unsigned upload,
-            uint8_t *pixels) const {
+  void draw_body(unsigned group, unsigned frame, unsigned dma, unsigned upload,
+                 uint8_t *pixels) const {
     std::array<uint8_t, 0x800> tiles{};
     size_t entry = dma + word(dma + upload * 2);
     for (unsigned i = 0;; ++i, entry += 5) {
@@ -69,6 +69,31 @@ public:
       if (record[4] & 128) break;
     }
 
+    draw_layout(group, frame, tiles, 0, pixels);
+  }
+
+  void read_life_head(uint8_t *head) const {
+    // Common OBJ graphics load at $6800. Group $11 pose 0 is the 1-Up.
+    constexpr unsigned record = 0x376f7 + 0x0a * 5;
+    std::array<uint8_t, 0x1000> tiles;
+    require(word(record) == tiles.size(), "Unexpected Project Zero common graphics size.");
+    size_t source = pointer(record + 2);
+    for (size_t i = 0; i < tiles.size();) {
+      const uint8_t *header = read(source, 2);
+      source += 2;
+      for (unsigned bit = 128; bit && i < tiles.size(); bit >>= 1)
+        tiles[i++] = header[0] & bit ? *read(source++, 1) : header[1];
+    }
+    std::array<uint8_t, MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT> picture{};
+    draw_layout(0x11, 0, tiles, 0x80, picture.data());
+    for (unsigned y = 0; y < 16; ++y)
+      std::copy_n(picture.data() + (56 + y) * MMX_ZERO_WIDTH + 56, 16, head + y * 16);
+  }
+
+private:
+  template<size_t Size>
+  void draw_layout(unsigned group, unsigned frame, const std::array<uint8_t, Size>& tiles,
+                   unsigned tile_base, uint8_t *pixels) const {
     size_t layout = pointer(pointer(0x68000 + group * 3) + frame * 3);
     unsigned pieces = *read(layout, 1);
     require(pieces && pieces <= 16, "Invalid Project Zero sprite layout.");
@@ -85,8 +110,8 @@ public:
           unsigned tx = p[3] & 64 ? size - 1 - dx : dx;
           unsigned ty = p[3] & 128 ? size - 1 - dy : dy;
           unsigned tile = (p[2] & 0xf0) + ((p[2] + tx / 8) & 15) + (ty / 8) * 16;
-          unsigned bits = tile * 32 + (ty & 7) * 2;
-          require(bits + 17 < tiles.size(), "Invalid Project Zero sprite tile.");
+          unsigned bits = (tile - tile_base) * 32 + (ty & 7) * 2;
+          require(tile >= tile_base && bits + 17 < tiles.size(), "Invalid Project Zero sprite tile.");
           unsigned color = 0;
           for (unsigned plane = 0; plane < 4; ++plane)
             color |= ((tiles[bits + (plane / 2) * 16 + plane % 2] >> (7 - tx % 8)) & 1) << plane;
@@ -133,10 +158,27 @@ MmxProjectZeroAssets *MmxProjectZeroRead(const char *path,
       if (pose == 2) upload = 0;
       if (pose >= 0x3f && pose <= 0x41) upload = 0x3e;
       if (pose == 0x4c) upload = 0x4b;
-      donor.draw(0, pose, kBodyDma, upload, art->body[pose]);
+      donor.draw_body(0, pose, kBodyDma, upload, art->body[pose]);
     }
     for (unsigned pose = 0; pose < MMX_PROJECT_ZERO_CAPTURE_POSES; ++pose)
-      donor.draw(0x66, pose, kCaptureDma, pose == 1 ? 0 : pose, art->capture[pose]);
+      donor.draw_body(0x66, pose, kCaptureDma, pose == 1 ? 0 : pose, art->capture[pose]);
+
+    donor.read_life_head(art->life_head);
+    require(std::any_of(std::begin(art->life_head), std::end(art->life_head),
+                        [](uint8_t color) { return color != 0; }),
+            "Missing Project Zero 1-Up graphics.");
+    // Center the visible body in the pause panel around Y=168. Gameplay and
+    // the title cursor still use the native actor's origin.
+    int top = MMX_ZERO_HEIGHT, bottom = -1;
+    for (int y = 0; y < MMX_ZERO_HEIGHT; ++y) {
+      const uint8_t *row = art->body[0] + y * MMX_ZERO_WIDTH;
+      if (std::any_of(row, row + MMX_ZERO_WIDTH, [](uint8_t color) { return color != 0; })) {
+        top = std::min(top, y);
+        bottom = y;
+      }
+    }
+    require(bottom >= top, "Missing Project Zero idle graphics.");
+    art->menu_y = 168 + 64 - (top + bottom) / 2;
 
     // X1 loads the normal buster palette through $86:8233 into CGRAM $90.
     unsigned palette = 0x30000 + (donor.word(0x30233) & 0x7fff);

@@ -57,13 +57,13 @@ label = "X1 Zero (Project Zero)"
 feature = "zero"
 id = "x3-rom"
 label = "Mega Man X3 ROM"
-description = "Required for X3 Behavior, Modern and Saber Zero."
+description = "Select your original Mega Man X3 USA ROM. X1 Zero uses its Zero health badge."
 format = "file"
 file_patterns = "*.sfc,*.smc"
 file_description = "Mega Man X3 USA ROM"
 shared_key = "megaman-x.source.x3"
 normalized_sha256 = "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7"
-required = false
+required = true
 
 [[resource]]
 feature = "zero"

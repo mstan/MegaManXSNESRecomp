@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -116,6 +117,12 @@ Pose pose(const Rom& r,unsigned group,unsigned number,const Tiles& t,bool zero=f
   return p;
 }
 Bytes menu(const Rom& r,unsigned game,unsigned resource);
+Bytes zero_hud(const Rom& r) {
+  Bytes hud = r.at(0x2c8d20,64);
+  append(hud,r.at(0x2c8de0,64));
+  append(hud,r.at(0x8cb0e0,32));
+  return hud;
+}
 Bytes zero_assets(const Rom& r) {
   Bytes out{'M','M','X','Z','E','R','O','7'};
   for (unsigned v : {128,128,64,64,117,35}) put(out,v);
@@ -135,7 +142,7 @@ Bytes zero_assets(const Rom& r) {
   for (unsigned i=0;i<16;++i) colors[160+i]=r.integer(0x8cb0e0+i*2);
   for (unsigned i=128;i<256;++i) put(out,colors[i]);
   Bytes bounds=r.at(0x86b837,40);for (unsigned i=1;i<40;i+=4) bounds[i]-=8;
-  append(out,bounds);append(out,r.at(0x2c8d20,64));append(out,r.at(0x2c8de0,64));append(out,r.at(0x8cb0e0,32));
+  append(out,bounds);append(out,zero_hud(r));
   append(out,r.at(0x3fcc74,0x474));append(out,r.at(0x399161,120));append(out,r.at(0x3991d9,76));
   const unsigned groups[][3]={{0x4a,117,0x85d6a8},{0x4b,21,0x85db47},{0x50,14,0x85e6e0}};
   for (auto& g : groups) { Tiles t;for (unsigned i=0;i<g[1];++i) { transfer(r,g[2],i,t);append(out,pose(r,g[0],i,t,true).pixels); } }
@@ -373,6 +380,18 @@ int MmxArmorAssetsBuild(const char *rom,unsigned game,const char *output,char *e
     return 1;
   } catch(const std::exception& e) {
     if(error && size) std::snprintf(error,size,"%s",e.what());
+    return 0;
+  }
+}
+int MmxSourceAssetsReadZeroHud(const char *rom, uint8_t hud[MMX_ZERO_HUD_BYTES],
+                               char *error, size_t size) {
+  try {
+    const Bytes data = zero_hud(Rom(rom, 3));
+    std::memcpy(hud, data.data(), data.size());
+    if (error && size) error[0] = 0;
+    return 1;
+  } catch (const std::exception& e) {
+    if (error && size) std::snprintf(error, size, "%s", e.what());
     return 0;
   }
 }
