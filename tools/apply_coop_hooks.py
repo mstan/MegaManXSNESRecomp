@@ -17,6 +17,8 @@ TARGETS = {0x01812e, 0x048fca, 0x0280b4, 0xd2bd, 0xd3dd, 0xd3fa, 0xd43a, 0xd457,
            0x049a02,
            # $83:8129: an empty Ride Armor's idle/boarding state; armor_board_hook.
            0x038129,
+           # Highway car roof's contact/carry pass; keep the car producer native.
+           0x01dd2d, 0x01de1c,
            # Armadillo's map-coordinate wrap must also move the stored seat.
            0x01f9b7,
            # $84:9F2F/$84:9F2A: hits on the projected player; learner_hurt_hook.
@@ -49,6 +51,13 @@ def apply(text):
         pc = int(entry[1] + entry[2],16) if entry else 0
         if entry:
             native_pc = pc if (pc & 0x7fffff) in TARGETS | OPTIONAL else 0
+        elif re.match(r'RecompReturn \w+\(CpuState \*cpu\) \{', line):
+            native_pc = 0
+        # This constructor is DIZ-named in the supported cached generator.
+        # Keep legacy routing intact; its trace supplies this entry's PC.
+        trace = re.search(r'cpu_trace_func_entry\(cpu, 0x([0-9A-Fa-f]{6}),', line)
+        if trace and (int(trace[1],16) & 0x7fffff) == 0x01dd2d:
+            native_pc = int(trace[1],16)
         if native_pc and 'g_cpu_entry_s[g_recomp_stack_top - 1] = _entry_s;' in line:
             # Run the generated prologue first: a JMP/JML caller may have
             # supplied an inherited return context. Leaving it pending lets

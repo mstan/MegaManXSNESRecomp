@@ -233,6 +233,8 @@ if(BUILD_TESTING)
     add_executable(mmx_damage_test tests/mmx_damage_test.c src/mmx_damage.c)
     target_include_directories(mmx_damage_test PRIVATE src)
     add_test(NAME mmx_damage_multipliers COMMAND mmx_damage_test)
+    add_test(NAME mmx_coop_generated_hooks
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coop_hooks.py)
     if(MSVC)
         target_compile_options(mmx_damage_test PRIVATE /UNDEBUG)
     else()

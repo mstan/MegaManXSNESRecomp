@@ -1619,6 +1619,22 @@ static void zero_blink_submission(void) {
     unsigned x=j==2?300:40+j*8;
     assert(output[40*view.width+view.extra+x]==(j==2?0xffffffu:0));
   }
+  /* The same native omission belongs to X with either co-op seat/anchor. */
+  for(unsigned current=0;current<2;++current) {
+    MmxCoopState c={0};c.initialized=1;c.current=c.anchor=(uint8_t)current;
+    for(unsigned seat=0;seat<2;++seat) {
+      c.players[seat].status=MMX_COOP_ALIVE;
+      c.players[seat].character=seat==current?MMX_COOP_X:MMX_COOP_ZERO;
+      c.players[seat].zero.active_x=seat==current;
+      c.players[seat].body[1]=2;c.players[seat].body[0x27]=16;
+    }
+    MmxRendererReset();MmxRendererObserveObject(ram,0xe68);MmxRendererLatchSprites();
+    capture();MmxRendererCoopFrame(&c);assert(MmxRendererDraw(output,view,false));
+    assert(output[40*view.width+view.extra+40]==0);
+    assert(output[40*view.width+view.extra+48]==0);
+    assert(output[40*view.width+view.extra+300]==0xffffffu);
+  }
+  MmxRendererCoopFrame(NULL);
   /* A genuinely submitted armor piece still belongs to this OAM epoch,
    * even after the next native update has toggled its visibility byte. */
   ppu.oam[32]=0x2828;ppu.oam[33]=0x2000;

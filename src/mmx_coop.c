@@ -52,8 +52,8 @@ static bool join_tick(uint8_t *r);
 static void learner_tick(uint8_t *r);
 static void learner_scene(uint8_t *r,unsigned flags);
 static bool learner_arrive(uint8_t *r,uint16_t x,uint16_t y);
-/* Registers the item routine passed into $84:AB81/AB56; see platform_hook. */
-static struct {bool valid;uint16_t d,s,a,x,y;uint8_t p,db;} platform_entry;
+/* Entry registers for the native platform contact helpers; see platform_hook. */
+static struct {bool valid;uint16_t d,s,a,x,y;uint8_t p,db,first,scratch_3a;} platform_entry;
 /* --coop-trace: observation only; see mmx_coop_trace.h. */
 static void trace_event(unsigned kind,uint32_t pc,unsigned a,unsigned b,const CpuState *cpu) {
   MmxCoopTraceEvent e={(uint32_t)snes_frame_counter,pc,cpu?cpu->S:0,cpu?cpu->D:0,
@@ -393,7 +393,7 @@ bool MmxCoopValidState(const MmxCoopState *s) {
       s->object_entry != 0xd3fa && s->object_entry != 0xd43a && s->object_entry != 0xd457 &&
       s->object_entry != 0x9d67) return false;
   if (s->contact_pass && s->contact_entry != 0x9b03 && s->contact_entry != 0x9b43 &&
-      s->contact_entry != 0xab81 && s->contact_entry != 0xab56) return false;
+      s->contact_entry != 0xab81 && s->contact_entry != 0xab56 && s->contact_entry != 0xde1c) return false;
   for (unsigned i = 0; i < 2; ++i) {
     const MmxCoopPlayer *p = &s->players[i];
     if (p->character > MMX_COOP_ZERO || p->status > MMX_COOP_FALLEN ||
@@ -2143,27 +2143,47 @@ static void object_hook(CpuState *cpu, uint32_t pc) {
  * it on the lower road, unable to move. */
 static bool platform_item(unsigned d) {
   if(d>=0xe68 && d<0x1228 && !((d-0xe68)%64)) {
-    /* Kuwanger's little lift and Highway's collapsing road. */
+    /* Kuwanger's lift, Highway's collapsing road and road-attacker roof. */
     unsigned c=g_ram[d+10];
-    return g_ram[d] && (c==0x16 || c==0x22);
+    return g_ram[d] && (c==0x16 || c==0x22 || c==0x12);
   }
   if(d<0x1628 || d>=0x1928 || (d-0x1628)%48) return false;
   unsigned c=g_ram[d+10];
   return c==0x08 || (c>=0x0e && c<=0x10) || c==0x13 || c==0x14;
 }
 /* Co-op keeps one rider bit per seat in .2C bits 0/1 and projects the current
- * seat's as bit 0 while the native helper runs. */
+ * seat's as bit 0 while the native helper runs. Road-attacker roofs use the
+ * same ownership at $81:DE1C: their car moves once; only contact/carry repeats.
+ * Their .2C stays boolean because the native producer adds it to suspension Y;
+ * the per-seat mask lives in the otherwise unused .3F of that roof actor.
+ * Each contact pass sees only its own previous rider, with the same entry and
+ * first-pass return registers. */
 static void platform_project(unsigned d) {
   g_ram[d+0x2c]=(uint8_t)((g_ram[d+0x2c]&~3u)|((state.platform_riders>>state.current)&1));
 }
+static unsigned live_car_riders(unsigned riders) {
+  for(unsigned seat=0;seat<2;++seat) {
+    const uint8_t *body=seat==state.current?g_ram+0xba8:state.players[seat].body;
+    if(state.players[seat].status!=MMX_COOP_ALIVE || !(body[0x27]&127))
+      riders&=~(1u<<seat);
+  }
+  return riders;
+}
 static void platform_hook(CpuState *cpu,uint32_t pc) {
-  if(!enabled || !state.initialized || state.menu_owner || state.scene_owner) return;
+  if(!enabled || !state.initialized) return;
   unsigned at=pc&65535,d=cpu->D;
+  if(at==0xdd3f) {
+    if(d>=0xe68 && d<0x1228 && !((d-0xe68)%64) && g_ram[d+10]==0x12)
+      g_ram[d+0x3f]=0; /* Native constructor also clears its scalar .2C. */
+    return;
+  }
+  if(state.menu_owner || state.scene_owner) return;
+  bool entry=at==0xab81 || at==0xab56 || at==0xde1c;
   if((d>=0x1628 && d<0x1928 && !((d-0x1628)%48)) || (d>=0xe68 && d<0x1228 && !((d-0xe68)%64)))
-    diagnostic_event(g_ram,cpu,pc,at==0xab81 || at==0xab56 ? "platform-enter" : "platform-return");
+    diagnostic_event(g_ram,cpu,pc,entry ? "platform-enter" : "platform-return");
   /* Slot initialization still clears .2C, and snapshots retain both riders. */
-  if(!platform_item(d)) return;
-  if(at==0xab81 || at==0xab56) {
+  if(!platform_item(d) || (at==0xde1c && g_ram[d+10]!=0x12)) return;
+  if(entry) {
     if(state.contact_pass) {
       /* Re-entry for the partner's own retry is expected; anything else
        * means a platform helper ran without its second-seat pass. */
@@ -2176,39 +2196,49 @@ static void platform_hook(CpuState *cpu,uint32_t pc) {
     if(at==0xab81) TRACE_MARK(state.current,PLATFORM);
     state.contact_entry=(uint16_t)at;state.contact_pass=1;
     state.contact_d=(uint16_t)d;state.contact_s=cpu->S;
-    state.platform_riders=g_ram[d+0x2c]&3;
+    /* Roof12 adds .2C as a scalar suspension offset before this helper.
+     * Its unused .3F is the co-op rider mask; WRAM already owns snapshots.
+     * A native reset/slot initialization clears .2C and discards old riders. */
+    state.platform_riders=at==0xde1c ?
+        live_car_riders(g_ram[d+0x2c] ? g_ram[d+0x3f]&3 : 0) : g_ram[d+0x2c]&3;
     cpu_mirrors_to_p(cpu);
     platform_entry.valid=true;platform_entry.d=(uint16_t)d;platform_entry.s=cpu->S;
     platform_entry.a=cpu->A;platform_entry.x=cpu->X;platform_entry.y=cpu->Y;
-    platform_entry.p=cpu->P;platform_entry.db=cpu->DB;
-    if(at==0xab81) platform_project(d);
+    platform_entry.p=cpu->P;platform_entry.db=cpu->DB;platform_entry.first=state.current;
+    if(at==0xab81 || at==0xde1c) platform_project(d);
     return;
   }
   if(!state.contact_pass || state.contact_d!=d || state.contact_s!=cpu->S ||
-      (state.contact_entry!=0xab81 && state.contact_entry!=0xab56)) return;
-  if(state.contact_entry==0xab81) {
+      (state.contact_entry!=0xab81 && state.contact_entry!=0xab56 && state.contact_entry!=0xde1c)) return;
+  bool riders=state.contact_entry==0xab81 || state.contact_entry==0xde1c;
+  bool car=state.contact_entry==0xde1c;
+  unsigned first=platform_entry.valid?platform_entry.first:state.anchor;
+  if(riders) {
     unsigned bit=1u<<state.current;
     state.platform_riders=(state.platform_riders&~bit)|(g_ram[d+0x2c]?bit:0);
   }
-  if(state.contact_pass==1 && state.players[state.anchor^1].status==MMX_COOP_ALIVE &&
-      (state.players[state.anchor^1].body[0x27]&127)) {
+  if(state.contact_pass==1 && state.players[first^1].status==MMX_COOP_ALIVE &&
+      (state.players[first^1].body[0x27]&127)) {
     state.contact_a=cpu->A;state.contact_x=cpu->X;state.contact_y=cpu->Y;
     state.contact_db=cpu->DB;cpu_mirrors_to_p(cpu);state.contact_p=cpu->P;
     TRACE(PLATFORM,pc,1,state.platform_riders,cpu);
-    if(state.contact_entry==0xab81) TRACE_MARK(state.anchor^1,PLATFORM);
-    MmxCoopSelect(g_ram,state.anchor^1);state.contact_pass=2;
-    if(state.contact_entry==0xab81) platform_project(d);
+    if(state.contact_entry==0xab81) TRACE_MARK(first^1,PLATFORM);
+    if(car) platform_entry.scratch_3a=g_ram[d+0x3a];
+    MmxCoopSelect(g_ram,first^1);state.contact_pass=2;
+    if(riders) platform_project(d);
     if(platform_entry.valid && platform_entry.d==d && platform_entry.s==cpu->S) {
       cpu->A=platform_entry.a;cpu->X=platform_entry.x;cpu->Y=platform_entry.y;
       cpu->DB=platform_entry.db;cpu->P=platform_entry.p;cpu_p_to_mirrors(cpu);
     }
-    interp_bridge_pre_opcode_redirect(0x840000|state.contact_entry);
+    interp_bridge_pre_opcode_redirect((car?0x810000:0x840000)|state.contact_entry);
     return;
   }
-  g_ram[d+0x2c]=state.platform_riders;
+  if(car) g_ram[d+0x3f]=(uint8_t)(state.platform_riders=live_car_riders(state.platform_riders));
+  g_ram[d+0x2c]=car ? state.platform_riders!=0 : state.platform_riders;
   TRACE(PLATFORM,pc,2,state.platform_riders,cpu);
   if(state.contact_pass==2) {
-    MmxCoopSelect(g_ram,state.anchor);
+    if(car && platform_entry.valid) g_ram[d+0x3a]=platform_entry.scratch_3a;
+    MmxCoopSelect(g_ram,first);
     cpu->A=state.contact_a;cpu->X=state.contact_x;cpu->Y=state.contact_y;
     cpu->DB=state.contact_db;cpu->P=state.contact_p;cpu_p_to_mirrors(cpu);
   }
@@ -2708,7 +2738,7 @@ void MmxCoopRegisterHooks(void) {
     interp_bridge_set_pre_opcode_hook(turrets[i],laser_target_hook);
   interp_bridge_set_pre_opcode_hook(0x889821,cart_hook);
   interp_bridge_set_pre_opcode_hook(0x889867,cart_hook);
-  const unsigned platforms[]={0x84ab81,0x84ac34,0x84ab56,0x84ab80};
+  const unsigned platforms[]={0x84ab81,0x84ac34,0x84ab56,0x84ab80,0x81de1c,0x81deb6,0x81dd3f};
   for(unsigned i=0;i<sizeof(platforms)/sizeof(platforms[0]);++i)
     interp_bridge_set_pre_opcode_hook(platforms[i],platform_hook);
   interp_bridge_set_pre_opcode_hook(0x818136, controller_hook);
