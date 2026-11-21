@@ -71,7 +71,9 @@ static void msu_state_checks(const char *rom, uint8 *start,uint8 *expected,
   check(mmx_msu1_music_command(0x17),"select saved scene music through title plugin");
   int16_t first[64],second[64];msu_state_mix(first,23);
   if(getenv("MMX_MSU_FILE_SELECTION_TEST")) {
-    check(first[0]==1000 && first[1]==-1000,"selected file owns music despite larger unrelated pack");
+    /* The title intentionally mixes at its native 0x50 music gain. */
+    check(first[0]==1000*0x50/255 && first[1]==-1000*0x50/255,
+          "selected file owns music despite larger unrelated pack");
     check(msu1_read(0x2001)==0x58,"selected file owns MSU data");
   }
   size_t n=RtlSaveSnapshotToMemory(start,cap);check(n!=0,"current-build MSU state saves");

@@ -22,9 +22,9 @@ default_enabled = false
 [[resource]]
 feature = "msu1"
 id = "pcm_pack"
-label = "MSU-1 pack file"
-description = "Select the Mega Man X .msu file. Matching <name>-<track>.pcm files are loaded from the same folder."
-format = "msu"
+label = "MSU-1 music pack"
+description = "Select the Mega Man X .msu file to use its matching <name>-<track>.pcm files. For a PCM-only pack, use Select folder."
+format = "file-or-directory"
 file_patterns = "*.msu,*.MSU"
 file_description = "MSU-1 pack"
 identity = "snes.msu1.pack"
