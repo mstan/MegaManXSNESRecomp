@@ -19,8 +19,8 @@ static void msu_state_select(const char *rom, bool enabled) {
   check(f!=NULL,"MSU test state opens");
   fprintf(f,"format_version = 1\n[[package]]\nid = \"megaman-x.enhancement.msu1\"\nversion = \"1.0.0\"\n"
       "[[feature]]\npackage_id = \"megaman-x.enhancement.msu1\"\nid = \"msu1\"\nenabled = %s\n"
-      "[[resource]]\npackage_id = \"megaman-x.enhancement.msu1\"\nfeature_id = \"msu1\"\nid = \"pcm_pack\"\npath = \"%s/audio\"\n",
-      enabled?"true":"false",root);
+      "[[resource]]\npackage_id = \"megaman-x.enhancement.msu1\"\nfeature_id = \"msu1\"\nid = \"pcm_pack\"\npath = \"%s/audio%s\"\n",
+      enabled?"true":"false",root,getenv("MMX_MSU_FILE_SELECTION_TEST")?"/test.msu":"");
   check(!fclose(f),"MSU test state writes");
   check(snes_mod_runtime_initialize_c(SNES_MOD_CATALOG_ROOT,"megaman-x-us",
       "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"),
@@ -41,6 +41,21 @@ static void msu_state_setup(const char *rom) {
     }
     check(!fclose(f),"synthetic PCM closes");
   }
+  if(getenv("MMX_MSU_FILE_SELECTION_TEST")) {
+    FILE *f=fopen("audio/test.msu","wb");check(f!=NULL,"selected MSU file opens");
+    check(fputc(0x58,f)!=EOF && !fclose(f),"selected MSU data writes");
+    for(unsigned track=7;track<=9;++track) {
+      char path[64];snprintf(path,sizeof(path),"audio/other-game-%u.pcm",track);
+      f=fopen(path,"wb");check(f!=NULL,"unrelated PCM opens");
+      const uint8_t header[]={'M','S','U','1',0,0,0,0};
+      check(fwrite(header,1,sizeof(header),f)==sizeof(header),"unrelated PCM header");
+      for(unsigned i=0;i<64;++i) {
+        const int16_t pair[2]={9000,-9000};
+        check(fwrite(pair,sizeof(pair),1,f)==1,"unrelated PCM sample");
+      }
+      check(!fclose(f),"unrelated PCM closes");
+    }
+  }
   msu_state_select(rom,true);
 }
 static void msu_state_mix(int16_t *samples,unsigned frames) {
@@ -55,6 +70,12 @@ static void msu_state_checks(const char *rom, uint8 *start,uint8 *expected,
   check(MmxRendererSaveCapture("msu-field.mmxc"),"MSU field capture saves");
   check(mmx_msu1_music_command(0x17),"select saved scene music through title plugin");
   int16_t first[64],second[64];msu_state_mix(first,23);
+  if(getenv("MMX_MSU_FILE_SELECTION_TEST")) {
+    /* The title intentionally mixes at its native 0x50 music gain. */
+    check(first[0]==1000*0x50/255 && first[1]==-1000*0x50/255,
+          "selected file owns music despite larger unrelated pack");
+    check(msu1_read(0x2001)==0x58,"selected file owns MSU data");
+  }
   size_t n=RtlSaveSnapshotToMemory(start,cap);check(n!=0,"current-build MSU state saves");
   check(RtlSaveSnapshot("msu-current.sav"),"current-build MSU file saves");
   msu_state_mix(first,32);
