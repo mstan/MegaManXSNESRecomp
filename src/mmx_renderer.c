@@ -7,6 +7,7 @@
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
 #include "mmx_armor.h"
+#include "mmx_project_zero.h"
 #include "mmx_knc_bugfix.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
@@ -1887,7 +1888,7 @@ static void teleport_actor_row(const uint8_t *ram,const MmxZeroState *zero,const
   unsigned flip = ram[0xbb9] & 64;
   if (!zero->active_x) {
     const uint8_t *pixels = MmxZeroTeleportPose(pose);
-    int row = y - (sy - 8) + 64;
+    int row = y - (sy + MmxZeroPoseOffsetY(NULL)) + 64;
     if (pixels && row >= 0 && row < 128) for (int col = 0; col < 128; ++col) {
       unsigned pixel = pixels[row * 128 + col];
       int dx = x + (flip ? 63 - col : col - 64) + view.extra;
@@ -2016,11 +2017,13 @@ static void coop_partner_row(const SnesRenderRegisters *ppu,const Raster *r,int 
       body=MmxZeroPose(ram,&z);
     }
     bool pilot=ram[0xbbe]==0x6a || ram[0xbbe]==0x6b;
+    const int pilot_top = MmxZeroUsesProjectAssets() ? 36 : 44;
+    const int pilot_bottom = MmxZeroUsesProjectAssets() ? 54 : 64;
     if (pilot) {
       const uint8_t *a=sprite_arrangement(ram[0xbbe],ram[0xbbf]&127);
       if (a && a[0]) {
         int hx,hy;pilot_head_offset(a,&hx,&hy);
-        int dx=hx+5;x+=(ram[0xbb9]&64)?-dx:dx;sy+=8+hy+20;
+        int dx=hx+5;x+=(ram[0xbb9]&64)?-dx:dx;sy += 64 - pilot_top - MmxZeroPoseOffsetY(NULL) + hy;
       }
       body=MmxZeroMenuPose();blade=charge=NULL;
     }
@@ -2030,7 +2033,7 @@ static void coop_partner_row(const SnesRenderRegisters *ppu,const Raster *r,int 
      * the native cockpit art, which has no OAM here to align the sheet to. */
     bool overlay = frame_partner_overlay.active && !pilot && !cast;
     if (overlay) player_overlay_row(&frame_partner_overlay,y,x,sy,priority|0x680,view,objects,colors);
-    if (!overlay && body && row>=0 && row<128 && (!pilot || (row>=44 && row<64))) for (int col=0;col<128;++col) {
+    if (!overlay && body && row>=0 && row<128 && (!pilot || (row >= pilot_top && row < pilot_bottom))) for (int col=0;col<128;++col) {
       unsigned pixel = body[row*128+col];
       if (blade && blade[row*128+col]) pixel = blade[row*128+col];
       int dest = x + ((ram[0xbb9]&64) ? 63-col : col-64) + view.extra;
@@ -2063,7 +2066,8 @@ static void coop_partner_row(const SnesRenderRegisters *ppu,const Raster *r,int 
     if (d==0xba8 ? !ram[d+1] || !ram[d+14] :
         !ram[d] || !(armor ? ram[d+14] : ram[d+14]&128)) continue;
     if(d<0xc98 && !ram[0xbb6]) continue; /* Armor follows its owner's Sting blink. */
-    if (zero && (d==0xba8 || d<0xc98 || MmxZeroNativeChargeObject(d,ram[d+10]))) continue;
+    if (zero && (d==0xba8 || d<0xc98 ||
+        (!MmxZeroUsesProjectAssets() && MmxZeroNativeChargeObject(d,ram[d+10])))) continue;
     if (cast && d<0xc98) continue;
     if (d>=0x1228 && partner->combat.shots[(d-0x1228)/64].active) continue;
     if(MmxArmorProjectileOwned(ram,d))continue;
@@ -2716,6 +2720,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
           int zy = menu_body ? 152 : (int16_t)(word(frame.ram, 0xbb0) - view_camera(frame.ram,0x1e50)) + MmxZeroPoseOffsetY(frame.ram);
           bool pilot = !menu_body && (s.animation==0x6a || s.animation==0x6b);
           bool player_overlay = !menu_body && frame_player_overlay.active;
+          const int pilot_top = MmxZeroUsesProjectAssets() ? 36 : 44;
+          const int pilot_bottom = MmxZeroUsesProjectAssets() ? 54 : 64;
           if(pilot && !player_overlay) {
             /* X1 switches to a separate pilot group on boarding. Its pose
              * numbers are not movement poses. Keep its authored entry/walk/
@@ -2739,9 +2745,10 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
                 int hx,hy;pilot_head_offset(layout,&hx,&hy);
                 int dx=hx+5;
                 zx+=(frame.ram[0xbb9]&64)?-dx:dx;
-                zy+=8+hy+20;
+                zy += 20 + hy - MmxZeroPoseOffsetY(NULL);
               }
             }
+            zy += 44 - pilot_top;
             body=MmxZeroMenuPose();
           }
           if (player_overlay) {
@@ -2753,7 +2760,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
                                objects, object_colors);
           }
           int row = y - zy + 64;
-          if (!player_overlay && row >= 0 && row < MMX_ZERO_HEIGHT && (!pilot || (row>=44 && row<64))) {
+          if (!player_overlay && row >= 0 && row < MMX_ZERO_HEIGHT &&
+              (!pilot || (row >= pilot_top && row < pilot_bottom))) {
             const uint16_t *colors = MmxZeroColors();
             unsigned z = ((((s.attr >> 12) & 3) * 4 + 2) << 12) | 0x680;
             for (int col = 0; col < MMX_ZERO_WIDTH; ++col) {
@@ -2778,7 +2786,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         }
         continue;
       }
-      if (zero_charge) {
+      if (zero_charge && !MmxZeroUsesProjectAssets()) {
         /* Spread the original motes around Zero's taller body. Keep each
          * sparkle's pixel art and native animation, timing and visibility. */
         int cx = (int16_t)(word(frame.ram,0xbad) - view_camera(frame.ram,0x1e4d));

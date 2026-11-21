@@ -1,10 +1,12 @@
 #include "mmx_zero.h"
 #include "mmx_armor.h"
+#include "mmx_project_zero.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static uint8_t *poses;
+static MmxProjectZeroAssets *project_assets;
 static uint8_t *charge_poses;
 static uint16_t charge_colors[3][16];
 static uint16_t colors[128];
@@ -88,7 +90,7 @@ bool MmxZeroValidState(const MmxZeroState *value) {
 }
 static void assign_state(MmxZeroState s) {
   clear_state();
-  if (poses && MmxZeroValidState(&s)) state = s;
+  if (MmxZeroEnabled() && MmxZeroValidState(&s)) state = s;
   if (state.modern.enabled != modern_behavior) {
     /* Old saves start with fresh aerial actions. A changed ruleset cannot
      * inherit the other ruleset's charge combo or attack recovery. */
@@ -116,11 +118,12 @@ static unsigned legacy_charge_cap(void) {
   return 201;
 }
 
-bool MmxZeroEnabled(void) { return poses != NULL; }
-bool MmxZeroActive(void) { return poses && !state.active_x; }
-bool MmxZeroSwapping(void) { return poses && state.swap_phase; }
+bool MmxZeroEnabled(void) { return poses || project_assets; }
+bool MmxZeroActive(void) { return MmxZeroEnabled() && !state.active_x; }
+bool MmxZeroSwapping(void) { return MmxZeroEnabled() && state.swap_phase; }
+bool MmxZeroUsesProjectAssets(void) { return project_assets != NULL; }
 void MmxZeroHealthSync(const uint8_t r[0x20000]) {
-  if (!poses || !r || r[0xd1] != 2 || r[0x1f9a] < 16 || r[0x1f9a] > 32) return;
+  if (!MmxZeroEnabled() || !r || r[0xd1] != 2 || r[0x1f9a] < 16 || r[0x1f9a] > 32) return;
   unsigned max = r[0x1f9a], hp = r[0xbcf] & 127;
   if (hp > max) hp = max;
   /* Older saves have one pool. Seed both from it exactly once. All normal
@@ -131,7 +134,7 @@ void MmxZeroHealthSync(const uint8_t r[0x20000]) {
   if (state.hp[state.active_x ^ 1] > max) state.hp[state.active_x ^ 1] = (uint8_t)max;
 }
 void MmxZeroHealthRespawn(const uint8_t r[0x20000]) {
-  if (!poses || !r || r[0x1f9a] < 16 || r[0x1f9a] > 32) return;
+  if (!MmxZeroEnabled() || !r || r[0x1f9a] < 16 || r[0x1f9a] > 32) return;
   if (extension && extension->state_reset) extension->state_reset((uint8_t *)r);
   /* Called at the original stage/checkpoint HP initialization, not whenever
    * a pool happens to reach zero. Death and life loss remain native. */
@@ -142,6 +145,11 @@ void MmxZeroDisable(void) {
   MmxZeroResetState();
   free(poses); poses = NULL;
   free(charge_poses); charge_poses = NULL;
+  free(project_assets); project_assets = NULL;
+}
+void MmxZeroAdoptProjectAssets(MmxProjectZeroAssets *assets) {
+  MmxZeroDisable();
+  project_assets = assets;
 }
 bool MmxZeroLoad(const char *path) {
   FILE *f = path ? fopen(path, "rb") : NULL;
@@ -190,7 +198,7 @@ bool MmxZeroLoad(const char *path) {
   for (unsigned i = 0; i < 128; ++i) colors[i] = (uint16_t)(word(palette + 2 * i) & 0x7fff);
   return true;
 }
-const uint16_t *MmxZeroColors(void) { return colors; }
+const uint16_t *MmxZeroColors(void) { return project_assets ? project_assets->colors : colors; }
 bool MmxZeroHasChargeArt(void) { return charge_poses != NULL; }
 int MmxZeroChargeFlashPaletteIndex(const MmxZeroState *s) {
   if (!charge_poses || !s || s->active_x || s->swap_phase || s->slash ||
@@ -199,7 +207,7 @@ int MmxZeroChargeFlashPaletteIndex(const MmxZeroState *s) {
 }
 const uint16_t *MmxZeroBodyColors(const MmxZeroState *s) {
   int index = MmxZeroChargeFlashPaletteIndex(s);
-  return index < 0 ? colors + 16 : charge_colors[index];
+  return index < 0 ? MmxZeroColors() + 16 : charge_colors[index];
 }
 const uint8_t *MmxZeroChargePose(const MmxZeroState *s) {
   if (!charge_poses || !s || s->active_x || s->swap_phase || s->slash || s->burst || s->combo || s->charge < 21) return NULL;
@@ -211,7 +219,7 @@ bool MmxZeroNativeChargeObject(unsigned object, unsigned kind) {
   return object >= 0xc98 && object < 0xe18 && ((object - 0xc98) % 32) == 0 && kind == 1;
 }
 void MmxZeroDeathOrbSpawn(uint8_t r[0x20000], unsigned source, unsigned orb) {
-  if (!poses || !r || source != 0xba8 || orb < 0x1928 || orb >= 0x1d08 ||
+  if (!MmxZeroEnabled() || !r || source != 0xba8 || orb < 0x1928 || orb >= 0x1d08 ||
       (orb - 0x1928) % 32 || r[orb + 10] != 14) return;
   /* Effect $0E never uses its secondary state byte ($02). Store its owner
    * color there at allocation, before co-op projects the surviving actor.
@@ -219,10 +227,10 @@ void MmxZeroDeathOrbSpawn(uint8_t r[0x20000], unsigned source, unsigned orb) {
   r[orb + 2] = state.active_x ? 0 : 0x5a;
 }
 bool MmxZeroDeathOrbRed(const uint8_t r[0x20000], unsigned orb) {
-  return poses && r && orb >= 0x1928 && orb < 0x1d08 && !((orb - 0x1928) % 32) &&
+  return MmxZeroEnabled() && r && orb >= 0x1928 && orb < 0x1d08 && !((orb - 0x1928) % 32) &&
       r[orb] && r[orb + 10] == 14 && r[orb + 2] == 0x5a;
 }
-const uint8_t *MmxZeroMenuPose(void) { return poses; }
+const uint8_t *MmxZeroMenuPose(void) { return project_assets ? project_assets->body[0] : poses; }
 static void animation_record(unsigned offset) {
   if (offset < 272 || offset + 3 > sizeof(animation) || !animation[offset] || animation[offset + 2] >= 117) {
     state.anim_valid = 0; return;
@@ -284,8 +292,15 @@ static bool burst_emission_y(unsigned which, bool air, int *value) {
 }
 unsigned MmxZeroMuzzle(const uint8_t r[0x20000], unsigned object,
                       unsigned native_index, unsigned axis, unsigned original) {
-  if (!MmxZeroActive() || !r || object < 0x1228 || object >= 0x1428 ||
-      (object & 63) != 0x28 || axis > 1) return original;
+  if (!MmxZeroActive() || !r || object < 0x1228 ||
+      object >= 0x1428 || (object & 63) != 0x28 || axis > 1) return original;
+  if (project_assets) {
+    /* $86:BE3A is the native vertical muzzle table. Project Zero changes
+     * the standing and matching alternate firing entries. */
+    if (axis && (native_index == 0 || native_index == 0x3a))
+      return project_assets->muzzle_y[native_index != 0];
+    return original;
+  }
   unsigned pose = state.burst ? animation[state.burst_offset + 2] :
       state.anim_valid ? state.anim_pose : r[0xbbf] & 127;
   unsigned offset = pose < 117 ? muzzle[pose] : 0;
@@ -316,6 +331,11 @@ unsigned MmxZeroMuzzle(const uint8_t r[0x20000], unsigned object,
 int MmxZeroHudColor(unsigned x, unsigned y) {
   /* Original X3 tile/palette data, independent of body visibility. */
   if (!MmxZeroEnabled() || x >= 16 || y >= 16) return -1;
+  if (project_assets) {
+    /* Use the imported idle portrait's helmet inside the existing HUD slot. */
+    unsigned color = project_assets->body[0][(36 + y) * MMX_ZERO_WIDTH + 54 + x];
+    return color ? project_assets->colors[color] : -2;
+  }
   unsigned tile = (y / 8) * 2 + x / 8, shift = 7 - (x & 7);
   const uint8_t *p = hud_tiles + tile * 32 + (y & 7) * 2;
   unsigned pixel = ((p[0] >> shift) & 1) | (((p[1] >> shift) & 1) << 1) |
@@ -324,8 +344,8 @@ int MmxZeroHudColor(unsigned x, unsigned y) {
 }
 unsigned MmxZeroWeaponOrigin(const uint8_t r[0x20000], unsigned object,
                              unsigned axis, unsigned original) {
-  if (!MmxZeroActive() || !r || object < 0x1228 || object >= 0x1428 ||
-      (object & 63) != 0x28) return original;
+  if (!MmxZeroActive() || project_assets || !r || object < 0x1228 ||
+      object >= 0x1428 || (object & 63) != 0x28) return original;
   /* These retail routines bypass the shared muzzle table. Apply the offset
    * where they assign the real object origin, so art and collision agree.
    * Tornado remains centered vertically; Boomerang keeps its return arc. */
@@ -347,6 +367,7 @@ static unsigned slash_pose(const MmxZeroState *s) {
   return 0;
 }
 int MmxZeroPoseOffsetY(const uint8_t ram[0x20000]) {
+  if (project_assets) return 0;
   /* X3's kneeling art ends ten pixels below its ordinary standing origin.
    * Align its feet with X1's authored kneeling ground line. */
   return ram && ram[0xbbe] == 0x66 && (ram[0xbbf] & 127) != 4 ? -18 : -8;
@@ -355,7 +376,13 @@ const uint8_t *MmxZeroPose(const uint8_t ram[0x20000], const MmxZeroState *s) {
   /* Visibility belongs to the submitted sprite list, not this RAM snapshot.
    * During invulnerability the next update can hide the player while OAM
    * still contains the preceding visible frame. The compositor owns blinking. */
-  if (!poses || !ram || (s && s->active_x)) return NULL;
+  if (!MmxZeroEnabled() || !ram || (s && s->active_x)) return NULL;
+  if (project_assets) {
+    unsigned group = ram[0xbbe], pose = ram[0xbbf] & 127;
+    if (group == 0x66 && pose < MMX_PROJECT_ZERO_CAPTURE_POSES)
+      return project_assets->capture[pose];
+    return project_assets->body[group == 0 && pose < MMX_PROJECT_ZERO_BODY_POSES ? pose : 0];
+  }
   /* $81:91F1's Highway electric restraint starts native sequence $49.
    * That sequence is an attack alias in the ordinary X3 movement map.
    * Keep Zero in his original staggered hurt pose until the rescue starts;
@@ -393,6 +420,15 @@ const uint8_t *MmxZeroBlade(const MmxZeroState *s) {
 void MmxZeroSetCollisionRom(uint8_t *rom, size_t size) {
   MmxArmorCollisionRom(rom,size);
   if (!rom || size < 0x37fd8) return;
+  /* $86:B9C3 is the native ground-jump launch speed. The character swap
+   * and co-op projection already publish the active actor's ROM parameters. */
+  const unsigned stock_jump = 0x0553;
+  const unsigned project_jump = 0x0653;
+  unsigned jump = word(rom + 0x339c5);
+  unsigned selected_jump = MmxZeroActive() && project_assets ? project_assets->jump_speed : stock_jump;
+  if (jump != selected_jump && (jump == stock_jump || jump == project_jump))
+    putword(rom + 0x339c5, selected_jump);
+  bool x3 = MmxZeroActive() && !project_assets;
   /* X3 $86:B40E / B422, translated -8px vertically into X1's player origin.
    * This preserves Zero's full body dimensions and aligns both games' feet.
    * First four bytes are damage bounds; last six are terrain-probe geometry.
@@ -407,9 +443,9 @@ void MmxZeroSetCollisionRom(uint8_t *rom, size_t size) {
   if ((!memcmp(rom + 0x32552, old_normal, 10) || !memcmp(rom + 0x32552, normal, 10)) &&
       (!memcmp(rom + 0x33b38, old_dash, 10) || !memcmp(rom + 0x33b38, dash, 10)) &&
       (!memcmp(rom + 0x37fb0, empty, 40) || !memcmp(rom + 0x37fb0, saber_bounds, 40))) {
-    memcpy(rom + 0x32552, MmxZeroActive() ? normal : old_normal, 10);
-    memcpy(rom + 0x33b38, MmxZeroActive() ? dash : old_dash, 10);
-    memcpy(rom + 0x37fb0, MmxZeroActive() ? saber_bounds : empty, 40);
+    memcpy(rom + 0x32552, x3 ? normal : old_normal, 10);
+    memcpy(rom + 0x33b38, x3 ? dash : old_dash, 10);
+    memcpy(rom + 0x37fb0, x3 ? saber_bounds : empty, 40);
   }
   if (extension && extension->collision_rom)
     extension->collision_rom(rom, size);
@@ -430,7 +466,7 @@ static bool standing_blocked(const uint8_t *r) {
   return false;
 }
 static bool slide_blocked(const uint8_t *r) {
-  return MmxZeroActive() && r && terrain_query && r[0xba9] == 2 &&
+  return MmxZeroActive() && !project_assets && r && terrain_query && r[0xba9] == 2 &&
       (r[0xbd3] & 4) && !r[0x1f0c] && standing_blocked(r);
 }
 /* X1's dash speed ($0375) in the current facing, for a slide with none. */
@@ -483,7 +519,7 @@ unsigned MmxZeroHeadProbe(const uint8_t r[0x20000], unsigned object, unsigned or
    * Zero's standing top is -26, so the original -19 query misses a block
    * that his real ceiling collision has already stopped against. Keep the
    * native horizontal probes and destruction path, and keep X/dash boxes. */
-  return MmxZeroActive() && r && object == 0xba8 && (original == 0xed || original == 0xffed) &&
+  return MmxZeroActive() && !project_assets && r && object == 0xba8 && (original == 0xed || original == 0xffed) &&
       word(r + object + 0x20) == 0xa552
       ? original - 8 : original;
 }
@@ -547,11 +583,12 @@ unsigned MmxZeroSwapPose(const MmxZeroState *s) {
   return s->swap_tick < 2 ? 0x3d : 0x44 - s->swap_tick;
 }
 const uint8_t *MmxZeroTeleportPose(unsigned pose) {
-  return poses && (pose == 0 || (pose >= 0x3c && pose <= 0x42)) ?
-      poses + (size_t)pose * MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT : NULL;
+  if (pose && (pose < 0x3c || pose > 0x42)) return NULL;
+  if (project_assets) return project_assets->body[pose];
+  return poses ? poses + (size_t)pose * MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT : NULL;
 }
 bool MmxZeroSwapTick(uint8_t r[0x20000]) {
-  if (!poses || !r) return false;
+  if (!MmxZeroEnabled() || !r) return false;
   MmxZeroHealthSync(r);
   if (!state.swap_phase) {
     /* Native NMI edge latch: Select=$2000. A grounded idle player owns
@@ -764,7 +801,7 @@ static MmxZeroLegacyIntent legacy_intent_from_mapped(const uint8_t *r) {
   return intent;
 }
 void MmxZeroPlayerTick(uint8_t r[0x20000]) {
-  if (!MmxZeroActive() || !r) return;
+  if (!MmxZeroActive() || project_assets || !r) return;
   unsigned action = r[0xbaa];
   bool stage = r[0xd1] == 2 && r[0xd2] == 4 && r[0xba9] == 2 &&
       r[0xd3]<10 && (r[0xbcf] & 127) && !r[0x1f0c] && !r[0xbdb];

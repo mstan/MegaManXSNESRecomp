@@ -1,9 +1,9 @@
 format_version = 1
 id = "megaman-x.character.zero"
 version = "0.0.1"
-name = "X3 Zero"
+name = "Add Zero"
 author = "mstan"
-description = "Add X3 Zero alongside X, with original teleport effects and separate health."
+description = "Add Zero alongside X, with original teleport effects and separate health."
 license = "PolyForm-Noncommercial-1.0.0"
 resolver = "declarative"
 save_compatibility = "requires-same-mods"
@@ -15,7 +15,7 @@ rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
 [[feature]]
 id = "zero"
 name = "Add Zero"
-description = "Press Select while standing on the ground to switch between X and Zero. Requires your Mega Man X3 USA ROM."
+description = "Press Select while standing on the ground to switch between X and Zero. Choose a Zero behavior and supply its source file."
 group = "Characters"
 default_enabled = false
 
@@ -37,7 +37,7 @@ label = "Zero"
 feature = "zero"
 id = "behavior"
 label = "Zero behavior"
-description = "Shared with X / Zero Co-op. Modern replaces Zero's buster with a direct saber and adds a double jump and air dash. Saber Zero (by RaphaelAzev) adds a Y-button Z-Saber with a 3-hit ground combo, air, wall and dash slashes, and the X3 finisher wave; tune it with Saber Zero settings. Special weapons remain available."
+description = "Shared with X / Zero Co-op. Modern replaces Zero's buster with a direct saber and adds a double jump and air dash. Saber Zero (by RaphaelAzev) adds a Y-button Z-Saber with a 3-hit ground combo, air, wall and dash slashes, and the X3 finisher wave; tune it with Saber Zero settings. X1 Zero uses Project Zero player art and its higher jump with X1 buster combat. Special weapons remain available."
 type = "choice"
 default = "x3"
 [[option.choice]]
@@ -49,18 +49,34 @@ label = "Modern"
 [[option.choice]]
 value = "saber"
 label = "Saber Zero"
+[[option.choice]]
+value = "x1"
+label = "X1 Zero (Project Zero)"
 
 [[resource]]
 feature = "zero"
 id = "x3-rom"
 label = "Mega Man X3 ROM"
-description = "Select your original Mega Man X3 USA ROM."
+description = "Required for X3 Behavior, Modern and Saber Zero."
 format = "file"
 file_patterns = "*.sfc,*.smc"
 file_description = "Mega Man X3 USA ROM"
 shared_key = "megaman-x.source.x3"
 normalized_sha256 = "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7"
-required = true
+required = false
+
+[[resource]]
+feature = "zero"
+id = "project-zero-ips"
+label = "Project Zero IPS patch"
+description = "For X1 Zero, select the v1.0 IPS extracted from the Project Zero ZIP. By CF, Falchion22 and Programer Peru."
+format = "file"
+file_patterns = "*.ips"
+file_description = "Project Zero IPS"
+shared_key = "megaman-x.source.project-zero"
+size = 585458
+normalized_sha256 = "060bc0b1900ac3541f0e5cebc48109a200a169290489662f6ede07660cc44ec5"
+required = false
 
 [[plugin]]
 feature = "zero"

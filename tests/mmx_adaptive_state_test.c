@@ -65,6 +65,7 @@ static void zero_capture(const char *base, const char *suffix) {
 #include "mmx_boss_rush_runtime_test.inc"
 #include "mmx_magic_carpet_test.inc"
 #include "mmx_zero_blocks_test.inc"
+#include "mmx_project_zero_test.inc"
 #include "mmx_coop_car_test.inc"
 #include "mmx_coop_armor_transport_test.inc"
 #include "mmx_coop_arena_transport_test.inc"
@@ -2007,6 +2008,10 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
+  if (getenv("MMX_PROJECT_ZERO_IPS")) {
+    project_zero_checks(argv[1], getenv("MMX_PROJECT_ZERO_IPS"));
+    return 0;
+  }
   if (getenv("MMX_COOP_HIGHWAY_CAR_TEST")) { coop_highway_car_checks(getenv("MMX_ZERO_TEST_ASSETS")); return 0; }
   if (getenv("MMX_COOP_ARMOR_DOOR_TEST")) { coop_armor_transport_checks(getenv("MMX_ZERO_TEST_ASSETS")); return 0; }
   if (getenv("MMX_COOP_ARENA_TRANSPORT_TEST")) { coop_arena_transport_checks(getenv("MMX_ZERO_TEST_ASSETS")); return 0; }

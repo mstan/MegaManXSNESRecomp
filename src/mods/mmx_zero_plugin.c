@@ -4,6 +4,8 @@
 #include "snes/interp_bridge.h"
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
+#include "mmx_project_zero.h"
+#include "snes/cart.h"
 #include "mmx_armor.h"
 #include "mmx_damage.h"
 #include "mmx_weapons.h"
@@ -19,6 +21,7 @@
 #include <string.h>
 
 extern uint8_t g_ram[0x20000];
+extern Snes *g_snes;
 static void weapon_energy_hook(CpuState *cpu, uint32_t pc) {
   pc &= 0x7fffff;
   if (pc == 0x9ef9) { MmxWeaponsRefill(); return; }
@@ -241,7 +244,12 @@ static int prepare(const char *package, const char *feature, unsigned game, int 
   RecompLauncherCModResource resource = {0};
   char leaf[100],error[512];
   if (!provider || !provider->feature_resource_get ||
-      !provider->feature_resource_get(provider->ctx,package,feature,0,&resource) || !resource.path[0]) return 0;
+      !provider->feature_resource_get(provider->ctx,package,feature,0,&resource) || !resource.path[0]) {
+    snprintf(error, sizeof(error), "Select your original Mega Man X%u USA ROM in Mods.", game);
+    fprintf(stderr, "[mmx-source] %s\n", error);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot prepare Mega Man mod", error, NULL);
+    return 0;
+  }
   snprintf(leaf,sizeof(leaf),"cache/mmx-source/x%u-%s.bin",game,zero?"zero-v7":"weapons-v5");
   if (!snesrecomp_exe_dir_path(leaf,path,4096)) return 0;
   if (MmxSourceAssetsBuild(resource.path,game,zero,path,error,sizeof(error))) return 1;
@@ -249,20 +257,45 @@ static int prepare(const char *package, const char *feature, unsigned game, int 
   SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Cannot prepare Mega Man mod",error,NULL);
   return 0;
 }
+static bool load_zero(const char *package, const char *feature, const char *behavior) {
+  char error[512];
+  if (strcmp(behavior, "x1")) {
+    char path[4096];
+    if (!prepare(package, feature, 3, 1, path)) return false;
+    if (MmxZeroLoad(path)) return true;
+    fprintf(stderr, "[mmx-zero] Cannot load extracted Zero assets: %s\n", path);
+    return false;
+  }
+
+  const RecompLauncherCModProvider *provider = snes_mod_runtime_launcher_provider_c();
+  RecompLauncherCModResource resource = {0};
+  if (provider && provider->feature_resource_get) {
+    for (int i = 0; provider->feature_resource_get(provider->ctx, package, feature, i, &resource); ++i)
+      if (!strcmp(resource.id, "project-zero-ips")) break;
+  }
+  const Cart *cart = g_snes ? g_snes->cart : NULL;
+  const char *patch = !strcmp(resource.id, "project-zero-ips") ? resource.path : NULL;
+  MmxProjectZeroAssets *assets = MmxProjectZeroRead(patch, cart ? cart->rom : NULL,
+      cart ? cart->romImageSize : 0, error, sizeof(error));
+  if (assets) {
+    MmxZeroAdoptProjectAssets(assets);
+    fprintf(stderr, "[mmx-zero] X1 Zero loaded from the Project Zero IPS\n");
+    return true;
+  }
+  fprintf(stderr, "[mmx-zero] %s\n", error);
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot enable X1 Zero", error, NULL);
+  return false;
+}
 static void activate(void) {
   /* Co-op claims this existing plugin as its character-mode exclusion key.
    * Its dedicated activation below owns preparation in that mode. */
   if(snes_mod_runtime_feature_enabled_c("megaman-x.coop","coop")) return;
-  char path[4096],start[16]={0},behavior[16]={0};
-  if (!prepare("megaman-x.character.zero","zero",3,1,path)) return;
+  char start[16]={0},behavior[16]={0};
   snes_mod_runtime_feature_option_value_c("megaman-x.character.zero","zero","start",start,sizeof(start));
   MmxZeroSetStartCharacter(strcmp(start,"zero") != 0);
   snes_mod_runtime_feature_option_value_c("megaman-x.character.zero","zero","behavior",behavior,sizeof(behavior));
   MmxZeroSetModern(!strcmp(behavior,"modern"));
-  MmxZeroResetState();
-  if (!MmxZeroLoad(path)) {
-    fprintf(stderr, "[mmx-zero] Cannot load extracted Zero assets: %s\n", path); return;
-  }
+  if (!load_zero("megaman-x.character.zero","zero",behavior)) return;
   MmxZeroRegisterHooks();
 #if !MMX_VARIANT_JP
   if (!strcmp(behavior,"saber")) MmxSaberActivate("megaman-x.character.zero","zero",false);
@@ -270,11 +303,11 @@ static void activate(void) {
   fprintf(stderr, "[mmx-zero] Zero 0.0.1 enabled; starting as %s\n", strcmp(start,"zero") ? "X" : "Zero");
 }
 static void activate_coop(void) {
-  char path[4096],character[32]={0},behavior[16]={0},cameras[32]={0},hud[32]={0};
-  if(!prepare("megaman-x.coop","coop",3,1,path) || !MmxZeroLoad(path)) return;
+  char character[32]={0},behavior[16]={0},cameras[32]={0},hud[32]={0};
   snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","player1",character,sizeof(character));
   snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","behavior",behavior,sizeof(behavior));
   MmxZeroSetModern(!strcmp(behavior,"modern"));
+  if (!load_zero("megaman-x.coop","coop",behavior)) return;
   snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","cameras",cameras,sizeof(cameras));
   MmxCoopViewsSetIndependent(!strcmp(cameras,"independent"));
   snes_mod_runtime_feature_option_value_c("megaman-x.coop","coop","local_cameras",cameras,sizeof(cameras));

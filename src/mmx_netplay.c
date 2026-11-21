@@ -28,7 +28,7 @@ int MmxNetplayReady(char *reason, size_t cap) {
     return 0;
   }
   if (!MmxCoopEnabled()) {
-    snprintf(reason, cap, "X + Zero co-op could not load. Check the selected X3 ROM and cache directory.");
+    snprintf(reason, cap, "X + Zero co-op could not load. Check the selected Zero behavior's source file.");
     return 0;
   }
   for (unsigned page = 1; page <= 2; ++page) {
@@ -64,7 +64,7 @@ static void mode_changed(int enabled) {
     return;
   }
   if (s_active) return;
-  s_mods = snes_mod_runtime_launcher_provider_c();
+  if (!s_mods) s_mods = snes_mod_runtime_launcher_provider_c();
   if (!s_mods || !snes_mod_runtime_begin_temporary_c()) {
     fail("Netplay requires the bundled X + Zero co-op mod.");
     return;
@@ -188,15 +188,71 @@ static int set_option(void *ctx, const char *pkg, const char *fid, const char *o
     return fail("Adaptive view is available offline. Choose a fixed ratio for netplay.");
   return s_mods->feature_set_option(ctx, pkg, fid, option, value);
 }
+static bool zero_feature(const char *package, const char *feature) {
+  return (!strcmp(package, kZero) && !strcmp(feature, "zero")) ||
+         (!strcmp(package, kCoop) && !strcmp(feature, "coop"));
+}
+static const char *zero_source(const char *package, const char *feature) {
+  char behavior[16] = {0};
+  snes_mod_runtime_feature_option_value_c(package, feature, "behavior", behavior, sizeof(behavior));
+  return !strcmp(behavior, "x1") ? "project-zero-ips" : "x3-rom";
+}
+static int resource_get(void *ctx, const char *package, const char *feature,
+                        int index, RecompLauncherCModResource *out) {
+  if (!s_mods->feature_resource_get ||
+      !s_mods->feature_resource_get(ctx, package, feature, index, out)) return 0;
+  if (zero_feature(package, feature)) {
+    out->required = !strcmp(out->id, zero_source(package, feature));
+    if (out->required && !out->path[0]) {
+      out->verified = 0;
+      snprintf(out->status, sizeof(out->status), "Required: select a file");
+    }
+    if (!strcmp(out->id, "project-zero-ips") && out->path[0])
+      snprintf(out->status, sizeof(out->status), "%s",
+          out->verified ? "Project Zero patch verified" : "Select the Project Zero v1.0 IPS");
+  }
+  return 1;
+}
+static bool zero_selection(const char **package, const char **feature) {
+  *package = kCoop;
+  *feature = "coop";
+  if (snes_mod_runtime_feature_enabled_c(*package, *feature)) return true;
+  *package = kZero;
+  *feature = "zero";
+  return snes_mod_runtime_feature_enabled_c(*package, *feature);
+}
+static int validate_zero_source(void *ctx) {
+  const char *package, *feature;
+  if (!zero_selection(&package, &feature)) return 1;
+  RecompLauncherCModResource resource = {0};
+  for (int i = 0; resource_get(ctx, package, feature, i, &resource); ++i) {
+    if (!resource.required) continue;
+    if (resource.verified && resource.path[0]) return 1;
+    return fail(!strcmp(resource.id, "project-zero-ips") ?
+        "Select the Mega Man X: Project Zero v1.0 IPS patch for X1 Zero." :
+        "Select your original Mega Man X3 USA ROM for this Zero behavior.");
+  }
+  return fail("The selected Zero source is missing from the bundled character mod.");
+}
+static int commit(void *ctx, const char *rom) {
+  s_error[0] = 0;
+  return validate_zero_source(ctx) && s_mods->commit(ctx, rom);
+}
+static int try_commit(void *ctx, const char *rom) {
+  const char *package, *feature;
+  if (zero_selection(&package, &feature)) return 0;
+  s_error[0] = 0;
+  return s_mods->try_commit ? s_mods->try_commit(ctx, rom) : 0;
+}
 static int commit_netplay(void *ctx, const char *rom) {
-  return validate_plan() && s_mods->commit(ctx, rom);
+  return validate_plan() && commit(ctx, rom);
 }
 static int no(void *ctx) { (void)ctx; return 0; }
 static int create(void *ctx, const char *name, char *endpoint, const char *password,
                    const RecompLauncherCSettings *settings, int lan, int slots) {
   (void)slots;
   mode_changed(1);
-  if (!validate_plan()) return -1;
+  if (!validate_plan() || !validate_zero_source(s_mods->ctx)) return -1;
   if (s_net->allow_spectators_set) s_net->allow_spectators_set(ctx, 0);
   return s_net->create(ctx, name, endpoint, password, settings, lan, 2);
 }
@@ -208,7 +264,7 @@ static int fill_launch(void *ctx, RecompLauncherCNetplayLaunch *out) {
 }
 
 void MmxNetplayConfigureLauncher(RecompLauncherCGameInfo *info) {
-  if (!info->netplay_supported || !info->netplay || !info->mods) return;
+  if (!info->mods || info->mods == &s_provider) return;
   s_mods = info->mods;
   s_provider = *s_mods;
   s_provider.feature_enable = feature_enable;
@@ -217,9 +273,13 @@ void MmxNetplayConfigureLauncher(RecompLauncherCGameInfo *info) {
   s_provider.feature_option_get = option_get;
   s_provider.feature_choice_get = choice_get;
   s_provider.feature_set_option = set_option;
-  s_provider.commit_netplay = commit_netplay;
+  s_provider.commit = commit;
+  s_provider.try_commit = try_commit;
+  s_provider.feature_resource_get = resource_get;
   s_provider.last_error = mod_error;
   info->mods = &s_provider;
+  if (!info->netplay_supported || !info->netplay) return;
+  s_provider.commit_netplay = commit_netplay;
   info->netplay_mode_changed = mode_changed;
   s_net = info->netplay;
   s_callbacks = *s_net;

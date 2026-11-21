@@ -119,7 +119,7 @@ See the [co-op validation notes](docs/coop-port.md) for current limits.
 3. Configure your keyboard or controller in **Controls**.
 4. Enable the features you want in **Mods**, then select **Play**.
 
-For Zero or co-op, select your own **Mega Man X3 USA ROM** in Mods. The X3
+For X3 Behavior, Modern, or Saber Zero, select your own **Mega Man X3 USA ROM** in Mods. The X3
 weapon mod shares that selection. X2 weapons need your **Mega Man X2 USA ROM**.
 Assets are extracted automatically on your machine.
 
@@ -133,6 +133,17 @@ by default and has passed preliminary playtests.
 Select **Modern** under **Zero behavior** in either Zero mod for saber combat
 and extra aerial movement. **X3 Behavior** is the default. **Add Zero** and
 **X / Zero Co-op** are alternatives; enabling one disables the other.
+
+For **X1 Zero**, choose **X1 Zero (Project Zero)** under **Zero behavior** in
+**Add Zero** or **Co-op**, then select the v1.0 IPS file from the Project Zero ZIP.
+This style uses the hack's playable Zero sprite set, higher ground jump,
+and raised buster muzzle. Mega Man X supplies the combat, stages, music,
+and progression. This style needs the Mega Man X USA Rev 1 game ROM and the
+local IPS. The patch and extracted sprites stay on your device.
+
+Project Zero is by **CF**, **Falchion22**, and **Programer Peru**. Character
+art credits go to **cerberus-rack**, **brongaa12**, **Kensuyjin33**, and
+**fallensoldier420**. [Mega Man X: Project Zero](https://www.romhacking.net/hacks/8167/)
 
 All Zero styles can break blocks with their head and feet from the start,
 including in co-op. X still needs his corresponding armor upgrades.
