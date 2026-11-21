@@ -132,8 +132,23 @@ static void project_zero_checks(const char *rom, const char *ips) {
       for (unsigned x = 192; x < 216; ++x)
         life += stock_pixels[y * 256 + x] != s_composed_pixels[y * 256 + x];
   }
-  check(divider == 0 && body > 100, "Zero is centered below the pause-menu divider");
-  check(life > 30, "the pause menu substitutes Zero's 1-Up portrait");
+  check(divider == 0 && body > 100, "Zero stays between the divider and weapon gauge");
+  check(life == 0, "pause menu preserves the stock X lives icon pixel for pixel");
+
+  const uint8_t *pose = MmxZeroMenuPose();
+  int top = MMX_ZERO_HEIGHT, bottom = -1;
+  for (int y = 0; y < MMX_ZERO_HEIGHT; ++y) {
+    for (unsigned x = 0; x < MMX_ZERO_WIDTH; ++x) {
+      if (!pose[y * MMX_ZERO_WIDTH + x]) continue;
+      if (y < top) top = y;
+      bottom = y;
+      break;
+    }
+  }
+  int native_center = g_ram[0x1990] | g_ram[0x1991] << 8;
+  int body_center = MmxZeroMenuY() - 64 + (top + bottom) / 2;
+  check(bottom >= top && native_center == 160 && body_center == native_center,
+        "Zero's visible body is centered at the native pause preview position");
   hitbox_bmp(s_composed_pixels, 256, "pause");
   if (getenv("MMX_ZERO_TEST_CAPTURE"))
     check(RtlSaveSnapshot("project-zero-pause.state"), "save the opened pause menu for review");

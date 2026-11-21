@@ -237,11 +237,6 @@ bool MmxZeroDeathOrbRed(const uint8_t r[0x20000], unsigned orb) {
 }
 const uint8_t *MmxZeroMenuPose(void) { return project_assets ? project_assets->body[0] : poses; }
 int MmxZeroMenuY(void) { return project_assets ? project_assets->menu_y : 152; }
-int MmxZeroProjectLifeColor(unsigned x, unsigned y) {
-  if (!project_assets || x >= 16 || y >= 16) return -1;
-  unsigned pixel = project_assets->life_head[y * 16 + x];
-  return pixel ? project_assets->colors[pixel] : -1;
-}
 static void animation_record(unsigned offset) {
   if (offset < 272 || offset + 3 > sizeof(animation) || !animation[offset] || animation[offset + 2] >= 117) {
     state.anim_valid = 0; return;
