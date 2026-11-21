@@ -440,6 +440,15 @@ if(TARGET mmx_state_tests)
             WORKING_DIRECTORY "${msu_state_test_dir}"
             ENVIRONMENT "MMX_MSU_STATE_TEST=1;MMX_REPLAY_RECORD=0;SDL_AUDIODRIVER=dummy;SDL_AUDIO_DRIVER=dummy;SDL_VIDEODRIVER=dummy;SDL_VIDEO_DRIVER=dummy"
             TIMEOUT 0)
+        set(msu_file_test_dir "${CMAKE_CURRENT_BINARY_DIR}/msu-file-runtime")
+        file(MAKE_DIRECTORY "${msu_file_test_dir}")
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods" DESTINATION "${msu_file_test_dir}")
+        add_test(NAME mmx_msu_file_selection_runtime
+            COMMAND $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_msu_file_selection_runtime PROPERTIES
+            WORKING_DIRECTORY "${msu_file_test_dir}"
+            ENVIRONMENT "MMX_MSU_STATE_TEST=1;MMX_MSU_FILE_SELECTION_TEST=1;MMX_REPLAY_RECORD=0;SDL_AUDIODRIVER=dummy;SDL_AUDIO_DRIVER=dummy;SDL_VIDEODRIVER=dummy;SDL_VIDEO_DRIVER=dummy"
+            TIMEOUT 0)
         set(damage_test_dir "${CMAKE_CURRENT_BINARY_DIR}/damage-runtime")
         file(MAKE_DIRECTORY "${damage_test_dir}")
         file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded/" DESTINATION "${damage_test_dir}/catalog")
