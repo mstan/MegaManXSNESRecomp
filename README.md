@@ -46,8 +46,7 @@ Armor pilot art. The X button keeps Zero's buster and special weapons.
 
 To play it, choose **Zero behavior → Saber Zero** in either **Characters → Add
 Zero** (single player, Select switches X/Zero) or **Characters → Co-op**
-(whichever player is Zero). Both use your Mega Man X3 USA ROM, like the other
-Zero modes. The optional **Characters → Saber Zero settings** entry tunes its
+(whichever player is Zero). Saber Zero uses your Mega Man X3 USA ROM. The optional **Characters → Saber Zero settings** entry tunes its
 damage, hit priorities, finisher window and swing volume, and can outline
 hitboxes. Without it, Saber Zero uses RaphaelAzev's defaults.
 
@@ -134,17 +133,29 @@ Select **Modern** under **Zero behavior** in either Zero mod for saber combat
 and extra aerial movement. **X3 Behavior** is the default. **Add Zero** and
 **X / Zero Co-op** are alternatives; enabling one disables the other.
 
-For **X1 Zero**, choose **X1 Zero (Project Zero)** under **Zero behavior** in
-**Add Zero** or **Co-op**, then select the v1.0 IPS file from the Project Zero ZIP.
-This style uses the hack's playable Zero sprite set, higher ground jump,
-and raised buster muzzle. Mega Man X supplies the combat, stages, music,
-and progression. X1 Zero uses the same original health badge as the other
-Zero styles. Select your Mega Man X3 USA ROM in Mods to supply that badge.
-The patch and extracted sprites stay on your device.
+### X1 Zero
 
-Project Zero is by **CF**, **Falchion22**, and **Programer Peru**. Character
-art credits go to **cerberus-rack**, **brongaa12**, **Kensuyjin33**, and
-**fallensoldier420**. [Mega Man X: Project Zero](https://www.romhacking.net/hacks/8167/)
+Choose **X1 Zero (Project Zero)** under **Zero behavior** in **Add Zero** or
+**Co-op**. Builds with the bundled character assets use only your Mega Man X
+USA Rev 1 ROM for this style. Zero uses the Project Zero sprite set, higher
+ground jump, and raised buster muzzle in the original Mega Man X campaign.
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/project-zero-highway.png" width="440" alt="X1 Zero on Central Highway with the Zero health badge">
+      <br><strong>X1 Zero on Central Highway</strong>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/project-zero-pause.png" width="440" alt="X1 Zero centered in the weapons pause menu">
+      <br><strong>X1 Zero in the weapons menu</strong>
+    </td>
+  </tr>
+</table>
+
+The Zero artwork shown here comes from **CF**, **Falchion22**, and **Programer Peru**.
+Character art credits also go to **cerberus-rack**, **brongaa12**, **Kensuyjin33**,
+and **fallensoldier420**. [Mega Man X: Project Zero](https://www.romhacking.net/hacks/8167/)
 
 All Zero styles can break blocks with their head and feet from the start,
 including in co-op. X still needs his corresponding armor upgrades.
@@ -155,7 +166,7 @@ original view or fixed 16:9, 21:9, or 32:9.
 
 Setup guides: [Zero](docs/zero-0.0.1.md), [X2/X3 weapons](docs/x-weapons-port.md),
 [password saves](docs/password-saves.md), and [netplay](docs/netplay.md).
-No ROMs or extracted assets are included in the downloads.
+Use your own game ROMs to play.
 
 For Storm Eagle's speedrun trick and local practice saves, see the
 [Magic Carpet guide](docs/magic-carpet.md).

@@ -2008,8 +2008,8 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
-  if (getenv("MMX_PROJECT_ZERO_IPS")) {
-    project_zero_checks(argv[1], getenv("MMX_PROJECT_ZERO_IPS"));
+  if (getenv("MMX_PROJECT_ZERO_CATALOG")) {
+    project_zero_checks(argv[1]);
     return 0;
   }
   if (getenv("MMX_COOP_HIGHWAY_CAR_TEST")) { coop_highway_car_checks(getenv("MMX_ZERO_TEST_ASSETS")); return 0; }

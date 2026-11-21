@@ -47,6 +47,23 @@ cmake -S . -B build-dev -DCMAKE_BUILD_TYPE=Release
 cmake --build build-dev --config Release --target MegaManXSNESRecomp
 ```
 
+### Build with X1 Zero
+
+Build the native `mmx_project_zero_pack` target. Pass the USA Rev 1 Mega Man X
+ROM, the Project Zero v1.0 IPS, the USA Mega Man X3 ROM for the shared health
+badge, and an output path to the tool, in that order.
+
+```bash
+cmake --build build-dev --target mmx_project_zero_pack
+build-dev/mmx_project_zero_pack /path/to/mmx.sfc /path/to/project-zero.ips /path/to/mmx3.sfc /path/to/project-zero-assets.bin
+cmake -S . -B build-dev -DMMX_PROJECT_ZERO_ASSET_PACK=/path/to/project-zero-assets.bin
+cmake --build build-dev --target MegaManXSNESRecomp
+```
+
+The USA executable embeds the verified character pack. Keep the source files
+and generated pack outside Git. A build without the pack offers the X3-based
+Zero styles. Cross-builds can use a pack made with the native tool.
+
 Run `bash tools/regen.sh usa` when changing the recompiler or generated-code
 configuration; omitting `--no-tests` also runs the real framework test suite.
 Use `--strict-idempotent` when a change can affect emitted C.

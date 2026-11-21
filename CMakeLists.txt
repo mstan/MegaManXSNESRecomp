@@ -106,6 +106,30 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mmx_default_config.h"
 
 # One source list for Windows, Linux and macOS, with region-specific generated
 # banks and funcs.h. Missing optional JP output does not block a USA build.
+set(MMX_PROJECT_ZERO_ASSET_PACK "$ENV{MMX_PROJECT_ZERO_ASSET_PACK}" CACHE FILEPATH
+    "Prebuilt Project Zero character asset pack for the USA executable")
+set(mmx_project_zero_embedded "${CMAKE_CURRENT_BINARY_DIR}/generated/mmx_project_zero_embedded.c")
+set(mmx_project_zero_inputs tools/embed_project_zero.py)
+if(MMX_PROJECT_ZERO_ASSET_PACK)
+    list(APPEND mmx_project_zero_inputs "${MMX_PROJECT_ZERO_ASSET_PACK}")
+endif()
+add_custom_command(OUTPUT "${mmx_project_zero_embedded}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_project_zero.py"
+        "${mmx_project_zero_embedded}" "${MMX_PROJECT_ZERO_ASSET_PACK}"
+    DEPENDS ${mmx_project_zero_inputs} VERBATIM)
+
+if(NOT CMAKE_CROSSCOMPILING)
+    add_executable(mmx_project_zero_pack EXCLUDE_FROM_ALL
+        tools/mmx_project_zero_pack.cpp src/mmx_source_assets.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h"
+        "${SNESRECOMP_ROOT}/runner/src/sha256.c"
+        "${SNESRECOMP_ROOT}/runner/src/crc32.c"
+        "${SNESRECOMP_ROOT}/runner/src/rom_patch.c")
+    target_include_directories(mmx_project_zero_pack PRIVATE
+        src "${CMAKE_CURRENT_BINARY_DIR}" "${SNESRECOMP_ROOT}/runner/src")
+    target_compile_features(mmx_project_zero_pack PRIVATE cxx_std_17)
+endif()
+
 function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
     if(NOT SNESRECOMP_SETUP_HOST AND NOT EXISTS "${GEN_DIR}/dispatch_v2.c")
         if("${TARGET}" STREQUAL "RockmanXSNESRecomp")
@@ -132,7 +156,10 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/mods/mmx_zero_plugin.c src/mods/mmx_armor_plugin.c src/mmx_zero.c src/mmx_armor.c src/mmx_armor_launcher.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
         src/mmx_hitbox_overlay.c
         src/mmx_boss_rush.c src/mmx_boss_rush_audio.c src/mmx_boss_rush_runtime.c src/mmx_boss_rush_draw.c src/mmx_boss_rush_score.cpp
-        src/mmx_source_assets.cpp src/mmx_project_zero.cpp "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h")
+        src/mmx_source_assets.cpp src/mmx_project_zero.c "${CMAKE_CURRENT_BINARY_DIR}/mmx_weapon_sources.h")
+    if("${TARGET}" STREQUAL "MegaManXSNESRecomp")
+        target_sources(${TARGET} PRIVATE "${mmx_project_zero_embedded}")
+    endif()
     target_compile_features(${TARGET} PRIVATE cxx_std_17)
     target_include_directories(${TARGET} PRIVATE
         ${CFG_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src ${RECOMP_UI_ROOT}/src

@@ -4,6 +4,7 @@
 #include "mmx_coop.h"
 #include "mmx_weapons.h"
 #include "mmx_armor.h"
+#include "mmx_project_zero.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -118,8 +119,23 @@ static int set_enabled(void *ctx, const char *pkg, int enabled) {
 static int hidden_camera_option(const char *id) {
   return !strcmp(id, s_active ? "local_cameras" : "cameras");
 }
+static bool zero_feature(const char *package, const char *feature) {
+  return (!strcmp(package, kZero) && !strcmp(feature, "zero")) ||
+         (!strcmp(package, kCoop) && !strcmp(feature, "coop"));
+}
+
+static bool x1_zero_selected(const char *package, const char *feature) {
+  char behavior[16] = {0};
+  return zero_feature(package, feature) &&
+      snes_mod_runtime_feature_option_value_c(package, feature, "behavior", behavior, sizeof(behavior)) &&
+      !strcmp(behavior, "x1");
+}
 static int feature_get(void *ctx, int index, RecompLauncherCModFeature *out) {
   if (!s_mods->feature_get(ctx, index, out)) return 0;
+  if (zero_feature(out->package_id, out->id)) {
+    snprintf(out->source_name, sizeof(out->source_name), "Mega Man X: Project Zero");
+    snprintf(out->source_url, sizeof(out->source_url), "https://www.romhacking.net/hacks/8167/");
+  }
   if (!strcmp(out->package_id, kCoop)) {
     RecompLauncherCModOption option;
     for (int i=0; s_mods->feature_option_get(ctx, kCoop, out->id, i, &option); ++i)
@@ -140,6 +156,8 @@ static int option_get(void *ctx, const char *pkg, const char *fid, int index,
     }
     if (!found) return 0;
   } else if (!s_mods->feature_option_get(ctx, pkg, fid, index, out)) return 0;
+  if (zero_feature(pkg, fid) && !strcmp(out->id, "behavior") && !MmxProjectZeroBundled())
+    --out->choice_count;
   if (s_active && !strcmp(pkg, kWide) && !strcmp(out->id, "aspect")) {
     out->choice_count = 3;
     snprintf(out->default_value, sizeof(out->default_value), "16:9");
@@ -157,7 +175,9 @@ static int choice_get(void *ctx, const char *pkg, const char *fid, const char *o
     snprintf(out->label, sizeof(out->label), "%s", ratios[index]);
     return 1;
   }
-  return s_mods->feature_choice_get(ctx, pkg, fid, option, index, out);
+  if (!s_mods->feature_choice_get(ctx, pkg, fid, option, index, out)) return 0;
+  return !zero_feature(pkg, fid) || strcmp(option, "behavior") ||
+      strcmp(out->value, "x1") || MmxProjectZeroBundled();
 }
 static int set_option(void *ctx, const char *pkg, const char *fid, const char *option, const char *value) {
   s_error[0] = 0;
@@ -165,9 +185,9 @@ static int set_option(void *ctx, const char *pkg, const char *fid, const char *o
     return fail("Choose Local co-op display for offline play. Open Netplay to choose the room's cameras.");
   if (s_active && !strcmp(pkg, kCoop) && !strcmp(option, "local_cameras"))
     return fail("Local co-op display is available offline. Choose Netplay cameras for the room.");
-  if (!strcmp(option, "behavior") &&
-      ((!strcmp(pkg, kZero) && !strcmp(fid, "zero")) ||
-       (!strcmp(pkg, kCoop) && !strcmp(fid, "coop")))) {
+  if (!strcmp(option, "behavior") && zero_feature(pkg, fid)) {
+    if (!strcmp(value, "x1") && !MmxProjectZeroBundled())
+      return fail("This build lacks the bundled X1 Zero assets.");
     /* One user preference exposed in both mutually exclusive character
      * features. Keep both catalog values identical so whichever feature is
      * active also carries this rule in saves and the netplay agreement.
@@ -188,28 +208,20 @@ static int set_option(void *ctx, const char *pkg, const char *fid, const char *o
     return fail("Adaptive view is available offline. Choose a fixed ratio for netplay.");
   return s_mods->feature_set_option(ctx, pkg, fid, option, value);
 }
-static bool zero_feature(const char *package, const char *feature) {
-  return (!strcmp(package, kZero) && !strcmp(feature, "zero")) ||
-         (!strcmp(package, kCoop) && !strcmp(feature, "coop"));
-}
-static const char *zero_source(const char *package, const char *feature) {
-  char behavior[16] = {0};
-  snes_mod_runtime_feature_option_value_c(package, feature, "behavior", behavior, sizeof(behavior));
-  return !strcmp(behavior, "x1") ? "project-zero-ips" : "x3-rom";
+static int resource_count(void *ctx, const char *package, const char *feature) {
+  if (x1_zero_selected(package, feature) || !s_mods->feature_resource_count) return 0;
+  return s_mods->feature_resource_count(ctx, package, feature);
 }
 static int resource_get(void *ctx, const char *package, const char *feature,
                         int index, RecompLauncherCModResource *out) {
-  if (!s_mods->feature_resource_get ||
+  if (x1_zero_selected(package, feature) || !s_mods->feature_resource_get ||
       !s_mods->feature_resource_get(ctx, package, feature, index, out)) return 0;
-  if (zero_feature(package, feature) && !strcmp(out->id, "project-zero-ips")) {
-    out->required = !strcmp(out->id, zero_source(package, feature));
-    if (out->required && !out->path[0]) {
+  if (zero_feature(package, feature) && !strcmp(out->id, "x3-rom")) {
+    out->required = 1;
+    if (!out->path[0]) {
       out->verified = 0;
       snprintf(out->status, sizeof(out->status), "Required: select a file");
     }
-    if (out->path[0])
-      snprintf(out->status, sizeof(out->status), "%s",
-          out->verified ? "Project Zero patch verified" : "Select the Project Zero v1.0 IPS");
   }
   return 1;
 }
@@ -224,14 +236,12 @@ static bool zero_selection(const char **package, const char **feature) {
 static int validate_zero_source(void *ctx) {
   const char *package, *feature;
   if (!zero_selection(&package, &feature)) return 1;
+  if (x1_zero_selected(package, feature))
+    return MmxProjectZeroBundled() || fail("This build lacks the bundled X1 Zero assets.");
   RecompLauncherCModResource resource = {0};
-  for (int i = 0; resource_get(ctx, package, feature, i, &resource); ++i) {
-    if (!resource.required || (resource.verified && resource.path[0])) continue;
-    return fail(!strcmp(resource.id, "project-zero-ips") ?
-        "Select the Mega Man X: Project Zero v1.0 IPS patch for X1 Zero." :
-        "Select your original Mega Man X3 USA ROM for this Zero behavior.");
-  }
-  return 1;
+  if (resource_get(ctx, package, feature, 0, &resource) &&
+      !strcmp(resource.id, "x3-rom") && resource.verified && resource.path[0]) return 1;
+  return fail("Select your original Mega Man X3 USA ROM for this Zero behavior.");
 }
 static int commit(void *ctx, const char *rom) {
   s_error[0] = 0;
@@ -274,6 +284,7 @@ void MmxNetplayConfigureLauncher(RecompLauncherCGameInfo *info) {
   s_provider.feature_set_option = set_option;
   s_provider.commit = commit;
   s_provider.try_commit = try_commit;
+  s_provider.feature_resource_count = resource_count;
   s_provider.feature_resource_get = resource_get;
   s_provider.last_error = mod_error;
   info->mods = &s_provider;

@@ -27,7 +27,7 @@ static int project_zero_jump_height(bool coop) {
   return start[0] - peak[0];
 }
 
-static void project_zero_checks(const char *rom, const char *ips) {
+static void project_zero_checks(const char *rom) {
   const bool coop = getenv("MMX_PROJECT_ZERO_COOP") != NULL;
   const char *package = coop ? "megaman-x.coop" : "megaman-x.character.zero";
   const char *feature = coop ? "coop" : "zero";
@@ -38,9 +38,17 @@ static void project_zero_checks(const char *rom, const char *ips) {
   RecompLauncherCGameInfo info = {.mods = snes_mod_runtime_launcher_provider_c()};
   MmxNetplayConfigureLauncher(&info);
   const RecompLauncherCModProvider *p = info.mods;
+  RecompLauncherCModFeature card = {0};
+  bool credit_visible = false;
+  for (int i = 0; p->feature_get(p->ctx, i, &card); ++i)
+    if (!strcmp(card.package_id, package) && !strcmp(card.id, feature))
+      credit_visible = !strcmp(card.source_url, "https://www.romhacking.net/hacks/8167/") &&
+          strstr(card.description, "CF, Falchion22, and Programer Peru");
+  check(credit_visible, "the launcher credits Project Zero and links its page");
+
   check(p->feature_enable(p->ctx, package, feature, 1) &&
-      p->feature_set_option(p->ctx, package, feature, "behavior", "x1"),
-      "launcher offers X1 Zero");
+      p->feature_resource_set_path(p->ctx, package, feature, "x3-rom", ""),
+      "test starts with an empty X3 ROM selection");
   const char *x3_rom = getenv("MMX_COOP_X3_ROM");
   char error[512];
   check(x3_rom && MmxSourceAssetsBuild(x3_rom, 3, 1, "x3-zero-reference.bin", error, sizeof(error)) &&
@@ -50,15 +58,30 @@ static void project_zero_checks(const char *rom, const char *ips) {
     for (unsigned x = 0; x < 16; ++x)
       expected_badge[y][x] = MmxZeroHudColor(x, y);
   MmxZeroDisable();
-  check(p->feature_resource_set_path(p->ctx, package, feature, "x3-rom", x3_rom),
-      "launcher accepts the shared X3 badge source");
-  check(p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", "") &&
-      !p->commit(p->ctx, rom) && strstr(p->last_error(p->ctx), "Project Zero v1.0 IPS"),
-      "missing IPS is reported");
-  check(p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", rom) &&
-      !p->commit(p->ctx, rom), "a wrong IPS source is rejected");
-  check(p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", ips) &&
-      p->commit(p->ctx, rom), "verified IPS and badge source launch X1 Zero");
+  const char *x3_styles[] = {"x3", "modern", "saber"};
+  for (unsigned i = 0; i < sizeof(x3_styles) / sizeof(x3_styles[0]); ++i) {
+    RecompLauncherCModResource resource = {0};
+    check(p->feature_set_option(p->ctx, package, feature, "behavior", x3_styles[i]) &&
+        p->feature_resource_count(p->ctx, package, feature) == 1 &&
+        p->feature_resource_get(p->ctx, package, feature, 0, &resource) &&
+        resource.required && !strcmp(resource.id, "x3-rom") &&
+        !p->commit(p->ctx, rom) && strstr(p->last_error(p->ctx), "Mega Man X3 USA ROM"),
+        "each X3-based style exposes and requires its ROM");
+    check(p->feature_resource_set_path(p->ctx, package, feature, "x3-rom", rom) &&
+        !p->commit(p->ctx, rom), "X3-based styles reject a different ROM");
+    check(p->feature_resource_set_path(p->ctx, package, feature, "x3-rom", x3_rom) &&
+        p->commit(p->ctx, rom) &&
+        p->feature_resource_set_path(p->ctx, package, feature, "x3-rom", ""),
+        "X3-based styles accept the correct ROM");
+  }
+
+  RecompLauncherCModResource unused = {0};
+  check(MmxProjectZeroBundled() &&
+      p->feature_set_option(p->ctx, package, feature, "behavior", "x1") &&
+      p->feature_resource_count(p->ctx, package, feature) == 0 &&
+      !p->feature_resource_get(p->ctx, package, feature, 0, &unused) &&
+      !p->feature_resource_set_path(p->ctx, package, feature, "project-zero-ips", "") &&
+      p->commit(p->ctx, rom), "bundled X1 Zero launches without a ROM or patch picker");
 
   const unsigned stage_data = 0x376f7;
   uint8_t stock[0x100];

@@ -18,10 +18,15 @@ typedef struct MmxProjectZeroAssets {
   uint8_t muzzle_y[2];
 } MmxProjectZeroAssets;
 
-/* Return owned assets sampled from the supported IPS and stock cartridge.
- * The temporary patched image is private to the importer. */
-MmxProjectZeroAssets *MmxProjectZeroRead(const char *path,
-    const uint8_t *rom, size_t rom_size, char *error, size_t error_size);
+#define MMX_PROJECT_ZERO_PACK_MAGIC "MMXPZ001"
+enum {
+  MMX_PROJECT_ZERO_PACK_BYTES =
+      8 + (MMX_PROJECT_ZERO_BODY_POSES + MMX_PROJECT_ZERO_CAPTURE_POSES) *
+          MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT + 256 + 6 + MMX_ZERO_HUD_BYTES
+};
+
+bool MmxProjectZeroBundled(void);
+MmxProjectZeroAssets *MmxProjectZeroLoad(uint8_t hud[MMX_ZERO_HUD_BYTES]);
 void MmxZeroAdoptProjectAssets(MmxProjectZeroAssets *assets, const uint8_t hud[MMX_ZERO_HUD_BYTES]);
 bool MmxZeroUsesProjectAssets(void);
 int MmxZeroMenuY(void);

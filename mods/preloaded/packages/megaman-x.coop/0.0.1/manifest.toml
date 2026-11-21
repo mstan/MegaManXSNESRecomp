@@ -15,7 +15,7 @@ rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
 [[feature]]
 id = "coop"
 name = "Co-op"
-description = "Player 2 joins automatically. Hold P2 Select for 1.5 seconds to leave; press Select to rejoin. Start opens each player's weapon menu. Selecting co-op turns off Add Zero."
+description = "Player 2 joins automatically. Hold P2 Select for 1.5 seconds to leave; press Select to rejoin. Start opens each player's weapon menu. Selecting co-op turns off Add Zero. X1 Zero art comes from Mega Man X: Project Zero by CF, Falchion22, and Programer Peru."
 group = "Characters"
 default_enabled = false
 
@@ -99,25 +99,12 @@ label = "Horizontal"
 feature = "coop"
 id = "x3-rom"
 label = "Mega Man X3 ROM"
-description = "Select your original Mega Man X3 USA ROM. X1 Zero uses its Zero health badge."
+description = "Select your original Mega Man X3 USA ROM for X3 Behavior, Modern, or Saber Zero."
 format = "file"
 file_patterns = "*.sfc,*.smc"
 file_description = "Mega Man X3 USA ROM"
 shared_key = "megaman-x.source.x3"
 normalized_sha256 = "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7"
-required = true
-
-[[resource]]
-feature = "coop"
-id = "project-zero-ips"
-label = "Project Zero IPS patch"
-description = "For X1 Zero, select the v1.0 IPS extracted from the Project Zero ZIP. By CF, Falchion22 and Programer Peru."
-format = "file"
-file_patterns = "*.ips"
-file_description = "Project Zero IPS"
-shared_key = "megaman-x.source.project-zero"
-size = 585458
-normalized_sha256 = "060bc0b1900ac3541f0e5cebc48109a200a169290489662f6ede07660cc44ec5"
 required = false
 
 [[plugin]]

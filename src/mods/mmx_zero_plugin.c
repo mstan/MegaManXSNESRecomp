@@ -5,7 +5,6 @@
 #include "mmx_renderer.h"
 #include "mmx_zero.h"
 #include "mmx_project_zero.h"
-#include "snes/cart.h"
 #include "mmx_armor.h"
 #include "mmx_damage.h"
 #include "mmx_weapons.h"
@@ -21,7 +20,6 @@
 #include <string.h>
 
 extern uint8_t g_ram[0x20000];
-extern Snes *g_snes;
 static void weapon_energy_hook(CpuState *cpu, uint32_t pc) {
   pc &= 0x7fffff;
   if (pc == 0x9ef9) { MmxWeaponsRefill(); return; }
@@ -258,7 +256,6 @@ static int prepare(const char *package, const char *feature, unsigned game, int 
   return 0;
 }
 static bool load_zero(const char *package, const char *feature, const char *behavior) {
-  char error[512];
   if (strcmp(behavior, "x1")) {
     char path[4096];
     if (!prepare(package, feature, 3, 1, path)) return false;
@@ -267,27 +264,17 @@ static bool load_zero(const char *package, const char *feature, const char *beha
     return false;
   }
 
-  const RecompLauncherCModProvider *provider = snes_mod_runtime_launcher_provider_c();
-  RecompLauncherCModResource resource = {0};
-  char patch[4096] = {0}, x3_rom[4096] = {0};
-  if (provider && provider->feature_resource_get) {
-    for (int i = 0; provider->feature_resource_get(provider->ctx, package, feature, i, &resource); ++i) {
-      if (!strcmp(resource.id, "project-zero-ips")) snprintf(patch, sizeof(patch), "%s", resource.path);
-      if (!strcmp(resource.id, "x3-rom")) snprintf(x3_rom, sizeof(x3_rom), "%s", resource.path);
-    }
-  }
-  const Cart *cart = g_snes ? g_snes->cart : NULL;
   uint8_t hud[MMX_ZERO_HUD_BYTES];
-  MmxProjectZeroAssets *assets = MmxSourceAssetsReadZeroHud(x3_rom, hud, error, sizeof(error)) ?
-      MmxProjectZeroRead(patch, cart ? cart->rom : NULL, cart ? cart->romImageSize : 0,
-                         error, sizeof(error)) : NULL;
+  MmxProjectZeroAssets *assets = MmxProjectZeroLoad(hud);
   if (assets) {
     MmxZeroAdoptProjectAssets(assets, hud);
-    fprintf(stderr, "[mmx-zero] X1 Zero loaded from the Project Zero IPS\n");
+    fprintf(stderr, "[mmx-zero] X1 Zero loaded from bundled Project Zero assets\n");
     return true;
   }
-  fprintf(stderr, "[mmx-zero] %s\n", error);
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot enable X1 Zero", error, NULL);
+  const char *message = MmxProjectZeroBundled() ?
+      "Could not allocate X1 Zero assets." : "This build lacks the bundled X1 Zero assets.";
+  fprintf(stderr, "[mmx-zero] %s\n", message);
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot enable X1 Zero", message, NULL);
   return false;
 }
 static void activate(void) {

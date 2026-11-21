@@ -98,7 +98,7 @@ public:
 };
 }
 
-MmxProjectZeroAssets *MmxProjectZeroRead(const char *path,
+static MmxProjectZeroAssets *read_project_zero(const char *path,
     const uint8_t *rom, size_t rom_size, char *error, size_t error_size) {
   try {
     require(rom && rom_size == kStockSize &&
@@ -169,4 +169,54 @@ MmxProjectZeroAssets *MmxProjectZeroRead(const char *path,
     if (error && error_size) std::snprintf(error, error_size, "%s", e.what());
     return nullptr;
   }
+}
+
+int main(int argc, char **argv) {
+  if (argc != 5) {
+    std::fprintf(stderr, "Usage: mmx_project_zero_pack <Mega Man X ROM> <Project Zero IPS> <Mega Man X3 ROM> <output.bin>\n");
+    return 2;
+  }
+  char error[512];
+  std::ifstream source(std::filesystem::u8path(argv[1]), std::ios::binary | std::ios::ate);
+  const auto size = source.tellg();
+  if (!source || (size != kStockSize && size != kStockSize + 512)) {
+    std::fprintf(stderr, "Expected the original Mega Man X USA Rev 1 ROM.\n");
+    return 1;
+  }
+  std::vector<uint8_t> cart(kStockSize);
+  source.seekg(size - std::streamoff(kStockSize));
+  if (!source.read(reinterpret_cast<char *>(cart.data()), cart.size())) {
+    std::fprintf(stderr, "Could not read the Mega Man X ROM.\n");
+    return 1;
+  }
+  std::unique_ptr<MmxProjectZeroAssets, decltype(&std::free)> art(
+      read_project_zero(argv[2], cart.data(), cart.size(), error, sizeof(error)), std::free);
+  uint8_t hud[MMX_ZERO_HUD_BYTES];
+  if (!art || !MmxSourceAssetsReadZeroHud(argv[3], hud, error, sizeof(error))) {
+    std::fprintf(stderr, "%s\n", error);
+    return 1;
+  }
+
+  std::ofstream out(std::filesystem::u8path(argv[4]), std::ios::binary | std::ios::trunc);
+  const auto bytes = [&](const void *data, size_t length) {
+    out.write(static_cast<const char *>(data), length);
+  };
+  const auto word = [&](uint16_t value) {
+    const uint8_t data[] = {uint8_t(value), uint8_t(value >> 8)};
+    bytes(data, sizeof(data));
+  };
+  bytes(MMX_PROJECT_ZERO_PACK_MAGIC, 8);
+  bytes(art->body, sizeof(art->body));
+  bytes(art->capture, sizeof(art->capture));
+  for (uint16_t color : art->colors) word(color);
+  word(uint16_t(art->menu_y));
+  word(art->jump_speed);
+  bytes(art->muzzle_y, sizeof(art->muzzle_y));
+  bytes(hud, sizeof(hud));
+  out.close();
+  if (!out) {
+    std::fprintf(stderr, "Could not write the Project Zero character asset pack.\n");
+    return 1;
+  }
+  return 0;
 }
