@@ -566,7 +566,7 @@ bool MmxCoopFrameTick(uint8_t *r) {
   /* Boarding stores action $2C in the pilot's own context ($83:8605).
    * Keep that seat driving the native armor, including old saves made
    * after a partner return selected the wrong world actor. */
-  if(!state.stage_pending && r[0xd3]==4 && r[0xe18] && (r[0xe22]&0x40)) {
+  if(!state.stage_pending && !state.scene_owner && r[0xd3]==4 && r[0xe18] && (r[0xe22]&0x40)) {
     unsigned riders=0;
     for(unsigned seat=0;seat<2;++seat)
       if(state.players[seat].status==MMX_COOP_ALIVE &&
@@ -943,7 +943,31 @@ static void begin_scene(uint8_t *r) {
   unsigned other=state.anchor^1;
   if(state.scene_owner || state.players[other].status!=MMX_COOP_ALIVE ||
       !(state.players[other].body[0x27]&127)) return;
-  MmxCoopSelect(r,other);MmxZeroCancel(r);MmxWeaponsCancelShots(r);
+  MmxCoopSelect(r,other);
+  if(r[0xe18] && (r[0xe22]&0x40) && r[0xbaa]==0x2c) {
+    /* A transported pilot must leave the vehicle before its body is reset
+     * on arrival. Reuse the complete native Up+Jump transition: $83:86F1
+     * selects phase $16, then $83:850A initializes that phase and calls
+     * $83:8673 to detach this projected pilot. Clearing the riding bit or
+     * changing the player pose alone leaves the armor controller stranded.
+     * Keep the caller's registers and the door entrant as world owner. */
+    CpuState native=g_cpu;
+    uint16_t entry_s=native.S;
+    native.D=0xe18;native.PB=0x83;native.DB=0x7e;
+    native.P=0x30;native.emulation=0;native.A=0x16;
+    /* This finite WRAM-only command has its own clock origin; an expired
+     * deadline on the suspended world caller must not split the transfer. */
+    native.cycles=native.master_cycles=native.coprocessor_master_cycles=0;
+    cpu_p_to_mirrors(&native);
+    RecompReturn result=cpu_dispatch_call_pc(&native,0x8386f1u,0x8381a6u);
+    if(result==RECOMP_RETURN_NORMAL && native.S==entry_s)
+      result=cpu_dispatch_call_pc(&native,0x83850au,0x83806cu);
+    if(result!=RECOMP_RETURN_NORMAL || native.S!=entry_s) {
+      fprintf(stderr,"[coop] native armor exit did not complete; retaining pilot\n");
+      return;
+    }
+  }
+  MmxZeroCancel(r);MmxWeaponsCancelShots(r);
   memset(r+0xc98,0,0x180);MmxCoopSelect(r,state.anchor);
   MmxZeroState *z=&state.players[other].zero;
   z->swap_phase=1;z->swap_tick=z->swap_fraction=0;z->swap_y=0;
