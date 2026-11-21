@@ -1,6 +1,8 @@
 #include "mod_runtime.h"
 #include "common_rtl.h"
 #include "snes/msu1.h"
+#include "../mmx_msu1.h"
+#include <string.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,6 +29,45 @@ enum {
 static int g_mmx_msu1_active;
 static uint8_t g_mmx_msu1_fade_state;
 static uint8_t g_mmx_msu1_fade_volume;
+/* Loading before the local music mod is activated must not lose the restored
+ * timeline. A subsequent native song command supersedes this bookmark. */
+static MmxMsu1State g_mmx_msu1_pending;
+
+MmxMsu1State MmxMsu1GetState(void) {
+  MmxMsu1State state = {0};
+  if (RtlIsRollbackSave()) return state;
+  if (g_mmx_msu1_pending.valid) return g_mmx_msu1_pending;
+  if (!g_mmx_msu1_active || !msu1_enabled()) return state;
+  state.valid = 1;
+  state.fade_state = g_mmx_msu1_fade_state;
+  state.fade_volume = g_mmx_msu1_fade_volume;
+  msu1_capture_playback(state.playback);
+  return state;
+}
+
+bool MmxMsu1ValidState(const MmxMsu1State *state) {
+  if (!state || state->valid > 1 || state->reserved) return false;
+  if (!state->valid) {
+    const MmxMsu1State empty = {0};
+    return memcmp(state, &empty, sizeof(empty)) == 0;
+  }
+  return state->fade_state <= kFadeIn &&
+      state->fade_volume <= MMX_MSU_VOLUME_FULL &&
+      msu1_playback_state_valid(state->playback);
+}
+
+void MmxMsu1StateLoaded(const MmxMsu1State *state) {
+  if (RtlIsRollbackLoad() || !MmxMsu1ValidState(state)) return;
+  g_mmx_msu1_pending = *state;
+  if (!state->valid || !g_mmx_msu1_active || !msu1_enabled()) return;
+  /* The shared provider reopens through the current local pack, retaining
+   * user preferences and exact source cursor/resampling phase. */
+  (void)msu1_restore_playback(state->playback);
+  g_mmx_msu1_fade_state = state->fade_state;
+  g_mmx_msu1_fade_volume = state->fade_volume;
+  memset(&g_mmx_msu1_pending, 0, sizeof(g_mmx_msu1_pending));
+}
+
 
 static int mmx_msu1_track_loops(uint8_t track) {
   switch (track) {
@@ -53,6 +94,8 @@ int mmx_msu1_music_command(uint8_t command) {
    * Same contract the widescreen hooks follow (MmxWsSpawnWide() etc.): a
    * baked-in hook must be inert when its mod is off.
    */
+  if (command >= 0x10 && command <= 0x30)
+    memset(&g_mmx_msu1_pending, 0, sizeof(g_mmx_msu1_pending));
   if (!g_mmx_msu1_active || !msu1_enabled())
     return 0;
 
@@ -182,6 +225,8 @@ static void mmx_msu1_activate(void) {
   g_mmx_msu1_active = 1;
   g_mmx_msu1_fade_state = kFadeIdle;
   g_mmx_msu1_fade_volume = MMX_MSU_VOLUME_FULL;
+  if (g_mmx_msu1_pending.valid)
+    MmxMsu1StateLoaded(&g_mmx_msu1_pending);
   (void)snes_mod_register_frame_callback(mmx_msu1_tick);
   (void)snes_mod_register_apu_write_callback(mmx_msu1_apu_write);
   interp_bridge_set_pre_opcode_hook(0x809a2d, mmx_msu1_stage_music_hook);
