@@ -276,6 +276,11 @@ static void test_spawn_record_ownership(void) {
   assert(MmxWidePolicy_SpawnRecordAllowed(0x00, 3, 0x22, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(0x08, 3, 0x02, true));
+  /* Launch's second Anglerge is kind 3/id $21 at (4382,633). The
+   * lookahead reaches its column at checkpoint arrival, while the native
+   * vertical band is still above it. Keep the record for the native scan. */
+  assert(!MmxWidePolicy_SpawnRecordAllowed(1, 3, 0x21, false));
+  assert(MmxWidePolicy_SpawnRecordAllowed(1, 3, 0x21, true));
   assert(!MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, false));
   assert(MmxWidePolicy_SpawnRecordAllowed(6, 3, 0x37, true));
   /* Dr. Light's capsules keep the authored native timing in every stage. */
