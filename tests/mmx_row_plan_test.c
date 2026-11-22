@@ -70,14 +70,14 @@ static void composition_rows(void) {
       for (unsigned sub = 0; sub < 2; ++sub) {
         for (unsigned layer = 0; layer < 3; ++layer)
           if ((p.screenEnabled[sub] & (1u << layer)) &&
-              (!(p.screenWindowed[sub] & (1u << layer)) || !window(&p, layer, x, extra)) &&
+              (!(p.screenWindowed[sub] & (1u << layer)) || !window(&p, layer, x, extra, NULL, 0)) &&
               backgrounds[layer][sx] > screens[sub]) screens[sub] = backgrounds[layer][sx];
         if (!sub) camouflage_bg = screens[0];
         if ((p.screenEnabled[sub] & 16) &&
-            (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, extra)) &&
+            (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, extra, NULL, 0)) &&
             objects[sx] > screens[sub]) screens[sub] = objects[sx];
       }
-      bool inside = window(&p, 5, x, extra);
+      bool inside = window(&p, 5, x, extra, NULL, 0);
       if (beam_count) {
         inside = false;
         for (unsigned i = 0; i < beam_count; ++i)

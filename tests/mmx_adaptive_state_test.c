@@ -2008,6 +2008,36 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
+  if (getenv("MMX_OCTOPUS_BEAM_FIXTURE")) {
+    check(RtlLoadSnapshot(getenv("MMX_OCTOPUS_BEAM_FIXTURE")), "current Anglerge fixture loads");
+    check(g_ram[0x1f7a] == 1 && g_ram[0xe68] && g_ram[0xe72] == 0x21 &&
+          g_ram[0xe91] && !g_ram[0xeA2] && !(g_ram[0x1f2c] & 0x40),
+          "native Anglerge is live and no other beam owns the channel");
+    /* Deliberately bypass only AI attack choice using its real selection tail.
+     * DB86/X8 selects the authored beam entry, then the normal initializer owns
+     * all phase, vector, raster and completion state. No phase/beam writes here. */
+    check(RomPtr(0x86cbb6)[8] == 2, "authored variant-2 beam selection exists");
+    CpuState native = g_cpu;
+    uint8_t stack[256]; memcpy(stack, g_ram + 0x100, sizeof(stack));
+    native.PB = 0x82; native.DB = 0x86; native.D = 0xe68;
+    native.S = 0x1ff; native.X = 8; native.P = 0x30;
+    native.cycles = native.master_cycles = native.coprocessor_master_cycles = 0;
+    cpu_p_to_mirrors(&native);
+    check(cpu_dispatch_call_pc(&native, 0x82b038, 0x828000) == RECOMP_RETURN_NORMAL &&
+          native.S == 0x1ff, "native beam selection returns balanced");
+    check(g_ram[0xe6a] == 2 && !g_ram[0xe6b] && (g_ram[0x1f2c] & 0x40),
+          "native selector acquired beam owner");
+    native.PB = 0x82; native.DB = 0x86; native.D = 0xe68;
+    native.P = 0x30; cpu_p_to_mirrors(&native);
+    check(cpu_dispatch_call_pc(&native, 0x82b142, 0x828000) == RECOMP_RETURN_NORMAL &&
+          native.S == 0x1ff, "native beam initializer returns balanced");
+    memcpy(g_ram + 0x100, stack, sizeof(stack));
+    check(g_ram[0xe6a] == 2 && g_ram[0xe6b] == 2,
+          "native initializer reached aim phase");
+    check(RtlSaveSnapshot(getenv("MMX_OCTOPUS_BEAM_OUT")), "native prepared beam saves");
+    puts("MMX NATIVE ANGLERGE BEAM PREPARED; AI SELECTION BYPASSED");
+    return 0;
+  }
   if (getenv("MMX_PROJECT_ZERO_CATALOG")) {
     project_zero_checks(argv[1]);
     return 0;

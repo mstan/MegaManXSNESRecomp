@@ -83,7 +83,8 @@ static void native_render_row(const SnesRenderRegisters *p, const Raster *r, int
     int ripple, unsigned palette_fade, const uint16_t center[3][256],
     unsigned center_layers, const uint16_t *objects, int *object_colors,
     const uint32_t *rgb, const uint8_t brightness[32], const unsigned plain_layers[2],
-    const LightBeam beams[2], unsigned beam_count, uint32_t *out) {
+    const LightBeam beams[2], unsigned beam_count, const LightBeam *wide_window2,
+    uint32_t *out) {
   uint16_t backgrounds[3][MMX_RENDER_MAX_WIDTH];
   int colors[3][MMX_RENDER_MAX_WIDTH];
   for (unsigned layer = 0; layer < 3; ++layer) {
@@ -124,6 +125,28 @@ static void native_render_row(const SnesRenderRegisters *p, const Raster *r, int
       (unsigned)view.width, color_windows, beam_count);
   assert(planned); /* Validated renderer dimensions and at most two beams. */
   if (!planned) return;
+  if (wide_window2) {
+    /* Keep the hardware center's decisions; signed beam edges belong only to
+     * the extra columns. Both plans already split at native0/256 boundaries. */
+    SnesRenderWindowPlan wide = SnesRenderRegistersWindows(p,
+        p->window1left == 0 ? -view.extra : p->window1left,
+        p->window1right == 255 ? 255 + view.extra : p->window1right,
+        wide_window2->left[y], wide_window2->right[y]);
+    SnesRenderComposePlan margins;
+    planned = SnesRenderRegistersPlanCompose(&margins, p, &wide, -view.extra,
+        (unsigned)view.width, color_windows, beam_count);
+    assert(planned);
+    if (!planned) return;
+    unsigned count = 0;
+    for (unsigned i = 0; i < plan.count; ++i)
+      if (!plan.spans[i].margin) plan.spans[count++] = plan.spans[i];
+    plan.count = count; count = 0;
+    for (unsigned i = 0; i < margins.count; ++i)
+      if (margins.spans[i].margin) margins.spans[count++] = margins.spans[i];
+    margins.count = count;
+    native_compose_row(p, r, view, backgrounds, colors, objects, object_colors,
+        rgb, brightness, plain_layers, &margins, menu, dialogue_backdrop, out);
+  }
   native_compose_row(p, r, view, backgrounds, colors, objects, object_colors,
       rgb, brightness, plain_layers, &plan, menu, dialogue_backdrop, out);
 }

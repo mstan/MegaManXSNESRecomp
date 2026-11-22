@@ -1540,12 +1540,17 @@ static void sprite(const SnesRenderRegisters *p, const Raster *r, int x, int sy,
     }
   }
 }
-static bool window(const SnesRenderRegisters *p, int layer, int x, int extra) {
+typedef struct LightBeam { int left[224], right[224]; } LightBeam;
+static bool window(const SnesRenderRegisters *p, int layer, int x, int extra,
+                   const LightBeam *wide_window2, int y) {
   unsigned flags = (p->windowsel >> (layer * 4)) & 15;
   int l1 = p->window1left == 0 ? -extra : p->window1left;
   int r1 = p->window1right == 255 ? 255 + extra : p->window1right;
   int l2 = p->window2left == 0 ? -extra : p->window2left;
   int r2 = p->window2right == 255 ? 255 + extra : p->window2right;
+  if (wide_window2 && (x < 0 || x >= 256)) {
+    l2 = wide_window2->left[y]; r2 = wide_window2->right[y];
+  }
   bool a = (x >= l1 && x <= r1) != ((flags & 1) != 0);
   bool b = (x >= l2 && x <= r2) != ((flags & 4) != 0);
   if (!(flags & 2)) return (flags & 8) && b;
@@ -1554,7 +1559,44 @@ static bool window(const SnesRenderRegisters *p, int layer, int x, int extra) {
     case 0: return a || b; case 1: return a && b; case 2: return a != b; default: return a == b;
   }
 }
-typedef struct LightBeam { int left[224], right[224]; } LightBeam;
+static int beam_fixed_pixel(int value) {
+  return value >= 0 ? value / 256 : -((-value + 255) / 256);
+}
+static bool angler_window2(LightBeam *beam) {
+  const uint8_t *r = frame.ram;
+  if (r[0x1f7a] != 1 || !(r[0x1f2c] & 0x40)) return false;
+  for (unsigned d = 0xe68; d < 0x1228; d += 64) {
+    if (!r[d] || r[d + 1] != 2 || r[d + 2] != 2 ||
+        r[d + 10] != 0x21 || !r[d + 0x29]) continue;
+    /* $82:B420 emits the native window from two signed24.8 accumulators.
+     * Keep those coordinates in the margin instead of extending its clamped
+     * zero across every extra pixel. This is presentation-only: the captured
+     * native windows, guest raster tables and beam collision remain intact. */
+    unsigned velocity = word(r, d + 0x1a);
+    int tip = (int16_t)(word(r, d + 5) - word(r, 0x1e4d) +
+        (velocity >= 0xff00 ? 3 : 0));
+    int top = (int16_t)(word(r, d + 8) - 32 - word(r, 0x1e50) +
+        (velocity >= 0xff00 ? 10 : 6));
+    if (top < 0 || top >= 232) return false; /* Native producer emits no table. */
+    int bottom = word(r, d + 15);
+    if (bottom > 232) bottom = 232;
+    if (bottom <= top) bottom = top + 1;
+    /* The native ADC high byte isFF for both edges, not a truncated8-bit
+     * window coordinate. Keep its portable floor rounding for negative x. */
+    int left = (int)velocity - 0x10000;
+    int right = (int)word(r, d + 0x1c) - 0x10000;
+    for (int y = 0; y < 224; ++y) {
+      int row = y + view_dy;
+      beam->left[y] = 1; beam->right[y] = 0;
+      if (row < top || row >= bottom) continue;
+      int steps = row - top + 1;
+      beam->left[y] = beam_fixed_pixel(tip * 256 + left * steps) - view_dx;
+      beam->right[y] = beam_fixed_pixel(tip * 256 + right * steps) - view_dx;
+    }
+    return true;
+  }
+  return false;
+}
 static unsigned spark_lights(LightBeam beams[2], int extra) {
   /* $87:A7F6 builds 8-bit HDMA windows from the ROM's rounded beam profile.
    * Rebuild only that color window in signed host coordinates. The native
@@ -2403,6 +2445,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     armor_weapon_palette(0,x_weapon_palette.colors);
   prepare_stage_planes();
   prepare_armor_radar();
+  LightBeam angler;
+  const LightBeam *wide_window2 = stage && angler_window2(&angler) ? &angler : NULL;
   LightBeam beams[2];
   unsigned beam_count = stage ? spark_lights(beams, view.extra) : 0;
   unsigned palette_fade = stage && g_mmx_render_asset_repairs ?
@@ -2933,7 +2977,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     native_render_row(&p, r, y, view, stage, menu, dialogue_backdrop,
         crystal_ripple[y], palette_fade, native_background, native_layers,
         objects, object_colors, native_rgb, brightness, native_plain_layers,
-        beams, beam_count, out + y * view.width);
+        beams, beam_count, wide_window2, out + y * view.width);
     continue;
 #endif
     for (int sx = 0; sx < view.width; ++sx) {
@@ -2964,15 +3008,15 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       for (int sub = 0; sub < 2; ++sub) {
         for (int layer = 0; layer < 3; ++layer)
           if ((p.screenEnabled[sub] & (1 << layer)) &&
-              (!(p.screenWindowed[sub] & (1 << layer)) || !window(&p, layer, x, view.extra)) && bg[layer] > screens[sub]) screens[sub] = bg[layer];
+              (!(p.screenWindowed[sub] & (1 << layer)) || !window(&p, layer, x, view.extra, wide_window2, y)) && bg[layer] > screens[sub]) screens[sub] = bg[layer];
         if(!sub) camouflage_bg=screens[0];
-        if ((p.screenEnabled[sub] & 16) && (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, view.extra)) &&
+        if ((p.screenEnabled[sub] & 16) && (!(p.screenWindowed[sub] & 16) || !window(&p, 4, x, view.extra, wide_window2, y)) &&
             objects[sx] > screens[sub]) screens[sub] = objects[sx];
       }
 #if MMX_NATIVE_RASTER
-      bool color_window = (native_windows & 32) && window(&p, 5, x, view.extra);
+      bool color_window = (native_windows & 32) && window(&p, 5, x, view.extra, wide_window2, y);
 #else
-      bool color_window = window(&p, 5, x, view.extra);
+      bool color_window = window(&p, 5, x, view.extra, wide_window2, y);
 #endif
       if (beam_count) {
         color_window = false;

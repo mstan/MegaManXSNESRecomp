@@ -317,9 +317,11 @@ bool MmxWidePolicy_SpawnRecordAllowed(uint8_t stage, uint8_t kind,
    * Streakers also retain their room timing, with a moving offscreen entry.
    * Dr. Light's capsule ($4D) does too: Storm Eagle's helmet capsule
    * (4040,720) lies below the corridor the early cursor crosses its column
-   * from, so DCDB's height test rejected it and nothing rescanned it. */
+   * from, so DCDB's height test rejected it and nothing rescanned it.
+   * Launch's Anglerge ($21) has the same constraint: checkpoint arrival
+   * exposes its column before the camera reaches its underwater height. */
   if (kind == 3 && (MmxWidePolicy_IsScriptedEncounter(object_id) || object_id == 0x37 ||
-                    object_id == 0x4d))
+                    object_id == 0x4d || object_id == 0x21))
     return native_pass;
 
   return native_pass ? kind != 3 : kind == 3;
