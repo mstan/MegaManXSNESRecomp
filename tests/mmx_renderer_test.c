@@ -966,6 +966,55 @@ static void wide_water_plane(void) {
   assert(output[40 * v.width + 128] == 0xff0000);
 }
 
+static void angler_beam_margin(void) {
+  memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram));
+  MmxRendererReset(); MmxRendererSetRom(NULL, 0);
+  memset(rom_bytes, 0, sizeof(rom_bytes)); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
+  put_word(0xb95, 0x8000); ram[0xb97] = 0x80;
+  for (int i = 0; i < 256; ++i) put_word(0x2000 + i * 2, 1);
+  for (int q = 0; q < 4; ++q) rom_word(8 + q * 2, 1);
+  ram[0xd1] = 2; ram[0xd2] = ram[0xd3] = 4; ram[0x1f7a] = 1;
+  ram[0xe68] = 1; ram[0xe69] = ram[0xe6a] = 2; ram[0xe6b] = 8;
+  ram[0xe72] = 0x21; ram[0xe91] = 0x40; ram[0x1f2c] = 0x40;
+  put_word(0xe6d, 160); put_word(0xe70, 128); put_word(0xe77, 284);
+  put_word(0xe82, (uint16_t)-372); put_word(0xe84, (uint16_t)-199);
+  ppu.inidisp = 15; ppu.bgmode = 1; ppu.screenEnabled[0] = 1;
+  ppu.screenWindowed[0] = 1; ppu.windowsel = 8;
+  ppu.bgXsc[0] = 0x10; ppu.cgram[1] = 31 << 10;
+  for (int i = 0; i < 1024; ++i) ppu.vram[0x1000 + i] = 1;
+  for (int y = 0; y < 8; ++y) ppu.vram[16 + y] = 255;
+  MmxRendererBeginFrame(ram);
+  for (int y = 0; y < 224; ++y) {
+    int left = 160 - (372 * (y - 101) + 255) / 256;
+    int right = 160 - (199 * (y - 101) + 255) / 256;
+    ppu.window2left = y < 102 ? 255 : left < 0 ? 0 : left;
+    ppu.window2right = y < 102 ? 0 : right < 0 ? 0 : right;
+    MmxRendererCaptureLine(&ppu, y + 1);
+  }
+  assert(MmxRendererEndFrame(stock));
+  const MmxRenderView views[] = {{342,43,16.0/9.0},{682,213,32.0/9.0}};
+  for (unsigned repairs = 0; repairs < 2; ++repairs) {
+    g_mmx_render_asset_repairs = repairs;
+    for (unsigned i = 0; i < 2; ++i) {
+      MmxRenderView v = views[i]; assert(MmxRendererDraw(output, v, false));
+      assert(output[223*v.width+v.extra+64] == 0);
+      assert(output[223*v.width+v.extra+100] == 0x0000ff);
+      assert(output[200*v.width+v.extra-30] == 0x0000ff);
+      assert(output[223*v.width+v.extra-10] == 0);
+      /* The native edge is -18 here; clamping0 must not light/hide all margin. */
+      assert(output[223*v.width+v.extra-30] == 0x0000ff);
+    }
+  }
+  g_mmx_render_asset_repairs = true;
+  /* The same native clamp keeps its existing meaning without the live owner. */
+  ram[0xe69] = 0; capture();
+  assert(MmxRendererDraw(output, views[0], false));
+  assert(output[223*views[0].width+views[0].extra-30] == 0);
+  ram[0xe69] = 2; ram[0x1f2c] = 0; capture();
+  assert(MmxRendererDraw(output, views[0], false));
+  assert(output[223*views[0].width+views[0].extra-30] == 0);
+}
+
 static void buried_submarine(void) {
   memset(&ppu, 0, sizeof(ppu)); memset(ram, 0, sizeof(ram)); memset(rom_bytes, 0, sizeof(rom_bytes));
   MmxRendererReset(); MmxRendererSetRom(NULL, 0); MmxRendererSetRom(rom_bytes, sizeof(rom_bytes));
@@ -1842,4 +1891,4 @@ static void rush_results_page(void) {
   MmxBossRushReset();
 }
 #include "mmx_coop_camera_test.inc"
-int main(void) { independent_camera_pan(); geometry(); raster_and_hud(); immutable_vram_raster(); stage_map_draw_lifetime(); sprite_coordinates(); independent_oam_visibility(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); airport_upper_sky_repair(); wide_water_plane(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); storm_dormant_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); rush_static_and_streamed_graphics(); rush_results_page(); coop_special_graphics(); armor_menu_and_hud(); return 0; }
+int main(void) { independent_camera_pan(); geometry(); raster_and_hud(); immutable_vram_raster(); stage_map_draw_lifetime(); sprite_coordinates(); independent_oam_visibility(); expanded_capacity(); background_resources(); dialogue_and_password(); highway_arena_sky(); highway_airship_binding(); distant_doors(); storm_background_prefill(); resource_decode(); spark_effects(); airport_panorama_edge(); airport_upper_sky_repair(); wide_water_plane(); angler_beam_margin(); buried_submarine(); background_continuations(); launch_background_palettes(); sting_background_palettes(); mammoth_background_palettes(); dialogue_backdrop(); fortress_actor_presentation(); storm_dormant_presentation(); sprite_priority_and_cutscene_binding(); weapons_menu_margins(); zero_blink_submission(); rush_private_pose_graphics(); rush_static_and_streamed_graphics(); rush_results_page(); coop_special_graphics(); armor_menu_and_hud(); return 0; }
