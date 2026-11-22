@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 2.4.2 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 2.4.3 LANGUAGES C CXX)
 # Qualified Windows x64 default; retain explicit selections and other-target floors.
 set(_MMX_RASTER_IMPL_DEFAULT "LLE")
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _MMX_RASTER_IMPL_PROCESSOR)
@@ -422,6 +422,7 @@ include(${SNESRECOMP_ROOT}/runner/cmake/mmx_state_tests.cmake)
 snesrecomp_target_mmx_state_tests(MegaManXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
 
 if(TARGET mmx_state_tests)
+    target_include_directories(mmx_state_tests PRIVATE "${SNESRECOMP_ROOT}/runner/tests")
     add_dependencies(mmx_state_tests MegaManXSNESRecomp_widescreen_overrides)
     target_compile_definitions(mmx_state_tests PRIVATE
         MMX_ZERO_COMBAT_REFERENCE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/zero_x3_combat.csv"
@@ -431,6 +432,15 @@ if(TARGET mmx_state_tests)
     set_property(TARGET mmx_state_tests PROPERTY SOURCES
         tests/mmx_adaptive_state_test.c ${mmx_state_sources})
     if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set(screenshot_test_dir "${CMAKE_CURRENT_BINARY_DIR}/screenshot-runtime")
+        file(MAKE_DIRECTORY "${screenshot_test_dir}")
+        add_test(NAME mmx_screenshot_runtime
+            COMMAND ${CMAKE_COMMAND} -E env
+                SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=dummy
+                MMX_REPLAY_RECORD=0 MMX_SCREENSHOT_TEST=1
+                $<TARGET_FILE:mmx_state_tests> "${CMAKE_CURRENT_SOURCE_DIR}/mmx.sfc")
+        set_tests_properties(mmx_screenshot_runtime PROPERTIES
+            WORKING_DIRECTORY "${screenshot_test_dir}" TIMEOUT 0)
         set(msu_state_test_dir "${CMAKE_CURRENT_BINARY_DIR}/msu-state-runtime")
         file(MAKE_DIRECTORY "${msu_state_test_dir}")
         file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/mods" DESTINATION "${msu_state_test_dir}")
