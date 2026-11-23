@@ -37,6 +37,7 @@ static void same(const void *a, size_t an, const void *b, size_t bn, const char 
   }
   check(an && an == bn && !memcmp(a, b, an), what);
 }
+#include "screenshot_slot_checks.h"
 static void zero_replay(int n) { for (int i=0;i<n;++i) frame(0); }
 static void rewind_six_frames(void) {
   /* The framework harness requests interval 1; the game's default is 6. */
@@ -1975,6 +1976,10 @@ int main(int argc, char **argv) {
         FindCmdForSdlKey(SDLK_F8, 0) == kKeys_Rewind &&
         FindCmdForSdlKey(SDLK_F11, 0) == kKeys_Load + 6 &&
         FindCmdForSdlKey(SDLK_F12, 0) == kKeys_Load + 7, "F7/F8 and legacy config migration");
+#if !defined(__ANDROID__) && !SNESRECOMP_SDL_GLES2_ONLY
+  check(FindCmdForSdlKey(SDLK_PRINTSCREEN, 0) == kKeys_Screenshot,
+        "desktop capture defaults to PrintScreen without taking an F-key");
+#endif
   HandleInput(SDLK_F7, 0, true); HandleInput(SDLK_F8, 0, true);
   check(g_savestate_menu_hotkey && g_rewind_hotkey, "host dispatches F7/F8");
   g_savestate_menu_hotkey = g_rewind_hotkey = 0;
@@ -1989,6 +1994,17 @@ int main(int argc, char **argv) {
   ConfigReloadKeyMap("config.ini");
   check(!FindCmdForSdlKey(SDLK_F8, 0) &&
         FindCmdForSdlKey(SDLK_F9, 0) != kKeys_Rewind, "launcher clear persists");
+#if defined(RECOMP_LAUNCHER_HAS_SCREENSHOT_HOTKEY)
+  launcher_binds_set_hotkey(&model, LNG_HK_SCREENSHOT, SDLK_F3, KMOD_CTRL);
+  ConfigReloadKeyMap("config.ini");
+  check(FindCmdForSdlKey(SDLK_F3, KMOD_CTRL) == kKeys_Screenshot,
+        "ordinary launcher screenshot combo reaches the live host");
+  launcher_binds_set_hotkey(&model, LNG_HK_SCREENSHOT, 0, 0);
+  ConfigReloadKeyMap("config.ini");
+  check(FindCmdForSdlKey(SDLK_PRINTSCREEN, 0) != kKeys_Screenshot &&
+        FindCmdForSdlKey(SDLK_F3, KMOD_CTRL) != kKeys_Screenshot,
+        "clearing capture persists rather than reviving its default");
+#endif
   g_launcher_config_path = NULL;
   f = fopen(argv[1], "rb"); check(f != NULL, "ROM opens");
   fseek(f, 0, SEEK_END); long rom_size = ftell(f); rewind(f);
@@ -2008,6 +2024,12 @@ int main(int argc, char **argv) {
   check(SnesInit(rom, rom_size) != NULL, "game initializes");
   g_spc_player = SmwSpcPlayer_Create();
   g_spc_player->initialize(g_spc_player);
+  if (getenv("MMX_SCREENSHOT_TEST")) {
+    for (int i = 0; i < 600; ++i) frame(i == 200 || i == 350 ? SNES_PAD_START : 0);
+    check_screenshot_slot_files();
+    puts("MMX SCREENSHOT SLOT CHECKS PASSED");
+    return 0;
+  }
   if (getenv("MMX_OCTOPUS_BEAM_FIXTURE")) {
     check(RtlLoadSnapshot(getenv("MMX_OCTOPUS_BEAM_FIXTURE")), "current Anglerge fixture loads");
     check(g_ram[0x1f7a] == 1 && g_ram[0xe68] && g_ram[0xe72] == 0x21 &&

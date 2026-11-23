@@ -230,6 +230,9 @@ death restarts the team as in single player. Player 2's health bar is hidden;
 Reopen the launcher during play with **Ctrl+L** or controller **Select+L3**.
 Configure system shortcuts in **Hotkeys**. **F7** opens the save-state browser
 and **F8** opens rewind; both pause gameplay while you choose.
+With desktop OpenGL output, **PrintScreen** saves a BMP in `screenshots/`.
+Rebind or clear **Screenshot** in **Hotkeys**. Saving a slot also refreshes its
+matching preview in the save-state browser, including saves made by hotkey.
 
 ## Reporting problems
 
