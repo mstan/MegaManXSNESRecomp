@@ -396,11 +396,13 @@ const uint8_t *MmxZeroPose(const uint8_t ram[0x20000], const MmxZeroState *s) {
    * staggered hurt pose. */
   if (ram[0xbaa] == 0x36)
     return poses + (size_t)0x33 * MMX_ZERO_WIDTH * MMX_ZERO_HEIGHT;
-  /* X stays drawn while the capsule's input demo waits in pose $50.
-   * That index is an effect in the original X3 sheet. Hold Zero's standing
-   * body until the demo resumes its ordinary animation. */
-  if (ram[0xbaa] == 0x38 && ram[0xbab] == 1 && ram[0x1f48] &&
-      ram[0xbbe] == 0 && (ram[0xbbf] & 127) == 0x50)
+  /* X stays drawn in pose $50 during the capsule demo wait and stage-clear
+   * salute. That index is an effect in the original X3 sheet. Hold Zero's
+   * standing body until each native scene resumes its ordinary animation. */
+  if (ram[0xbbe] == 0 && (ram[0xbbf] & 127) == 0x50 &&
+      ((ram[0xbaa] == 0x38 && ram[0xbab] == 1 && ram[0x1f48]) ||
+       (ram[0xbaa] == 0x1a && ram[0xbab] == 0x0a &&
+        ram[0xd1] == 2 && ram[0xd2] == 4 && ram[0xd3] == 8)))
     return poses;
   /* X1's Vile capture/rescue uses group $66, not the normal body group.
    * Its five poses are kneeling/blinking, then suspended. Use original X3
