@@ -153,6 +153,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
         src/mmx_damage.c src/mods/mmx_damage_plugin.c
         src/mods/mmx_widescreen_plugin.c src/mods/mmx_msu1_plugin.c
         src/mods/mmx_hadouken_plugin.c src/mods/mmx_password_plugin.c src/mods/mmx_boss_rush_plugin.c src/mmx_password_save.cpp
+        src/mmx_qol.c src/mmx_dash.c src/mods/mmx_qol_plugin.c
         src/mods/mmx_zero_plugin.c src/mods/mmx_armor_plugin.c src/mmx_zero.c src/mmx_armor.c src/mmx_armor_launcher.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_knc_bugfix.c src/mmx_coop.c src/mmx_coop_trace.c src/mmx_coop_view.c
         src/mmx_hitbox_overlay.c
         src/mmx_boss_rush.c src/mmx_boss_rush_audio.c src/mmx_boss_rush_runtime.c src/mmx_boss_rush_draw.c src/mmx_boss_rush_score.cpp
@@ -193,17 +194,27 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
             snesrecomp_target_rom_cache(${TARGET})
         endif()
         if(NOT SNESRECOMP_SETUP_HOST)
-            # Invalidate generated objects before Ninja plans this build.
-            file(GLOB mmx_generated ${GEN_DIR}/*.c)
-            set_property(SOURCE ${mmx_generated} APPEND PROPERTY OBJECT_DEPENDS
+            # Patch before Ninja plans its object work. Actual changed source
+            # mtimes then invalidate only the affected generated objects.
+            set(mmx_codegen_hooks
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_overrides.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_renderer_capture.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_password_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_zero_hooks.py
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_coop_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_weapon_hooks.py
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py)
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_coop_hooks.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_qol_hooks.py)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${mmx_codegen_hooks})
+            foreach(mmx_hook IN LISTS mmx_codegen_hooks)
+                execute_process(COMMAND ${Python3_EXECUTABLE} ${mmx_hook} --gen-dir ${GEN_DIR}
+                    RESULT_VARIABLE mmx_hook_result OUTPUT_VARIABLE mmx_hook_output
+                    ERROR_VARIABLE mmx_hook_error)
+                if(NOT mmx_hook_result EQUAL 0)
+                    message(FATAL_ERROR "${mmx_hook}: ${mmx_hook_output}${mmx_hook_error}")
+                endif()
+            endforeach()
             add_custom_target(${TARGET}_widescreen_overrides
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_overrides.py
                         --gen-dir ${GEN_DIR}
@@ -220,6 +231,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py
                         --gen-dir ${GEN_DIR}
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
+                        --gen-dir ${GEN_DIR}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_qol_hooks.py
                         --gen-dir ${GEN_DIR}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 COMMENT "Applying Mega Man X generated-code mod hooks" VERBATIM)
@@ -257,6 +270,22 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(mmx_dash_test tests/mmx_dash_test.c src/mmx_dash.c)
+    target_include_directories(mmx_dash_test PRIVATE src)
+    if(MSVC)
+        target_compile_options(mmx_dash_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_dash_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME mmx_dash COMMAND mmx_dash_test)
+    add_executable(mmx_qol_test tests/mmx_qol_test.c src/mmx_qol.c)
+    target_include_directories(mmx_qol_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
+    if(MSVC)
+        target_compile_options(mmx_qol_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mmx_qol_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME mmx_qol COMMAND mmx_qol_test)
     add_executable(mmx_damage_test tests/mmx_damage_test.c src/mmx_damage.c)
     target_include_directories(mmx_damage_test PRIVATE src)
     add_test(NAME mmx_damage_multipliers COMMAND mmx_damage_test)
@@ -319,6 +348,7 @@ if(BUILD_TESTING)
     target_include_directories(mmx_wide_policy_test PRIVATE src)
     add_test(NAME mmx_wide_policy COMMAND mmx_wide_policy_test)
     add_executable(mmx_renderer_test tests/mmx_renderer_test.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c src/mmx_zero.c src/mmx_armor.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_coop_view.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
+    target_sources(mmx_renderer_test PRIVATE src/mmx_dash.c)
     target_include_directories(mmx_renderer_test PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     add_test(NAME mmx_custom_renderer COMMAND mmx_renderer_test)
     get_target_property(mmx_renderer_reference_sources mmx_renderer_test SOURCES)
@@ -384,6 +414,7 @@ if(BUILD_TESTING)
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/renderer-${reference_name}")
     endforeach()
     add_executable(mmx_render_capture tools/mmx_render_capture.c src/mmx_renderer.c src/mmx_render_assets.c src/mmx_display.c src/mmx_wide_policy.c src/mmx_zero.c src/mmx_armor.c src/mmx_weapons.c src/mmx_weapon_combat.c src/mmx_coop_view.c src/mmx_boss_rush.c src/mmx_boss_rush_draw.c)
+    target_sources(mmx_render_capture PRIVATE src/mmx_dash.c)
     target_include_directories(mmx_render_capture PRIVATE src ${SNESRECOMP_ROOT}/runner/src)
     foreach(mmx_render mmx_renderer_test mmx_render_capture)
         target_sources(${mmx_render} PRIVATE src/mmx_boss_rush_score.cpp)

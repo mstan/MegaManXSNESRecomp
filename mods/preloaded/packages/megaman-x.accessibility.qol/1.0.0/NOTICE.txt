@@ -1,0 +1,6 @@
+These native X1 options were independently implemented for this project.
+Behavioral references: llethas, Mega Man X SA-1 Plus v2.1.0,
+https://github.com/llethas/mmx_sa-1_plus
+The reference's documentation credits Justin3009 for the wall-jump/air-dash
+work and DarkSamus993 and PowerPanda for the Hadouken work.
+No reference ASM, IPS patches or ROM graphics are distributed in this package.

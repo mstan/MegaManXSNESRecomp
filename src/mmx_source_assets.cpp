@@ -372,6 +372,23 @@ void publish(const char *output,const Bytes& bytes) {
   } catch (...) { std::error_code ec;fs::remove(temp,ec);throw; }
 }
 }
+int MmxDashAssetsBuild(const char *rom,const char *output,char *error,size_t size) {
+  try {
+    require(output,"Invalid dash asset request.");Rom r(rom,2);
+    Bytes out{'M','M','X','D','S','H','0','1'};put(out,6);put(out,0);
+    Tiles tiles;unsigned table=r.integer(0x8d8000,3);
+    for(unsigned frame=0;frame<60;++frame) {
+      transfer(r,0x859609,frame,tiles);
+      if(frame<54)continue;
+      out.insert(out.end(),tiles.bytes.begin(),tiles.bytes.end());
+      append(out,r.raw(0x2b100,32));
+      unsigned address=r.integer(table+frame*3,3),count=r.integer(address,1);
+      require(count && count<=64,"Invalid X2 dash arrangement.");
+      append(out,r.at(address,1+count*4));
+    }
+    publish(output,out);if(error && size)*error=0;return 1;
+  } catch(const std::exception& e) {if(error && size)std::snprintf(error,size,"%s",e.what());return 0;}
+}
 int MmxArmorAssetsBuild(const char *rom,unsigned game,const char *output,char *error,size_t size) {
   try {
     require((game==2 || game==3) && output,"Invalid armor asset request.");
