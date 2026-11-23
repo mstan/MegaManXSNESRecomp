@@ -2630,6 +2630,16 @@ static void mine_wrap_hook(CpuState *cpu,uint32_t pc) {
         memcpy(a+0x22,a+5,2);memcpy(a+0x24,a+8,2);
       }
     }
+    /* The native wrap moves the camera into the lower map but leaves its
+     * vertical bounds easing from the upper map. Both pit checks run on
+     * those bounds on the next frame. Seed the new camera band until the
+     * lower map's ordinary region commands take over. */
+    unsigned top=word(g_ram+0x1e50);
+    const unsigned vertical_bounds[]={0x1e5a,0x1e5c,0x1e68,0x1e6e};
+    for(unsigned i=0;i<sizeof(vertical_bounds)/sizeof(*vertical_bounds);++i) {
+      unsigned address=vertical_bounds[i];
+      if(word(g_ram+address)<top) putword(g_ram+address,top);
+    }
     MmxCoopViewBoundsState fresh={0};MmxCoopViewsSetBoundsState(&fresh);
   }
 }
