@@ -10,7 +10,7 @@ enum { MMX_ZERO_WIDTH = 128, MMX_ZERO_HEIGHT = 128, MMX_ZERO_POSES = 152, MMX_ZE
        MMX_ZERO_HEALTH_STATE_SIZE = 40 };
 typedef struct MmxZeroModernState {
   uint8_t enabled, jump_used, dash_used, dash_ticks;
-  uint8_t dash_facing, slash_buffer, hit_phase, reserved;
+  uint8_t dash_facing, slash_buffer, hit_phase, saber_held;
 } MmxZeroModernState;
 typedef struct MmxZeroLegacyIntent {
   bool held, pressed, released;

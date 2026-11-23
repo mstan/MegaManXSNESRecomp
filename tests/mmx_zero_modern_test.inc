@@ -36,6 +36,37 @@ static void modern_checks(const char *assets,const char *fixture,uint8 *start,
     frame(SNES_PAD_Y);zero_replay(4);frame(SNES_PAD_A|SNES_PAD_RIGHT);frame(SNES_PAD_A|SNES_PAD_RIGHT);
     check(!MmxZeroGetState().slash && modern_x()>x,
         "ground dash cancels saber and starts native movement");
+    modern_fixture(fixture);x=modern_x();
+    frame(SNES_PAD_Y|SNES_PAD_A|SNES_PAD_RIGHT);frame(SNES_PAD_A|SNES_PAD_RIGHT);
+    check(!MmxZeroGetState().slash && modern_x()>x,
+        "simultaneous ground dash and saber starts native dash");
+    modern_fixture(fixture);frame(SNES_PAD_Y);
+    check(MmxZeroGetState().slash,"holding saber starts one swing");
+    bool recovered=false,repeated=false;
+    for(unsigned i=0;i<90;++i) {
+      frame(SNES_PAD_Y);
+      bool slashing=MmxZeroGetState().slash!=0;
+      repeated |= recovered && slashing;
+      if(!slashing)recovered=true;
+    }
+    check(recovered && !repeated,"holding saber past recovery does not start another swing");
+    frame(0);frame(SNES_PAD_Y);
+    check(MmxZeroGetState().slash,"release and new press starts the next swing");
+    modern_fixture(fixture);ground=modern_y();
+    for(unsigned i=0;i<4;++i) frame(SNES_PAD_A|SNES_PAD_RIGHT);
+    check(g_ram[0xbaa]==0x14,"ground dash starts before the jump");
+    for(unsigned i=0;i<3;++i) frame(SNES_PAD_B|SNES_PAD_RIGHT);
+    unsigned rising=modern_y();
+    check(rising<ground,"native ground dash-jump is already rising before slash");
+    size_t dash_n=RtlSaveSnapshotToMemory(start,cap);
+    for(unsigned i=0;i<8;++i) frame(SNES_PAD_B|SNES_PAD_RIGHT);
+    unsigned dash_x=modern_x(),dash_y=modern_y();
+    check(dash_y<rising && RtlLoadSnapshotFromMemory(start,dash_n),
+        "restore exact current-build rising dash-jump");
+    frame(SNES_PAD_Y|SNES_PAD_B|SNES_PAD_RIGHT);
+    for(unsigned i=1;i<8;++i) frame(SNES_PAD_B|SNES_PAD_RIGHT);
+    check(MmxZeroGetState().slash && modern_x()==dash_x && modern_y()==dash_y,
+        "air slash preserves the rising native ground dash-jump trajectory");
     modern_fixture(fixture);
     for(unsigned i=0;i<10;++i) frame(SNES_PAD_B);
     frame(SNES_PAD_Y);zero_replay(3);
