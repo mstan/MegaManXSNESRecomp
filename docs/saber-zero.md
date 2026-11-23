@@ -20,13 +20,16 @@ commercially. This project is not monetized.
 
 ## Controls
 
-The physical SNES pad rules are deliberately narrow: Saber owns Y and the
-buster/special translation owns X. The other native controls remain available.
+Saber uses the SNES Y button. The buster and special weapons use X by default.
+To change the virtual SNES button to A or B, enable **Characters → Saber Zero
+settings** in Mods and choose **Buster button**. Adjust the native dash or
+jump assignment in the game if it shares your new Buster button. You can also
+change the keyboard or controller input for each SNES button in recomp-ui.
 
 | Button | Behavior |
 |--------|----------|
 | Y | Start/continue a Saber attack. On the ground it starts the 3-hit combo; in the air it is an air slash; on a wall it is a wall slash; during a grounded dash it is a dash slash. A held Y produces one edge. |
-| X | Charge and fire the buster when the buster is selected; otherwise fire the selected special weapon. X is blocked from creating a new buster/special shot while a Saber slash, finisher, or wave-shooting animation owns the action. |
+| Buster (X by default) | Charge and fire the buster or fire the selected special weapon. A Saber slash, finisher, or wave-shooting animation blocks new shots. |
 | B | Native jump. |
 | A | Native dash. |
 | Direction | Native movement. Ground swings and dash swings mask the movement edges required by their attack state, so holding the opposite direction cannot turn a swing. |
@@ -64,7 +67,7 @@ requires that protection.
 
 ## Buster charge and the X3 finisher
 
-While X is held, the Zero charge counter reaches these X3 thresholds:
+While the Buster button is held, the Zero charge counter reaches these X3 thresholds:
 
 | Held frames | Tier | Result |
 |-------------|------|--------|
