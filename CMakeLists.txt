@@ -202,6 +202,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_zero_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_coop_hooks.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_native_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_weapon_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py)
             add_custom_target(${TARGET}_widescreen_overrides
@@ -220,6 +221,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py
                         --gen-dir ${GEN_DIR}
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
+                        --gen-dir ${GEN_DIR}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_native_hooks.py
                         --gen-dir ${GEN_DIR}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 COMMENT "Applying Mega Man X generated-code mod hooks" VERBATIM)

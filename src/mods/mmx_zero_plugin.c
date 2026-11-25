@@ -213,6 +213,8 @@ static void hook(CpuState *cpu, uint32_t pc) {
       break;
   }
 }
+InterpPreOpcodeHook MmxZeroReferenceHook(void) { return hook; }
+
 static bool zero_terrain_solid(const uint8_t *r, int x, int y) {
   return MmxWeaponsTerrainSolid(r, x, y, false, NULL);
 }

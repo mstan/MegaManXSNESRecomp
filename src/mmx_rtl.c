@@ -63,10 +63,70 @@ static void MmxGraphicsYieldHook(CpuState *cpu, uint32_t pc) {
     interp_bridge_pre_opcode_redirect((pc & 0xff0000) | 0x8127);
 }
 
+/* JSR arrivals already bounce into these HLE bodies. JMP/BRA arrivals from
+ * an interpreted guest tail need the same native operation; interpreting the
+ * ROM bytes here would re-enter the replaced coroutine scheduler. */
+static void MmxNativeYieldHook(CpuState *cpu, uint32_t pc) {
+  if (snesrecomp_execution_policy() == SNESRECOMP_EXECUTION_MODE_LLE) {
+    if ((pc & 0xffffu) == 0x8121u) MmxGraphicsYieldHook(cpu, pc);
+    return;
+  }
+  extern RecompReturn HleMmxYieldOneFrame(CpuState *);
+  extern RecompReturn HleMmxYieldNFrames(CpuState *);
+  extern RecompReturn HleMmxYieldVblank(CpuState *);
+  uint16_t s = cpu->S;
+  uint32_t continuation = ((uint32_t)cpu->PB << 16) |
+      (uint16_t)((g_ram[(uint16_t)(s + 1) & 0x1fffu] |
+                 ((uint16_t)g_ram[(uint16_t)(s + 2) & 0x1fffu] << 8)) + 1);
+  switch (pc & 0xffffu) {
+    case 0x8100: HleMmxYieldOneFrame(cpu); break;
+    case 0x810c: HleMmxYieldNFrames(cpu); break;
+    case 0x8121: HleMmxYieldVblank(cpu); break;
+    default: abort();
+  }
+  interp_bridge_pre_opcode_return(continuation);
+}
+
 static SnesrecompExecutionMode mmx_execution_mode(void) {
-  /* LLE is the correctness floor. The C-host fiber scheduler remains an
-   * explicit optimization selected with SNESRECOMP_EXECUTION_MODE=hle. */
-  return snesrecomp_execution_mode(SNESRECOMP_EXECUTION_MODE_LLE);
+  return snesrecomp_execution_policy();
+}
+
+/* The stateful mod registry is shared with the explicit reference route.
+ * Compiled instruction boundaries invoke it directly. The native scheduler
+ * stays the owner; guest continuations retain the authoritative CPU dispatcher
+ * and this frame's stack/return contract. Guest coverage is a separate policy. */
+bool MmxNativeGuestHook(CpuState *cpu, uint32_t pc, unsigned expected_mx, bool zero_owned,
+                        uint32_t *target) {
+  extern InterpPreOpcodeHook MmxZeroReferenceHook(void);
+  bool invoked;
+  if (interp_bridge_run_native_pre_opcode_hooks(cpu, pc, target, &invoked,
+      zero_owned ? MmxZeroReferenceHook() : NULL)) return true;
+  if (!invoked) return false;
+  unsigned live_mx = ((cpu->m_flag & 1u) << 1) | (cpu->x_flag & 1u);
+  if (live_mx != expected_mx) {
+    fprintf(stderr, "[mmx_hle] mutable hook at $%06X changed M/X without a native continuation (%u to %u)\n",
+            (unsigned)pc, expected_mx, live_mx);
+    abort();
+  }
+  return false;
+}
+
+RecompReturn MmxNativeHookTail(CpuState *cpu, uint32_t target,
+                              uint16_t entry_s, uint8_t hrv) {
+  RecompReturn (*resume)(CpuState *) = cpu_aot_resume_fn(cpu, target);
+  if (resume) return cpu_dispatch_resume_paired(cpu, target, entry_s, hrv, resume);
+  if (!cpu_dispatch_has_entry(cpu, target)) {
+    static bool reported;
+    if (!reported) {
+      reported = true;
+      fprintf(stderr, "[mmx] authoritative guest continuation $%06X uses interpreter coverage; scheduler remains native\n",
+              (unsigned)target);
+    }
+    return interp_tier_dispatch_tail(cpu, target, target, entry_s, hrv);
+  }
+  cpu_tailcall_inherit_return_context(entry_s, hrv);
+  cpu->PB = (uint8_t)(target >> 16);
+  return cpu_dispatch_pc_paired(cpu, target, hrv);
 }
 
 /* C-host implementation of the MMX cooperative task scheduler at
@@ -221,6 +281,21 @@ static inline void mmx_restore_cpu(CpuState *c, const MmxSlotCpuSave *s) {
     c->_flag_I = s->_flag_I; c->_flag_D = s->_flag_D;
 }
 
+static void mmx_seed_task_cpu(MmxSlotCpuSave *s, const CpuState *cpu,
+                              uint8_t slot, uint16_t stack) {
+  mmx_save_cpu(s,cpu);
+  /* Retail $80D8-$80E6: SEP30; X=slot; LDA state/CMP1; LDA03;
+   * LDA stack.high; XBA; LDA stack.low; TCS; JMP (handler,X). */
+  s->S=stack; s->A=stack; s->X=slot; s->Y&=0xff;
+  s->m_flag=s->x_flag=1;
+  s->_flag_N=(stack&0x80)!=0; s->_flag_Z=(uint8_t)stack==0; s->_flag_C=1;
+  s->P=(uint8_t)((s->P&~0xb3u)|0x31u|(s->_flag_N?0x80:0)|(s->_flag_Z?2:0));
+}
+
+static void mmx_switch_to_scheduler(void *scheduler) {
+  SwitchToFiber(scheduler);
+}
+
 extern const char *g_last_recomp_func;
 extern int snes_frame_counter;
 #if SNESRECOMP_TRACE
@@ -236,7 +311,7 @@ static void CALLBACK mmx_fiber_entry(void *param) {
    * to the scheduler); when it ultimately RTSes here, the task is
    * done and the slot becomes empty. */
   g_mmx_task_slot_x = (uint8_t)(slot_idx << 4);
-  mmx_dispatch_task_pc(&g_cpu, pc);
+  RecompReturn task_return=mmx_dispatch_task_pc(&g_cpu, pc);
   /* Body returned: task is finished. Diagnostic: log the death so we
    * can correlate which task PC died at which frame and what the last
    * recompiled function on the stack was. Freeze both rings ONCE for
@@ -245,8 +320,8 @@ static void CALLBACK mmx_fiber_entry(void *param) {
    * stack-drift mechanism (which also freezes cpu_trace via
    * capture()'s check). */
   if (mmx_rtl_diag_enabled()) {
-    fprintf(stderr, "[fiber_die] frame=%d slot=%u pc=$%04X last_func=%s A=$%04X X=$%04X Y=$%04X S=$%04X D=$%04X DB=$%02X PB=$%02X m=%d x=%d\n",
-            snes_frame_counter, slot_idx, pc,
+    fprintf(stderr, "[fiber_die] frame=%d slot=%u pc=$%04X return=%d last_func=%s A=$%04X X=$%04X Y=$%04X S=$%04X D=$%04X DB=$%02X PB=$%02X m=%d x=%d\n",
+            snes_frame_counter, slot_idx, pc, (int)task_return,
             g_last_recomp_func ? g_last_recomp_func : "?",
             g_cpu.A, g_cpu.X, g_cpu.Y, g_cpu.S, g_cpu.D,
             g_cpu.DB, g_cpu.PB, g_cpu.m_flag, g_cpu.x_flag);
@@ -357,7 +432,7 @@ void mmx_host_yield(uint8_t countdown) {
     s_prev_s0 = g_cpu.S; s_prev_frame = snes_frame_counter;
   }
 #endif
-  SwitchToFiber(g_scheduler_fiber);
+  interp_bridge_with_host_context(&g_cpu,mmx_switch_to_scheduler,g_scheduler_fiber);
   /* Resume: restore the full CpuState for this slot. */
   mmx_restore_cpu(&g_cpu, &g_slot_saved_state[slot_idx]);
 }
@@ -860,17 +935,13 @@ void MmxSchedulerTick(void) {
     }
     g_ram[(0x30 + x) & 0xFFFF] = 0x03;  /* mark running */
     g_ram[0x00A0] = x;
-    /* Save scheduler's full CpuState, install slot's. On first
-     * dispatch the slot's saved state is uninitialised — seed S from
-     * the asm $86:8067 table ($013F, $017F, $01BF, $01FF, $023F,
-     * $027F, $02BF for slots 0..6) and carry the rest of the current
-     * CpuState forward (ResetHandler's m=1, x=1, DB=$86, PB=$80 etc.
-     * are the post-reset baseline). */
+    /* Fresh installs use the retail dispatch's entry registers; resumptions
+     * retain their own saved CPU state. */
     mmx_save_cpu(&g_saved_scheduler_state, &g_cpu);
     if (!g_slot_saved_state[slot_idx].saved) {
-      mmx_save_cpu(&g_slot_saved_state[slot_idx], &g_cpu);
-      g_slot_saved_state[slot_idx].S = (uint16_t)g_ram[(0x36 + x) & 0xFFFF]
-                                     | ((uint16_t)g_ram[(0x37 + x) & 0xFFFF] << 8);
+      uint16_t stack=(uint16_t)g_ram[(0x36+x)&0xffff]
+                     |((uint16_t)g_ram[(0x37+x)&0xffff]<<8);
+      mmx_seed_task_cpu(&g_slot_saved_state[slot_idx],&g_cpu,x,stack);
       /* Latch the task's base stack now: $36/$37 is scheduler scratch between
        * dispatches, so this is the only authoritative read (mirrors the
        * handler-PC latch above). The resume machinery uses it as the
@@ -982,7 +1053,9 @@ void RunOneFrameOfGame(void) {
   s_graphics_frame_start = g_cpu.master_cycles;
   s_graphics_frame_active = g_did_reset;
 #if !MMX_VARIANT_JP
-  interp_bridge_set_pre_opcode_hook(0x008121, MmxGraphicsYieldHook);
+  interp_bridge_set_pre_opcode_hook(0x008100, MmxNativeYieldHook);
+  interp_bridge_set_pre_opcode_hook(0x00810c, MmxNativeYieldHook);
+  interp_bridge_set_pre_opcode_hook(0x008121, MmxNativeYieldHook);
   if (!MmxCoopEnabled()) {
     static const uint32_t culls[] = {0x82807d,0x82809e,0x8280c3,0x838957};
     for (unsigned i=0;i<sizeof(culls)/sizeof(culls[0]);++i)
@@ -1138,37 +1211,20 @@ void RunOneFrameOfGame(void) {
    * replacement for the entire $8099 main loop. */
   cpu_trace_arm_px_tripwire();
   waiting_for_vblank = 0xFF;
-  /* Swappable scheduler tier. Faithful LLE: run the real $00:8099
-   * cooperative task scheduler under interp816, yielding after one slot
-   * walk when it reaches the $8080A1 vblank-spin with $0B9D cleared. The
-   * interpreter handles the infinite loop, coroutine stack switching, and
-   * JMP ($0032,X) dispatch by construction; dispatched tasks bounce to compiled
-   * bodies via the paired ABI (and not-yet-compiled task bodies run interpreted
-   * via the tier-2 gap manifest) — so it needs NO per-variant task-PC table.
-   * I_NMI already set $0B9D=$FF so the spin falls through on entry. See docs /
-   * co-sim: fixes NMI/IRQ-timing guest-state drift the HLE approximates
-   * (scheduler slot $0031, DMA bookkeeping $02EE/$02FA).
-   *
-   * Both regions default to LLE through the shared execution-mode policy.
-   * SNESRECOMP_EXECUTION_MODE=hle explicitly selects the legacy C-host path.
-   *
-   * ── HLE IS DEPRECATED (2026-07-02) ───────────────────────────────────────
-   * The C-host HLE scheduler (MmxSchedulerTick + the hardcoded mmx_dispatch_
-   * task_pc task table) is DEPRECATED and slated for removal; LLE is the path
-   * forward. Rationale:
-   *   - LLE needs NO per-variant task table (HLE's table is hand-derived per
-   *     game/region — the maintenance burden that killed HLE-on-JP: JP's task
-   *     PCs shift ~2 bytes from USA, and even with a reverse-derived table the
-   *     fiber coroutine lifecycle broke + compiling the tasks garbled video).
-   *   - LLE's only cost is interpreting the tiny $8099 loop each frame (task
-   *     BODIES still run compiled via bounce) — a negligible perf delta.
-   * Support status: HLE is deprecated and unsupported on JP. Do not invest
-   * further in the HLE path unless it becomes a checked LLE optimization. */
+  /* Native HLE owns the cooperative task walk/yields. Guest-body coverage is
+   * independently selected by the authoritative CPU dispatcher; interpreting
+   * a guest body does not switch ownership back to the old task scheduler. */
   {
     if (mmx_execution_mode() == SNESRECOMP_EXECUTION_MODE_LLE)
       interp_bridge_run_scheduler(&g_cpu, 0x808099, 0x8080A1, 0x0B9D);
-    else
+    else {
+      static bool reported;
+      if (!reported) {
+        reported = true;
+        fprintf(stderr, "[mmx] native task scheduler selected; guest bodies use authoritative CPU dispatch\n");
+      }
       MmxSchedulerTick();
+    }
   }
   cpu_trace_px_breadcrumb(&g_cpu, 0x2003, "after_Internal");
   MmxZeroHealthSync(g_ram);
