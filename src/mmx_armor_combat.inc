@@ -174,6 +174,7 @@ static void emit_armor_burst(uint8_t *r) {
 static void buster_player(uint8_t *r) {
   if(!config[1] || r[0xbdb] || (buster_query && !buster_query())) {buster_cancel(r);return;}
   bool held=(r[0xbdf]&64)!=0,pressed=(r[0xbe3]&64)!=0;
+  if(fire_query)fire_query(r,state.charge>=21,&held,&pressed);
   unsigned live=0;for(unsigned i=0;i<8;++i)if(state.shots[i].active && MmxArmorProjectileOwned(r,0x1228+i*64))live|=1u<<i;
   state.shot_mask=(uint16_t)live;
   if(state.hyper_active && state.gold && game==3 && (r[0x1f99]&2) && pressed &&

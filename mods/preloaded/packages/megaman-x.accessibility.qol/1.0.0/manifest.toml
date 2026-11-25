@@ -1,0 +1,165 @@
+format_version = 1
+id = "megaman-x.accessibility.qol"
+version = "1.0.0"
+name = "Mega Man X Convenience Options"
+author = "mstan"
+description = "Optional X1 controls and shorter menu animations, using the original game's mechanics."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "megaman-x-us"
+rom_sha256 = "b8f70a6e7fb93819f79693578887e2c11e196bdf1ac6ddc7cb924b1ad0be2d32"
+
+[[feature]]
+id = "double_tap"
+name = "Disable Double-Tap Dash"
+description = "Use the mapped Dash action instead of double-tapping a direction. Does not grant the leg upgrade."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "double_tap"
+id = "megaman-x.qol.double-tap"
+
+[[feature]]
+id = "sub_tank"
+name = "Preserve Sub-Tank Energy"
+description = "Stop using a Sub Tank when health is full, keeping its unused energy."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "sub_tank"
+id = "megaman-x.qol.sub-tank"
+
+[[feature]]
+id = "auto_charge"
+name = "Auto Charge"
+description = "Charge X's buster while Shot is released. Press Shot to fire the charge. Can be combined with Rapid Fire."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "auto_charge"
+id = "megaman-x.qol.auto-charge"
+
+[[feature]]
+id = "rapid_fire"
+name = "Rapid Fire"
+description = "Hold Shot to repeat uncharged shots with X1's weapons, within the game's original energy, cooldown and projectile limits."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "rapid_fire"
+id = "megaman-x.qol.rapid-fire"
+
+[[feature]]
+id = "dialogue"
+name = "Faster Dialogue Boxes"
+description = "Open, close and scroll dialogue boxes faster. Keeps the original text and page controls."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "dialogue"
+id = "megaman-x.qol.dialogue"
+
+[[feature]]
+id = "skip_intro"
+name = "Skippable Boss Introductions"
+description = "Press Start during the stage-select boss introduction to enter the selected stage sooner."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "skip_intro"
+id = "megaman-x.qol.skip-intro"
+
+[[feature]]
+id = "escape"
+name = "Exit Unbeaten Stages"
+description = "Use the pause menu's Escape Unit before defeating the boss, including the intro and fortress stages. Collected progress is retained."
+group = "Accessibility"
+default_enabled = false
+[[plugin]]
+feature = "escape"
+id = "megaman-x.qol.escape"
+
+[[feature]]
+id = "wall_jump"
+name = "Hold Dash for Boosted Wall Jumps"
+description = "Hold the mapped Dash action while jumping off a wall for the boosted push, without timing a new Dash press."
+group = "Movement"
+default_enabled = false
+[[plugin]]
+feature = "wall_jump"
+id = "megaman-x.qol.wall-jump"
+
+[[feature]]
+id = "first_hadouken"
+name = "First-Visit Hadouken Capsule"
+description = "Find the secret Armored Armadillo capsule on the first qualifying visit. All original equipment, collection and full-health requirements still apply."
+group = "Hadouken"
+default_enabled = false
+[[plugin]]
+feature = "first_hadouken"
+id = "megaman-x.qol.first-hadouken"
+
+[[feature]]
+id = "hadouken_iframes"
+name = "Hadouken Ignores Hurt Protection"
+description = "Let a Hadouken damage a boss during the brief protection after another hit. Keeps the original attack and defeat handling."
+group = "Hadouken"
+default_enabled = false
+[[plugin]]
+feature = "hadouken_iframes"
+id = "megaman-x.qol.hadouken-iframes"
+
+[[feature]]
+id = "hadouken_sigma"
+name = "Hadouken Against Wolf Sigma"
+description = "Allow the acquired Hadouken to damage Wolf Sigma for its normal 32 HP. Full health and the original firing requirements still apply."
+group = "Hadouken"
+default_enabled = false
+[[plugin]]
+feature = "hadouken_sigma"
+id = "megaman-x.qol.hadouken-sigma"
+
+[[feature]]
+id = "early_dash"
+name = "Early Dash"
+description = "Dash before finding the leg upgrade. Uses the missing unarmored dash pieces from your X2 ROM, without granting armor or changing collected progress."
+group = "Movement"
+default_enabled = false
+[[resource]]
+feature = "early_dash"
+id = "x2-rom"
+label = "Mega Man X2 USA ROM"
+description = "Choose your original X2 USA ROM to prepare the unarmored dash sprites locally."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X2 USA ROM"
+shared_key = "megaman-x.source.x2"
+normalized_sha256 = "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed"
+required = true
+[[plugin]]
+feature = "early_dash"
+id = "megaman-x.qol.early-dash"
+
+[[feature]]
+id = "air_dash"
+name = "Air Dash"
+description = "After finding the leg upgrade, press Dash in the air for one horizontal air dash, like X2. Landing or touching a wall restores it."
+group = "Movement"
+default_enabled = false
+[[resource]]
+feature = "air_dash"
+id = "x2-rom"
+label = "Mega Man X2 USA ROM"
+description = "Choose your original X2 USA ROM for this X2 movement enhancement. Early Dash remains a separate choice."
+format = "file"
+file_patterns = "*.sfc,*.smc"
+file_description = "Mega Man X2 USA ROM"
+shared_key = "megaman-x.source.x2"
+normalized_sha256 = "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed"
+required = true
+[[plugin]]
+feature = "air_dash"
+id = "megaman-x.qol.air-dash"

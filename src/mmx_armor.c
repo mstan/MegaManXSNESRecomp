@@ -22,7 +22,10 @@ static unsigned extra_count;
 static const uint8_t *config[11];
 static uint16_t config_size[11];
 static MmxArmorState state;
+bool MmxArmorBusterReady(void) {return pack && state.charge>=21;}
+bool MmxArmorOwnsFireInput(void) {return pack && (state.burst || state.stored_shot);}
 static bool (*buster_query)(void);
+static void (*fire_query)(const uint8_t *,bool,bool *,bool *);
 static bool (*actor_query)(void);
 static uint8_t *(*body_query)(uint8_t *);
 static bool (*armor_terrain)(const uint8_t *,int,int);
@@ -35,6 +38,7 @@ static void barrier_start(void);
 static void barrier_tick(uint8_t *ram);
 static void giga_player(uint8_t *ram);
 void MmxArmorSetBusterQuery(bool (*query)(void)) {buster_query=query;}
+void MmxArmorSetFireQuery(void (*query)(const uint8_t *,bool,bool *,bool *)) {fire_query=query;}
 void MmxArmorSetActorQuery(bool (*query)(void)) {actor_query=query;}
 void MmxArmorSetBodyQuery(uint8_t *(*query)(uint8_t *)) {body_query=query;}
 void MmxArmorSetTerrainQuery(bool (*query)(const uint8_t *,int,int)) {armor_terrain=query;}

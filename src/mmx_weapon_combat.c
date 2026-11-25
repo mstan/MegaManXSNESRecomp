@@ -36,6 +36,7 @@ static bool slot_valid(unsigned d) { return d >= 0x1228 && d < 0x1428 && (d & 63
 static void silk_player_tick(uint8_t *r);
 static void silk_effect_tick(MmxWeaponShot *s);
 static bool owned(const uint8_t *r, unsigned d) { return slot_valid(d) && r[d] && word(r + d + 0x3e) == 0x5758; }
+bool MmxWeaponsProjectileOwned(const uint8_t *r,unsigned d) {return owned(r,d);}
 static unsigned slot_index(unsigned d) { return (d - 0x1228) / 64; }
 static unsigned weapon_group(unsigned page, unsigned weapon) {
   return page == 1 ? (weapon == 1 ? 16 : weapon == 2 ? 68 : weapon == 3 ? 72 : weapon == 4 ? 70 : weapon == 5 ? 65 : weapon == 6 ? 71 : weapon == 7 ? 15 : weapon == 8 ? 37 : 0) :

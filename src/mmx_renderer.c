@@ -7,6 +7,7 @@
 #include "mmx_render_assets.h"
 #include "mmx_zero.h"
 #include "mmx_armor.h"
+#include "mmx_dash.h"
 #include "mmx_project_zero.h"
 #include "mmx_knc_bugfix.h"
 #include "mmx_weapons.h"
@@ -1705,6 +1706,23 @@ static uint32_t native_plain_colour(const uint16_t *palette, const uint32_t *rgb
   return rgb[color & 0x7fff];
 }
 #endif
+static void dash_pieces_row(const uint8_t *ram,const SnesRenderRegisters *ppu,const Raster *r,
+    unsigned pose,int y,MmxRenderView view,uint16_t *objects,int *colors,const uint16_t *body_colors) {
+  const uint8_t *native=sprite_arrangement(0,pose),*donor=NULL;
+  const uint16_t *palette=body_colors?body_colors:r->palette+128+((ram[0xbb9]>>1)&7)*16;
+  const MmxSpriteAsset *asset=MmxDashArt(pose,&donor,palette);
+  if(!asset || !native || !donor)return;
+  int x=(int16_t)(word(ram,0xbad)-view_camera(ram,0x1e4d));
+  int sy=(int16_t)(word(ram,0xbb0)-view_camera(ram,0x1e50))+(int8_t)ram[0xbc1];
+  for(int i=donor[0]-1;i>=0;--i) {
+    const uint8_t *d=donor+1+i*4;
+    if(!MmxDashPieceMissing(native,d))continue;
+    /* make_piece consumes a header-relative pointer, like native layout+i*4. */
+    uint8_t converted[5]={0,d[1],d[2],d[3],d[0]};
+    Piece s=make_piece(converted,x,sy,ram[0xbb9]&64,ram[0xbb9]&0x3f,0,0,0xba8,pose);
+    sprite(ppu,r,s.x,s.y,s.attr,s.size,y,view,objects,false,asset,s.tile,colors,true,false,false);
+  }
+}
 static void weapon_sprite_row_tag(const MmxWeaponShot *s,unsigned pose,int x,int sy,
     int y,MmxRenderView view,uint16_t *objects,int *colors,unsigned tag) {
   const MmxWeaponPose *p = MmxWeaponsPose(s->page,s->weapon,s->group,pose);
@@ -2111,6 +2129,8 @@ static void coop_partner_row(const SnesRenderRegisters *ppu,const Raster *r,int 
     if (zero && (d==0xba8 || d<0xc98 ||
         (!MmxZeroUsesProjectAssets() && MmxZeroNativeChargeObject(d,ram[d+10])))) continue;
     if (cast && d<0xc98) continue;
+    if(d==0xba8 && MmxDashArtVisible(ram,!zero,MmxArmorEnabled()))
+      dash_pieces_row(ram,ppu,&partner_raster,ram[0xbbf]&127,y,view,objects,colors,weapon_palette.colors);
     if (d>=0x1228 && partner->combat.shots[(d-0x1228)/64].active) continue;
     if(MmxArmorProjectileOwned(ram,d))continue;
     unsigned group = ram[d+22];
@@ -2625,6 +2645,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     x_pixels.first=view.width;x_pixels.last=-1;
     if(x_in_front)memset(x_pixels.opaque,0,sizeof(x_pixels.opaque));
     bool zero_drawn[2] = {false,false};
+    bool dash_drawn=false;
     for (int i = (int)piece_count - 1; i >= 0; --i) {
       Piece s = pieces[i]; const MmxSpriteAsset *asset = piece_assets[i];
 #if MMX_NATIVE_RASTER
@@ -2656,6 +2677,8 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       bool menu_body = s.object == 0x1988 && (s.animation == 0 || s.animation == 0x18);
       bool zero_body = zero && (s.object == 0xba8 || menu_body);
       bool armor_body=armor_overlays[0].active && (s.object==0xba8 || menu_body);
+      bool dash_body=!menu && s.object==0xba8 &&
+          MmxDashArtVisible(frame.ram,!zero,MmxArmorEnabled());
       bool armor_part=armor_overlays[0].active &&
           (s.object==0xc38 || s.object==0xc58 || s.object==0xc78 ||
            (menu && (s.object==0x1928 || s.object==0x1948 || s.object==0x1968)));
@@ -2667,7 +2690,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
       bool zero_armor = zero && (s.object == 0xc38 || s.object == 0xc58 || s.object == 0xc78 ||
           (zero_menu && (s.object == 0x1928 || s.object == 0x1948 || s.object == 0x1968)));
       bool oam_match = false;
-      if (g_mmx_render_asset_repairs || coop_buster || coop_special || zero_body || zero_armor || zero_charge || swap_actor || red_ready || red_death || triad_x_body || triad_armor || frozen_enemy || armor_body || armor_part) {
+      if (g_mmx_render_asset_repairs || coop_buster || coop_special || zero_body || zero_armor || zero_charge || swap_actor || red_ready || red_death || triad_x_body || triad_armor || frozen_enemy || armor_body || armor_part || dash_body) {
 #if MMX_NATIVE_RASTER
         const SnesRenderOamBinding *binding = SnesRenderFindOam(&native_oam, s.x, s.y, s.attr);
         if (binding) {
@@ -2727,6 +2750,12 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
         attr = (attr & ~0x3000u) | ((asset->attributes & 0x30) << 8);
       if (asset && asset->live_colors) attr = (attr & ~0x0e00u) | (s.attr & 0x0e00u);
       if (zero_armor || swap_actor || triad_armor || frozen_enemy || armor_part) continue;
+      if(dash_body && !dash_drawn && (oam_match || (frame.expand &&
+          (view_dx || view_dy || s.x+s.size<=0 || s.x>=256)))) {
+        dash_drawn=true;
+        dash_pieces_row(frame.ram,&p,r,piece_pose(&s),y,view,objects,object_colors,
+                        weapon_colors?x_weapon_palette.colors:NULL);
+      }
       if(armor_body && !triad_x_body && !swap_actor) {
         if(!oam_match && !(frame.expand && frame.ram[s.object+14] &&
             (view_dx || view_dy || s.x+s.size<=0 || s.x>=256)))continue;

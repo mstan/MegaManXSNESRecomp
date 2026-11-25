@@ -76,7 +76,7 @@ def apply(text):
         if pc in RESPONSE_BLOCKS:
             response = re.search(r'uint8 (_v\d+) = cpu_read8\(cpu,.*0xef37', line)
             if response:
-                output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroResponse(uint8_t *, unsigned, unsigned, unsigned); {response[1]} = (uint8)MmxZeroResponse(g_ram, cpu->D, cpu->X, {response[1]}); }}\n')
+                output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroResponse(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxQolNativeDamage(CpuState *, unsigned); {response[1]} = (uint8)MmxQolNativeDamage(cpu, MmxZeroResponse(g_ram, cpu->D, cpu->X, {response[1]})); }}\n')
                 found.add(pc + 0x30)
         if pc in (0x00d4f2,0x00d50f):
             load = re.search(r'uint8 (_v\d+) = cpu_read8\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0000\)\);', line)
@@ -87,7 +87,7 @@ def apply(text):
             output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxWeaponsSelectShot(const uint8_t *, unsigned); MmxWeaponsSelectShot(g_ram,cpu->X); }}\n')
             found.add(pc)
         if pc == 0x82823e and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
-            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxZeroPlayerMotion(uint8_t *, unsigned); extern void MmxWeaponsPlayerMotion(uint8_t *, unsigned); MmxZeroPlayerMotion(g_ram,cpu->D); MmxWeaponsPlayerMotion(g_ram,cpu->D); }}\n')
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxQolNativePlayer(CpuState *, unsigned); extern void MmxZeroPlayerMotion(uint8_t *, unsigned); extern void MmxWeaponsPlayerMotion(uint8_t *, unsigned); MmxZeroPlayerMotion(g_ram,cpu->D); MmxQolNativePlayer(cpu,2); MmxWeaponsPlayerMotion(g_ram,cpu->D); }}\n')
             found.add(pc)
         if pc == 0x8491db and 'cpu->D = cpu_read16(cpu, 0x00, cpu->S);' in line:
             output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxWeaponsTerrainEnd(uint8_t *, unsigned); MmxWeaponsTerrainEnd(g_ram,cpu->D); }}\n')
@@ -116,13 +116,13 @@ def apply(text):
             output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxHadoukenInput(uint8_t *); MmxHadoukenInput(g_ram); }}\n')
             found.add(pc)
         if pc == 0x81815c and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
-            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxZeroExtPrePlayer(uint8_t *); extern void MmxZeroSlideTick(uint8_t *); extern void MmxZeroMovementTick(uint8_t *); extern void MmxZeroPlayerTick(uint8_t *); extern void MmxWeaponsPlayerTick(uint8_t *); extern bool MmxWeaponsCombatActive(void); MmxZeroExtPrePlayer(g_ram); MmxZeroSlideTick(g_ram); MmxZeroMovementTick(g_ram); MmxWeaponsPlayerTick(g_ram); if (!MmxWeaponsCombatActive()) MmxZeroPlayerTick(g_ram); }}\n')
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxQolNativePlayer(CpuState *, unsigned); extern void MmxZeroExtPrePlayer(uint8_t *); extern void MmxZeroSlideTick(uint8_t *); extern void MmxZeroMovementTick(uint8_t *); extern void MmxZeroPlayerTick(uint8_t *); extern void MmxWeaponsPlayerTick(uint8_t *); extern bool MmxWeaponsCombatActive(void); MmxZeroExtPrePlayer(g_ram); MmxQolNativePlayer(cpu,0); MmxZeroSlideTick(g_ram); MmxZeroMovementTick(g_ram); MmxWeaponsPlayerTick(g_ram); if (!MmxWeaponsCombatActive()) MmxZeroPlayerTick(g_ram); }}\n')
             found.add(pc)
         if pc in SLIDE_PCS and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
             output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern bool MmxZeroSlideHold(uint8_t *, unsigned); if (MmxZeroSlideHold(g_ram, 0x{pc:06x})) goto L_{SLIDE_PCS[pc]}_{mode}; }}\n')
             found.add(pc)
         if pc == 0x818165 and 'cpu->coprocessor_master_cycles = cpu->master_cycles;' in line:
-            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxZeroPlayerEnd(uint8_t *); extern void MmxZeroExtPlayerEnd(uint8_t *); MmxZeroPlayerEnd(g_ram); MmxZeroExtPlayerEnd(g_ram); }}\n')
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern void MmxZeroPlayerEnd(uint8_t *); extern void MmxQolNativePlayer(CpuState *, unsigned); extern void MmxZeroExtPlayerEnd(uint8_t *); MmxZeroPlayerEnd(g_ram); MmxZeroExtPlayerEnd(g_ram); MmxQolNativePlayer(cpu,1); }}\n')
             found.add(pc)
         if pc == 0x00d3e5:
             load = re.search(r'uint8 (_v\d+) = cpu_read8\(cpu, 0x00, \(uint16\)\(cpu->D \+ 0x0000\)\);', line)
@@ -133,13 +133,13 @@ def apply(text):
         # Override only the final subtraction in the positive-damage path.
         if (pc & 0x7fffff) == 0x049e6e and 'uint8 ' in line and 'cpu_read8' in line and '0xef37' in line:
             variable = re.search(r'uint8 (_v\d+)', line)[1]
-            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxWeaponsDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxDamageDealt(const uint8_t *, unsigned, unsigned); {variable} = (uint8)MmxDamageDealt(g_ram,cpu->D,MmxWeaponsDamage(g_ram, cpu->D, cpu->X, MmxZeroDamage(g_ram, cpu->D, cpu->X, {variable}))); }}\n')
+            output.append(f'    {MARKER} {{ extern uint8_t g_ram[0x20000]; extern unsigned MmxZeroDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxWeaponsDamage(uint8_t *, unsigned, unsigned, unsigned); extern unsigned MmxDamageDealt(const uint8_t *, unsigned, unsigned); extern unsigned MmxQolNativeDamage(CpuState *, unsigned); {variable} = (uint8)MmxDamageDealt(g_ram,cpu->D,MmxWeaponsDamage(g_ram, cpu->D, cpu->X, MmxZeroDamage(g_ram, cpu->D, cpu->X, MmxQolNativeDamage(cpu, {variable})))); }}\n')
             found.add(0x849e73)
         if pc in PCS:
             load = re.search(r'uint8 (_v\d+) = cpu_read8\(cpu, cpu->DB, \(uint16\)\(0x1f99\)\);', line)
             if load:
                 source = UPGRADE_LOAD_PCS.get(pc, pc)
-                output.append(f'    {MARKER} {{ extern unsigned MmxZeroUpgradeBits(unsigned, unsigned); {load[1]} = (uint8)MmxZeroUpgradeBits(0x{source:06x}, {load[1]}); }}\n')
+                output.append(f'    {MARKER} {{ extern unsigned MmxZeroUpgradeBits(unsigned, unsigned); extern unsigned MmxQolNativeUpgrade(CpuState *, unsigned, unsigned); {load[1]} = (uint8)MmxQolNativeUpgrade(cpu, 0x{source:06x}, MmxZeroUpgradeBits(0x{source:06x}, {load[1]})); }}\n')
                 found.add(pc)
     return ''.join(output), found
 

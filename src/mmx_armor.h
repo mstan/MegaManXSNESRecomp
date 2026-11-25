@@ -40,6 +40,8 @@ typedef struct MmxArmorState {
 bool MmxArmorLoad(const char *path, unsigned game);
 void MmxArmorDisable(void);
 bool MmxArmorEnabled(void);
+bool MmxArmorBusterReady(void);
+bool MmxArmorOwnsFireInput(void);
 unsigned MmxArmorGame(void);
 MmxArmorState MmxArmorGetState(void);
 bool MmxArmorValidState(const MmxArmorState *value);
@@ -50,6 +52,7 @@ void MmxArmorPrePlayer(uint8_t *ram);
 void MmxArmorPlayerEnd(uint8_t *ram);
 void MmxArmorPlayerMotion(uint8_t *ram, unsigned object);
 void MmxArmorSetBusterQuery(bool (*query)(void));
+void MmxArmorSetFireQuery(void (*query)(const uint8_t *,bool,bool *,bool *));
 void MmxArmorSetActorQuery(bool (*query)(void));
 void MmxArmorSetBodyQuery(uint8_t *(*query)(uint8_t *ram));
 void MmxArmorSetTerrainQuery(bool (*query)(const uint8_t *,int,int));

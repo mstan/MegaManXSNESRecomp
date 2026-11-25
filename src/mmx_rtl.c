@@ -4,6 +4,7 @@
 #include "mmx_zero.h"
 #include "mmx_damage.h"
 #include "mmx_armor.h"
+#include "mmx_dash.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
 #include "mmx_coop.h"
@@ -370,7 +371,7 @@ void mmx_host_yield(uint8_t countdown) {
 #include "snes/saveload.h"
 
 #define MMX_SAV_CHUNK_MAGIC   0x4D4D5854u  /* "MMXT" */
-#define MMX_SAV_CHUNK_VERSION 27u /* local MSU playback bookmark */
+#define MMX_SAV_CHUNK_VERSION 28u /* optional X1 air-dash phase */
 
 typedef struct MmxSavChunk {
   uint32_t magic, version;
@@ -414,6 +415,7 @@ static MmxBossRushState g_load_rush;
 static MmxBossRushAudioState g_load_rush_audio;
 static MmxBossRushVisualState g_load_rush_visual;
 static MmxMsu1State g_load_msu1;
+static MmxDashState g_load_dash;
 
 void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   MmxSavChunk c;
@@ -476,6 +478,8 @@ void MmxStateSaveExtra(struct SaveLoadInfo *sli) {
   sli->func(sli,&armor,sizeof(armor));
   MmxDamageState damage=MmxDamageGetState();
   sli->func(sli,&damage,sizeof(damage));
+  MmxDashState dash=MmxDashGetState();
+  sli->func(sli,&dash,sizeof(dash));
   MmxMsu1State msu1=MmxMsu1GetState();
   sli->func(sli,&msu1,sizeof(msu1));
 }
@@ -492,6 +496,7 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
   memset(&g_load_armor,0,sizeof(g_load_armor));
   memset(&g_load_damage,0,sizeof(g_load_damage));
   memset(&g_load_msu1,0,sizeof(g_load_msu1));
+  memset(&g_load_dash,0,sizeof(g_load_dash));
   memset(&g_load_views,0,sizeof(g_load_views));
   memset(&g_load_view_bounds,0,sizeof(g_load_view_bounds));
   memset(g_load_zero_extension,0,sizeof(g_load_zero_extension));
@@ -586,7 +591,8 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
         (g_load_chunk.version>=22?sizeof(g_load_view_bounds):0)+
         (g_load_chunk.version>=24?sizeof(g_load_armor):0)+
         (g_load_chunk.version>=26?sizeof(g_load_damage):0)+
-        (g_load_chunk.version>=27?sizeof(g_load_msu1):0);
+        (g_load_chunk.version>=27?sizeof(g_load_msu1):0)+
+        (g_load_chunk.version>=28?sizeof(g_load_dash):0);
     if(remaining!=expected) g_load_chunk_ok=0;
     if(g_load_chunk_ok && extension)
       sli->func(sli,g_load_zero_extension,sizeof(g_load_zero_extension));
@@ -621,6 +627,13 @@ void MmxStateLoadExtra(struct SaveLoadInfo *sli, uint32_t version) {
     else {
       sli->func(sli,&g_load_damage,sizeof(g_load_damage));
       if(!MmxDamageValidState(&g_load_damage))g_load_chunk_ok=0;
+    }
+  }
+  if(g_load_complete && g_load_chunk_ok && g_load_chunk.version>=28) {
+    if(RtlStateBytesRemaining(sli)<sizeof(g_load_dash))g_load_chunk_ok=0;
+    else {
+      sli->func(sli,&g_load_dash,sizeof(g_load_dash));
+      if(!MmxDashValidState(&g_load_dash))g_load_chunk_ok=0;
     }
   }
   if(g_load_complete && g_load_chunk_ok && g_load_chunk.version>=27) {
@@ -669,6 +682,7 @@ void MmxOnStateLoaded(uint32_t version) {
   MmxWideStateApply(complete);
   MmxZeroSetState(g_load_zero);
   MmxArmorSetState(g_load_armor);
+  MmxDashSetState(complete?&g_load_dash:NULL);
   MmxDamageSetState(complete?&g_load_damage:NULL);
   if (complete) MmxZeroExtLoadState(g_load_zero_extension);
   MmxWeaponsSetState(g_load_weapons);
@@ -2105,6 +2119,7 @@ static void MmxWideStateApply(bool loaded) {
 void MmxOnHardwareReset(void) {
   MmxDamageClearState();
   MmxArmorResetState();
+  MmxDashResetState();
   MmxBossRushReset();MmxBossRushAudioReset();
   MmxCoopReset();
   for (int i = 0; i < MMX_NSLOTS; i++) {

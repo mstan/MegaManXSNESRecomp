@@ -70,6 +70,7 @@ static void zero_capture(const char *base, const char *suffix) {
 #include "mmx_coop_car_test.inc"
 #include "mmx_coop_armor_transport_test.inc"
 #include "mmx_coop_arena_transport_test.inc"
+#include "mmx_qol_runtime_test.inc"
 static void zero_motion_checks(const char *fixture) {
   const char *path = getenv("MMX_ZERO_MOTION_REFERENCE");
   if (!path) path = MMX_ZERO_MOTION_REFERENCE_DEFAULT;
@@ -2030,6 +2031,7 @@ int main(int argc, char **argv) {
     puts("MMX SCREENSHOT SLOT CHECKS PASSED");
     return 0;
   }
+  if(getenv("MMX_QOL_NATIVE_TEST")) {qol_native_checks();return 0;}
   if (getenv("MMX_OCTOPUS_BEAM_FIXTURE")) {
     check(RtlLoadSnapshot(getenv("MMX_OCTOPUS_BEAM_FIXTURE")), "current Anglerge fixture loads");
     check(g_ram[0x1f7a] == 1 && g_ram[0xe68] && g_ram[0xe72] == 0x21 &&

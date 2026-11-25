@@ -7,6 +7,8 @@
 #include "mmx_project_zero.h"
 #include "mmx_armor.h"
 #include "mmx_damage.h"
+#include "mmx_qol.h"
+#include "mmx_dash.h"
 #include "mmx_weapons.h"
 #include "mmx_weapon_combat.h"
 #include "mmx_source_assets.h"
@@ -64,8 +66,9 @@ static void weapon_menu_hook(CpuState *cpu, uint32_t pc) {
   cpu->P = (cpu->P & ~0x82) | (cpu->_flag_Z ? 2 : 0) | (cpu->_flag_N ? 128 : 0);
 }
 static void hook(CpuState *cpu, uint32_t pc) {
-  if (!MmxZeroEnabled() && !MmxWeaponsEnabled() && !MmxArmorEnabled() && !MmxDamageDealtEnabled()) return;
-  switch (pc & 0x7fffff) {
+  if (!MmxZeroEnabled() && !MmxWeaponsEnabled() && !MmxArmorEnabled() && !MmxDamageDealtEnabled() && !MmxQolDamageEnabled() && !MmxDashEnabled() && !MmxQolFeatureEnabled(MMX_QOL_NO_DOUBLE_TAP)) return;
+  const unsigned address=pc&0x7fffff;
+  switch (address) {
     case 0x019ef9:
       /* Intercept the STA, which preserves the native ADC flags. */
       cpu->A = (uint16_t)MmxZeroHeadBreakY(g_ram, cpu->D, cpu->A);
@@ -90,6 +93,8 @@ static void hook(CpuState *cpu, uint32_t pc) {
     case 0x01971f: case 0x019796: case 0x0198ff:
     case 0x019ea8: case 0x0499a7: {
       unsigned value = MmxZeroUpgradeBits(pc - 3, cpu->A & 255);
+      if(address==0x01971f || address==0x019796 || address==0x0198ff)
+        value=MmxQolUpgradeRead(g_ram,address,MmxDashUpgradeBits(value,!MmxZeroActive()),!MmxZeroActive());
       cpu->A = (cpu->A & 0xff00) | value;
       cpu->_flag_Z = !value; cpu->_flag_N = (value & 128) != 0;
       cpu->P = (cpu->P & ~0x82) | (cpu->_flag_Z ? 2 : 0) | (cpu->_flag_N ? 128 : 0);
@@ -97,6 +102,7 @@ static void hook(CpuState *cpu, uint32_t pc) {
     }
     case 0x01815c:
       MmxZeroExtPrePlayer(g_ram);
+      MmxDashPrePlayer(g_ram,!MmxZeroActive(),MmxArmorEnabled());
       MmxZeroSlideTick(g_ram);
       MmxZeroMovementTick(g_ram);
       MmxWeaponsPlayerTick(g_ram);
@@ -104,7 +110,9 @@ static void hook(CpuState *cpu, uint32_t pc) {
       break;
     case 0x019d47: MmxWeaponsMarkShot(g_ram, cpu->X); break;
     case 0x0194af: MmxWeaponsSelectShot(g_ram, cpu->X); break;
-    case 0x018165: MmxZeroPlayerEnd(g_ram); MmxZeroExtPlayerEnd(g_ram); break;
+    case 0x018165:
+      MmxZeroPlayerEnd(g_ram);MmxZeroExtPlayerEnd(g_ram);
+      MmxDashPlayerEnd(g_ram,!MmxZeroActive(),MmxArmorEnabled());break;
     case 0x0491dc: MmxWeaponsTerrainEnd(g_ram,cpu->D); break;
     case 0x01898e: case 0x018999: case 0x018965: {
       static const struct { unsigned from, to; } slide[] = {
@@ -116,6 +124,7 @@ static void hook(CpuState *cpu, uint32_t pc) {
     }
     case 0x02823e:
       MmxZeroPlayerMotion(g_ram,cpu->D);
+      MmxDashPlayerMotion(g_ram,cpu->D,!MmxZeroActive(),MmxArmorEnabled());
       MmxWeaponsPlayerMotion(g_ram,cpu->D); break;
     case 0x018b04: MmxZeroDeathOrbSpawn(g_ram, cpu->D, cpu->X); break;
     case 0x048f07: MmxZeroAnimationStart(cpu->D, cpu->A & 255); break;
@@ -179,8 +188,9 @@ static void hook(CpuState *cpu, uint32_t pc) {
     }
     case 0x049e76: {
       unsigned original = cpu_read8(cpu, cpu->DB, (uint16_t)(0xef37 + cpu->Y));
+      unsigned adjusted=MmxQolNativeDamage(cpu,original);
       unsigned damage = MmxDamageDealt(g_ram,cpu->D,MmxWeaponsDamage(g_ram, cpu->D, cpu->X,
-          MmxZeroDamage(g_ram, cpu->D, cpu->X, original)));
+          MmxZeroDamage(g_ram, cpu->D, cpu->X, adjusted)));
       if (damage == original) break;
       /* Post-SBC: retain the interpreter's instruction timing, but recompute
        * its value and all arithmetic flags with our damage operand. The HP
@@ -215,6 +225,20 @@ static void hook(CpuState *cpu, uint32_t pc) {
 }
 static bool zero_terrain_solid(const uint8_t *r, int x, int y) {
   return MmxWeaponsTerrainSolid(r, x, y, false, NULL);
+}
+bool MmxZeroRegisterQolDamageHook(void) {
+  /* One existing damage owner, with its established SBC/flags contract. */
+  return interp_bridge_add_pre_opcode_hook(0x049e76,hook);
+}
+bool MmxZeroRegisterQolUpgradeHook(void) {
+  return interp_bridge_add_pre_opcode_hook(0x01971f,hook);
+}
+bool MmxZeroRegisterQolMovementHooks(void) {
+  static const unsigned pcs[]={0x01815c,0x018165,0x02823e,0x01971f,0x019796,0x0198ff};
+  bool ok=true;
+  for(unsigned i=0;i<sizeof(pcs)/sizeof(*pcs);++i)
+    ok=interp_bridge_add_pre_opcode_hook(pcs[i],hook) && ok;
+  return ok;
 }
 void MmxZeroRegisterHooks(void) {
   MmxZeroSetTerrainQuery(zero_terrain_solid);

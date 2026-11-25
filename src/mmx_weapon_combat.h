@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+bool MmxWeaponsProjectileOwned(const uint8_t *ram,unsigned object);
 
 typedef struct MmxWeaponShot {
   int32_t x, y; /* 16.8 world coordinates. */
