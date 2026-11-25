@@ -56,7 +56,7 @@ static void composition_rows(void) {
            plan.spans[plan.count-1].end == width);
     unsigned plain[2]; uint8_t brightness[32];
     for (unsigned c = 0; c < 32; ++c)
-      brightness[c] = (uint8_t)(((c << 3) | (c >> 2)) * (p.inidisp & 15) / 15);
+      brightness[c] = reference_brightness(c,p.inidisp&15);
     for (unsigned inside = 0; inside < 2; ++inside)
       plain[inside] = condition(p.cgwsel >> 6, inside) ? 0 :
           condition((p.cgwsel >> 4) & 3, inside) ? 127 : (~p.cgadsub & 127);

@@ -13,6 +13,32 @@ void ppu_drawCapturedLine(Ppu *p, int line, bool pixels) {
   assert(!"unexpected deferred stock raster in a synthetic capture");
   abort();
 }
+void ppu_drawInspectionLine(Ppu *p, int line, bool pixels) {
+  ppu_drawCapturedLine(p, line, pixels);
+}
+
+static uint8_t reference_brightness(unsigned color, unsigned level) {
+  unsigned quantized=(unsigned)round((double)color*level/15.0);
+  return (uint8_t)((quantized<<3)|(quantized>>2));
+}
+static void gameplay_font_brightness(void) {
+  const unsigned levels[]={15,9,4,0}, expected[]={255,156,66,0};
+  memset(&ppu,0,sizeof(ppu));
+  for(unsigned row=0;row<8;++row) {
+    ppu.vram['A'*8+row]=0x0080;
+    frame.lines[row].vram=ppu.vram;
+  }
+  for(unsigned i=0;i<4;++i) {
+    ppu.inidisp=(uint8_t)levels[i];
+    for(unsigned row=0;row<8;++row)
+      memcpy(frame.lines[row].registers,&ppu,PPU_SAVESTATE_REGS_SIZE);
+    rush_native_text(output,(MmxRenderView){256,0,4.0/3.0},0,0,"A",7);
+    assert(output[0]==expected[i]*0x010101u);
+    /* Results text deliberately outlives the gameplay palette fade. */
+    rush_native_text(output,(MmxRenderView){256,0,4.0/3.0},0,0,"A",8);
+    assert(output[0]==0xffffffu);
+  }
+}
 
 static uint32_t row_rng = 0x53ea1234u;
 static uint32_t row_random(void) {
@@ -25,6 +51,7 @@ static uint32_t row_random(void) {
 #endif
 int MMX_NATIVE_TEST_ENTRY(void) {
   renderer_scene_suite();
+  gameplay_font_brightness();
   MmxRendererReset(); MmxRendererSetRom(NULL, 0);
   memset(&frame_rush, 0, sizeof(frame_rush));
   memset(frame.ram, 0, sizeof(frame.ram));
@@ -88,7 +115,7 @@ int MMX_NATIVE_TEST_ENTRY(void) {
   for (unsigned level = 0; level < 16; ++level) {
     uint8_t brightness[32]; uint16_t palette[256];
     for (unsigned c = 0; c < 32; ++c)
-      brightness[c] = (uint8_t)(((c << 3) | (c >> 2)) * level / 15);
+      brightness[c] = reference_brightness(c,level);
     for (unsigned c = 0; c < 256; ++c) palette[c] = (uint16_t)row_random();
     const uint32_t *rgb = native_brightness(level);
     for (unsigned sample = 0; sample < 4096; ++sample) {

@@ -58,11 +58,13 @@ static void armor_menu_and_hud(void) {
       MmxRendererObserveObject(ram,(uint16_t)d);MmxRendererRecordPiece(ram,0);
       MmxRendererLatchSprites();ram[d+14]=0;
       const unsigned levels[]={15,9,4,0,4,9,15};
+      /* Round INIDISP in the 5-bit domain before expanding to 8 bits. */
+      const unsigned expected_yellow[]={255,156,66,0,66,156,255};
       for(unsigned fade=0;fade<7;++fade) {
         ppu.inidisp=(uint8_t)levels[fade];MmxRendererLatchSprites();capture();
         MmxRenderView view={342,43,16.0/9.0};
         assert(MmxRendererDraw(output,view,false));
-        unsigned yellow=255*levels[fade]/15;
+        unsigned yellow=expected_yellow[fade];
         assert(output[160*view.width+view.extra+132]==(yellow<<16|yellow<<8));
       }
       ppu.oam[32]=0xe000;MmxRendererLatchSprites();capture();
