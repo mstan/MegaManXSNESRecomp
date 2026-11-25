@@ -82,10 +82,20 @@ static void MmxNativeYieldHook(CpuState *cpu, uint32_t pc) {
   }
   interp_bridge_pre_opcode_return(continuation);
 }
-static void MmxRegisterNativeYieldHooks(void) {
+static void mmx_finish_current_task(void);
+static void MmxNativeTaskDieHook(CpuState *cpu, uint32_t pc) {
+  (void)pc;
+  if (snesrecomp_execution_policy() == SNESRECOMP_EXECUTION_MODE_LLE) return;
+  extern RecompReturn HleMmxTaskDie(CpuState *);
+  HleMmxTaskDie(cpu);
+  /* This jump ends the task; it consumes no guest return frame. */
+  mmx_finish_current_task();
+}
+static void MmxRegisterNativeSchedulerHooks(void) {
   interp_bridge_set_pre_opcode_hook(0x008100, MmxNativeYieldHook);
   interp_bridge_set_pre_opcode_hook(0x00810c, MmxNativeYieldHook);
   interp_bridge_set_pre_opcode_hook(0x008121, MmxNativeYieldHook);
+  interp_bridge_set_pre_opcode_hook(0x0080f8, MmxNativeTaskDieHook);
 }
 
 static SnesrecompExecutionMode mmx_execution_mode(void) {
@@ -296,6 +306,16 @@ static void mmx_seed_task_cpu(MmxSlotCpuSave *s, const CpuState *cpu,
 static void mmx_switch_to_scheduler(void *scheduler) {
   SwitchToFiber(scheduler);
 }
+static void mmx_finish_current_task(void) {
+  if (g_current_slot_idx >= MMX_NSLOTS || !g_scheduler_fiber) abort();
+  g_slot_done[g_current_slot_idx] = 1;
+  /* A TaskDie reached through guest interpretation can still own live
+   * bridge/AOT call metadata. End that task at the same native boundary as
+   * an ordinary completed fiber, leaving a clean scheduler context. */
+  interp_bridge_with_host_context(&g_cpu,mmx_switch_to_scheduler,g_scheduler_fiber);
+  fprintf(stderr,"[mmx] completed task was resumed\n");
+  abort();
+}
 
 extern const char *g_last_recomp_func;
 extern int snes_frame_counter;
@@ -338,10 +358,7 @@ static void CALLBACK mmx_fiber_entry(void *param) {
 #endif
   /* Mark slot empty, then bounce back to the scheduler. The scheduler
    * will see g_slot_done and destroy the fiber. */
-  g_slot_done[slot_idx] = 1;
-  for (;;) {
-    SwitchToFiber(g_scheduler_fiber);
-  }
+  mmx_finish_current_task();
 }
 
 /* Resume-after-load fiber entry: the slot's task was suspended at a standard
@@ -374,10 +391,7 @@ static void CALLBACK mmx_fiber_resume_entry(void *param) {
   }
   /* Task frame ended (top-level RTS, stop-PC HLE, or contained bail):
    * same epilogue as mmx_fiber_entry. */
-  g_slot_done[slot_idx] = 1;
-  for (;;) {
-    SwitchToFiber(g_scheduler_fiber);
-  }
+  mmx_finish_current_task();
 }
 
 void mmx_host_yield(uint8_t countdown) {
@@ -1053,7 +1067,7 @@ void RunOneFrameOfGame(void) {
   RtlSetPadState(0,MmxBossRushFilterInput(RtlGetPadState(0)));
   s_graphics_frame_start = g_cpu.master_cycles;
   s_graphics_frame_active = g_did_reset;
-  MmxRegisterNativeYieldHooks();
+  MmxRegisterNativeSchedulerHooks();
 #if !MMX_VARIANT_JP
   if (!MmxCoopEnabled()) {
     static const uint32_t culls[] = {0x82807d,0x82809e,0x8280c3,0x838957};

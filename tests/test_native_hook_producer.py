@@ -38,18 +38,19 @@ class NativeHookProducer(unittest.TestCase):
 #include "apu_frame_clock.h"
 static Snes console;static Ppu ppu;Snes *g_snes=&console;Ppu *g_ppu=&ppu;
 static uint64_t s_graphics_frame_start;static bool s_graphics_frame_active;
-static unsigned count;static uint32_t pcs[3];
+static unsigned count;static uint32_t pcs[4];
 static void MmxNativeYieldHook(CpuState *c,uint32_t pc) { (void)c;(void)pc; }
+static void MmxNativeTaskDieHook(CpuState *c,uint32_t pc) { (void)c;(void)pc; }
 void interp_bridge_set_pre_opcode_hook(uint32_t pc,InterpPreOpcodeHook hook) {
-  if(count>=3 || hook!=MmxNativeYieldHook) abort();
+  if(count>=4 || hook!=(count<3?MmxNativeYieldHook:MmxNativeTaskDieHook)) abort();
   pcs[count++]=pc;
 }
 '''
-        source+=extract('bool MmxGraphicsShouldYield(')+extract('static void MmxRegisterNativeYieldHooks(')
+        source+=extract('bool MmxGraphicsShouldYield(')+extract('static void MmxRegisterNativeSchedulerHooks(')
         source+=r'''
 #define CHECK(x) do { if(!(x)) { fprintf(stderr,"failed line %d: %s\n",__LINE__,#x);return 1; } } while(0)
 int main(void) {
-  MmxRegisterNativeYieldHooks();CHECK(count==3 && pcs[0]==0x8100 && pcs[1]==0x810c && pcs[2]==0x8121);
+  MmxRegisterNativeSchedulerHooks();CHECK(count==4 && pcs[0]==0x8100 && pcs[1]==0x810c && pcs[2]==0x8121 && pcs[3]==0x80f8);
   CpuState c={0};s_graphics_frame_start=10;s_graphics_frame_active=true;
   console.nmiEnabled=true;ppu.inidisp=15;
   c.master_cycles=10+RTL_MASTER_CYCLES_PER_FRAME-0x18000-1;CHECK(!MmxGraphicsShouldYield(&c));
@@ -112,11 +113,24 @@ int main(void) {
             return text[start:end]
         rtl=(ROOT/'src/mmx_rtl.c').read_text()
         stubs=(ROOT/'src/gen_stubs.c').read_text()
-        source='#include <stdlib.h>\n#include "cpu_state.h"\n#include "execution_mode.h"\n'
+        source='#include <stdlib.h>\n#include <setjmp.h>\n#include "cpu_state.h"\n#include "execution_mode.h"\n'
         source+=r'''
 uint8_t g_ram[0x20000],g_mmx_task_slot_x; int snes_frame_counter;
 static int policy=SNESRECOMP_EXECUTION_MODE_ON, yields, countdown, graphics, reference, returned;
 static uint32_t destination;
+CpuState g_cpu;
+#define MMX_NSLOTS 7
+static uint8_t g_current_slot_idx,g_slot_done[MMX_NSLOTS];
+static void *g_scheduler_fiber=(void*)1;
+static jmp_buf finished;static int host_contexts,switches;
+static void SwitchToFiber(void *scheduler) {
+  if(scheduler!=g_scheduler_fiber) abort();
+  switches++;longjmp(finished,1);
+}
+void interp_bridge_with_host_context(CpuState *c,void(*host)(void*),void *arg) {
+  if(c!=&g_cpu || !g_slot_done[g_current_slot_idx] || g_ram[0x30+g_mmx_task_slot_x]) abort();
+  host_contexts++;host(arg);
+}
 SnesrecompExecutionMode snesrecomp_execution_mode(SnesrecompExecutionMode default_mode) { (void)default_mode;return policy; }
 int interp_bridge_in_lle_scheduler(void) { return 0; }
 static RecompReturn mmx_lle_unwind_to(CpuState *c,uint16_t p) { (void)c;(void)p;abort(); }
@@ -127,9 +141,13 @@ static bool MmxGraphicsShouldYield(const CpuState *c) { (void)c;return graphics;
 static void MmxGraphicsYieldHook(CpuState *c,uint32_t p) { (void)c;(void)p;reference++; }
 static void interp_bridge_pre_opcode_return(uint32_t p) { destination=p;returned++; }
 '''
-        for name in ('HleMmxYieldOneFrame','HleMmxYieldNFrames','HleMmxYieldVblank'):
+        for name in ('HleMmxYieldOneFrame','HleMmxYieldNFrames','HleMmxYieldVblank','HleMmxTaskDie'):
             source+=extract(stubs,'RecompReturn '+name+'(')+'\n'
         source+=extract(rtl,'static void MmxNativeYieldHook(')
+        source+='static void mmx_finish_current_task(void);\n'
+        source+=extract(rtl,'static void MmxNativeTaskDieHook(')
+        source+=extract(rtl,'static void mmx_switch_to_scheduler(')
+        source+=extract(rtl,'static void mmx_finish_current_task(void) {')
         source+=r'''
 #define CHECK(x) do { if(!(x)) { fprintf(stderr,"failed line %d: %s\n",__LINE__,#x);return 1; } } while(0)
 static void frame(CpuState *c) { c->S=0x13d;c->PB=0x80;g_ram[0x13e]=0x34;g_ram[0x13f]=0x92; }
@@ -144,6 +162,12 @@ int main(void) {
   frame(&c);graphics=0;g_ram[0xb9d]=0x80;MmxNativeYieldHook(&c,0x8121);CHECK(yields==5);
   policy=SNESRECOMP_EXECUTION_MODE_LLE;frame(&c);MmxNativeYieldHook(&c,0x8121);
   CHECK(reference==1 && yields==5 && c.S==0x13d);
+  g_current_slot_idx=3;g_mmx_task_slot_x=0x30;g_ram[0x60]=3;g_cpu.S=0x13d;
+  MmxNativeTaskDieHook(&g_cpu,0x80f8);CHECK(!host_contexts && !switches && g_ram[0x60]==3);
+  policy=SNESRECOMP_EXECUTION_MODE_ON;
+  if(!setjmp(finished)) { MmxNativeTaskDieHook(&g_cpu,0x80f8);abort(); }
+  CHECK(host_contexts==1 && switches==1 && g_slot_done[3] && !g_ram[0x60]);
+  CHECK(g_cpu.S==0x13d && !g_slot_done[0] && !g_slot_done[6]);
   puts("native yield tail: existing HLE bodies, inherited frame, countdown, conditional yield and explicit floor preserved");
   return 0;
 }
