@@ -382,7 +382,11 @@ const uint8_t *MmxZeroPose(const uint8_t ram[0x20000], const MmxZeroState *s) {
     unsigned group = ram[0xbbe], pose = ram[0xbbf] & 127;
     if (group == 0x66 && pose < MMX_PROJECT_ZERO_CAPTURE_POSES)
       return project_assets->capture[pose];
-    return project_assets->body[group == 0 && pose < MMX_PROJECT_ZERO_BODY_POSES ? pose : 0];
+    /* Retail $81:9D88 selects group $18 when X owns the body armor.
+     * Both groups use the same movement poses; Zero's imported body replaces
+     * the armor artwork as well. Keep the live pose instead of standing still. */
+    return project_assets->body[(group == 0 || group == 0x18) &&
+        pose < MMX_PROJECT_ZERO_BODY_POSES ? pose : 0];
   }
   /* $81:91F1's Highway electric restraint starts native sequence $49.
    * That sequence is an attack alias in the ordinary X3 movement map.
