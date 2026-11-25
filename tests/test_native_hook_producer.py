@@ -21,6 +21,52 @@ def function(source, name):
 
 
 class NativeHookProducer(unittest.TestCase):
+    def test_both_regions_register_common_yields_and_graphics_checkpoint(self):
+        sdk=Path(os.environ.get('SNESRECOMP_ROOT',ROOT/'snesrecomp'))
+        cc=os.environ.get('CC')or shutil.which('cc')or shutil.which('gcc')
+        if not cc or not(sdk/'runner/src/cpu_state.h').exists():self.skipTest('C compiler and SDK required')
+        rtl=(ROOT/'src/mmx_rtl.c').read_text()
+        def extract(signature):
+            start=rtl.index(signature);end=rtl.index('{',start)+1;depth=1
+            while depth:depth+=(rtl[end]=='{')-(rtl[end]=='}');end+=1
+            return rtl[start:end]+'\n'
+        source='''#include "cpu_state.h"
+#include "common_rtl.h"
+#include "snes/snes.h"
+#include "snes/ppu.h"
+#include "snes/interp_bridge.h"
+#include "apu_frame_clock.h"
+static Snes console;static Ppu ppu;Snes *g_snes=&console;Ppu *g_ppu=&ppu;
+static uint64_t s_graphics_frame_start;static bool s_graphics_frame_active;
+static unsigned count;static uint32_t pcs[3];
+static void MmxNativeYieldHook(CpuState *c,uint32_t pc) { (void)c;(void)pc; }
+void interp_bridge_set_pre_opcode_hook(uint32_t pc,InterpPreOpcodeHook hook) {
+  if(count>=3 || hook!=MmxNativeYieldHook) abort();
+  pcs[count++]=pc;
+}
+'''
+        source+=extract('bool MmxGraphicsShouldYield(')+extract('static void MmxRegisterNativeYieldHooks(')
+        source+=r'''
+#define CHECK(x) do { if(!(x)) { fprintf(stderr,"failed line %d: %s\n",__LINE__,#x);return 1; } } while(0)
+int main(void) {
+  MmxRegisterNativeYieldHooks();CHECK(count==3 && pcs[0]==0x8100 && pcs[1]==0x810c && pcs[2]==0x8121);
+  CpuState c={0};s_graphics_frame_start=10;s_graphics_frame_active=true;
+  console.nmiEnabled=true;ppu.inidisp=15;
+  c.master_cycles=10+RTL_MASTER_CYCLES_PER_FRAME-0x18000-1;CHECK(!MmxGraphicsShouldYield(&c));
+  c.master_cycles++;CHECK(MmxGraphicsShouldYield(&c));
+  ppu.inidisp=0x80;CHECK(!MmxGraphicsShouldYield(&c));ppu.inidisp=15;
+  console.nmiEnabled=false;CHECK(!MmxGraphicsShouldYield(&c));console.nmiEnabled=true;
+  s_graphics_frame_active=false;CHECK(!MmxGraphicsShouldYield(&c));s_graphics_frame_active=true;
+  c.master_cycles=9;CHECK(!MmxGraphicsShouldYield(&c));return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix='mmx-region-yield-')as directory:
+            p=Path(directory);c=p/'test.c';c.write_text(source)
+            for jp in (0,1):
+                exe=p/('region'+str(jp)+('.exe'if os.name=='nt'else''))
+                subprocess.run([cc,'-std=c11','-O2','-Wall','-Wextra','-DMMX_VARIANT_JP='+str(jp),'-I'+str(sdk/'runner/src'),str(c),'-o',str(exe)],check=True)
+                subprocess.run([str(exe)],check=True)
+
     def test_fresh_task_matches_retail_scheduler_entry(self):
         sdk=Path(os.environ.get('SNESRECOMP_ROOT',ROOT/'snesrecomp'))
         cc=os.environ.get('CC')or shutil.which('cc')or shutil.which('gcc')

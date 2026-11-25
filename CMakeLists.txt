@@ -253,7 +253,9 @@ set(MMX_GEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/gen" CACHE PATH
 add_mmx_variant(MegaManXSNESRecomp "${MMX_GEN_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/recomp")
 if(NOT ANDROID)
-add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
+set(MMX_JP_GEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen" CACHE PATH
+    "Generated Japan program directory (allows isolated coverage comparisons)")
+add_mmx_variant(RockmanXSNESRecomp "${MMX_JP_GEN_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/config"
     MMX_VARIANT_JP=1 SNESRECOMP_LLE_BOUNCE_DEFAULT=0)
 endif()

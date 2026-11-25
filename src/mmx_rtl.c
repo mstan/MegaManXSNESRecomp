@@ -44,16 +44,12 @@ static uint64_t s_graphics_frame_start;
 static bool s_graphics_frame_active;
 
 bool MmxGraphicsShouldYield(const CpuState *cpu) {
-#if MMX_VARIANT_JP
-  (void)cpu;
-  return false; /* Checkpoint addresses below are verified against USA. */
-#else
+  /* USA and JP share the scheduler and graphics-yield bytes at $8099-$8134. */
   const uint64_t reserve = 0x18000; /* 256 bytes * <=48 slow-bus CPU cycles. */
   return s_graphics_frame_active && g_snes->nmiEnabled &&
       !PPU_forcedBlank(g_ppu) && cpu->master_cycles >= s_graphics_frame_start &&
       cpu->master_cycles - s_graphics_frame_start >=
           RTL_MASTER_CYCLES_PER_FRAME - reserve;
-#endif
 }
 
 static void MmxGraphicsYieldHook(CpuState *cpu, uint32_t pc) {
@@ -85,6 +81,11 @@ static void MmxNativeYieldHook(CpuState *cpu, uint32_t pc) {
     default: abort();
   }
   interp_bridge_pre_opcode_return(continuation);
+}
+static void MmxRegisterNativeYieldHooks(void) {
+  interp_bridge_set_pre_opcode_hook(0x008100, MmxNativeYieldHook);
+  interp_bridge_set_pre_opcode_hook(0x00810c, MmxNativeYieldHook);
+  interp_bridge_set_pre_opcode_hook(0x008121, MmxNativeYieldHook);
 }
 
 static SnesrecompExecutionMode mmx_execution_mode(void) {
@@ -1052,10 +1053,8 @@ void RunOneFrameOfGame(void) {
   RtlSetPadState(0,MmxBossRushFilterInput(RtlGetPadState(0)));
   s_graphics_frame_start = g_cpu.master_cycles;
   s_graphics_frame_active = g_did_reset;
+  MmxRegisterNativeYieldHooks();
 #if !MMX_VARIANT_JP
-  interp_bridge_set_pre_opcode_hook(0x008100, MmxNativeYieldHook);
-  interp_bridge_set_pre_opcode_hook(0x00810c, MmxNativeYieldHook);
-  interp_bridge_set_pre_opcode_hook(0x008121, MmxNativeYieldHook);
   if (!MmxCoopEnabled()) {
     static const uint32_t culls[] = {0x82807d,0x82809e,0x8280c3,0x838957};
     for (unsigned i=0;i<sizeof(culls)/sizeof(culls[0]);++i)

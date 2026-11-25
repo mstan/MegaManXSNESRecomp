@@ -14,6 +14,9 @@ unsigned MmxKncBugfixPhase(void) { return 0; }
 void ppu_drawCapturedLine(Ppu *p, int line, bool pixels) {
   (void)p; (void)line; (void)pixels; abort();
 }
+void ppu_drawInspectionLine(Ppu *p, int line, bool pixels) {
+  ppu_drawCapturedLine(p, line, pixels);
+}
 #endif
 
 static bool bmp(const char *path, const uint32_t *pixels, int width) {
