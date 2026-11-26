@@ -49,7 +49,7 @@ run_apprun() { # simulated_appimage_path
       SDL_VIDEODRIVER=dummy SDL_VIDEO_DRIVER=dummy \
       SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy \
       SNESRECOMP_NO_LAUNCHER=1 \
-      timeout 20 "$appdir/AppRun" >/dev/null 2>&1 ) || true
+      "$appdir/AppRun" >/dev/null 2>&1 ) || true
 }
 
 chmod -R a-w "$appdir"

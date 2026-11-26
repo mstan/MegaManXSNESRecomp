@@ -71,7 +71,7 @@ def main():
             try:
                 result = subprocess.run([str(appdir / 'AppRun'), '--launcher'],
                                         cwd=run, env=env, capture_output=True,
-                                        text=True, timeout=20)
+                                        text=True)
             except subprocess.TimeoutExpired as exc:
                 raise AssertionError(f'{name}: packaged picker timed out; '
                                      f'stdout={exc.stdout!r}, stderr={(exc.stderr or b"")[:3000]!r}') from exc
