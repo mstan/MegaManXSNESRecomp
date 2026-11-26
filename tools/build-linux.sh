@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# build-linux-prod.sh — DEFINITIVE Linux build/package script for a recomp game.
+# build-linux-prod.sh â€” DEFINITIVE Linux build/package script for a recomp game.
 #
 # This is the Linux counterpart to tools/make_release.ps1 (Windows). It mirrors
 # the same prod-vs-debug discipline:
 #
-#   prod  (default) — strips ALL developer tooling: no TCP debug server, no
+#   prod  (default) â€” strips ALL developer tooling: no TCP debug server, no
 #                     observability rings, no oracle backend. The shipped build.
-#   debug           — compiles the TCP debug server + rings back in.
+#   debug           â€” compiles the TCP debug server + rings back in.
 #
 # It configures + builds with cmake, then wraps the ELF into a self-contained
 # x86_64 AppImage. State policy (identical to the Windows zip, where everything
 # lives next to the exe): config.ini, keybinds.ini, rom.cfg, saves/ and mods/
-# all live NEXT TO the .AppImage file. The engine anchors there itself —
+# all live NEXT TO the .AppImage file. The engine anchors there itself â€”
 # host_paths.c prefers $APPIMAGE over /proc/self/exe precisely so state never
 # resolves into the read-only squashfs mount. The AppRun:
 #   * seeds/refreshes the release-owned mod catalog beside the .AppImage
@@ -37,6 +37,7 @@
 #   bash tools/build-linux-prod.sh --nopin         # allow local snesrecomp changes
 #   bash tools/build-linux-prod.sh --out DIR       # where to drop the .AppImage
 #   bash tools/build-linux-prod.sh --jobs N        # parallel build jobs (default: nproc)
+#   bash tools/build-linux.sh --prebuilt FILE --prebuilt-sha256 HASH --prebuilt-receipt JSON
 #
 # Prereqs: python3, cmake, a C/C++ toolchain, SDL3 (or SNESRECOMP_SDL_BACKEND=SDL2 with
 # libsdl2-dev), libgl1-mesa-dev. linuxdeploy/appimagetool are fetched into the
@@ -78,6 +79,9 @@ DO_RUN=0
 DO_PACKAGE=1
 NOPIN=0
 VERSION=""
+PREBUILT=""
+PREBUILT_SHA256=""
+PREBUILT_RECEIPT=""
 JOBS="$(nproc 2>/dev/null || echo 4)"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO/release-linux"
@@ -88,6 +92,9 @@ while [ $# -gt 0 ]; do
     --prod) CONFIG="prod"; shift;;
     --debug) CONFIG="debug"; shift;;
     --version) VERSION="$2"; shift 2;;
+    --prebuilt) PREBUILT="$2"; shift 2;;
+    --prebuilt-sha256) PREBUILT_SHA256="$2"; shift 2;;
+    --prebuilt-receipt) PREBUILT_RECEIPT="$2"; shift 2;;
     --regen) DO_REGEN=1; shift;;
     --run) DO_RUN=1; shift;;
     --no-package) DO_PACKAGE=0; shift;;
@@ -98,6 +105,13 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
+if [ -n "$PREBUILT" ]; then
+  [ -n "$PREBUILT_SHA256" ] && [ -n "$PREBUILT_RECEIPT" ] && [ "$DO_REGEN" = 0 ] || {
+    echo "--prebuilt requires --prebuilt-sha256 and --prebuilt-receipt, and cannot use --regen" >&2; exit 2;
+  }
+elif [ -n "$PREBUILT_SHA256" ] || [ -n "$PREBUILT_RECEIPT" ]; then
+  echo "prebuilt identity options require --prebuilt" >&2; exit 2
+fi
 case "$CONFIG" in prod) FLAGS=( "${PROD_CMAKE_FLAGS[@]}" );; debug) FLAGS=( "${DEBUG_CMAKE_FLAGS[@]}" );;
   *) echo "--config must be prod or debug (got '$CONFIG')" >&2; exit 2;; esac
 
@@ -147,23 +161,58 @@ if [ "$DO_REGEN" = "1" ] && [ -n "$REGEN_CMD" ]; then
   eval "$REGEN_CMD"
 fi
 
-if [ -n "$PREBUILD_CMD" ]; then
+if [ -z "$PREBUILT" ] && [ -n "$PREBUILD_CMD" ]; then
   echo "[prebuild] $PREBUILD_CMD"
   RAN_PREBUILD=1
   eval "$PREBUILD_CMD"
 fi
 
-echo "[1/4] configure ($CONFIG: ${FLAGS[*]})"
-cmake -S "$REPO" -B "$BUILD" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release "${FLAGS[@]}"
-echo "[2/4] build ($CMAKE_TARGET, -j$JOBS)"
-cmake --build "$BUILD" --target "$CMAKE_TARGET" -j"$JOBS"
+if [ -n "$PREBUILT" ]; then
+  echo "[1-2/4] verify qualified prebuilt native ELF"
+  python3 - "$PREBUILT" "$PREBUILT_SHA256" "$PREBUILT_RECEIPT" "$VERSION" "$REPO" "$CMAKE_TARGET" "$CONFIG" "OFF" "$SDL_BACKEND" <<'PY'
+from pathlib import Path
+import hashlib, json, re, subprocess, sys
+artifact, expected, receipt, version, repo, target, config, lua, sdl = sys.argv[1:]
+def require(value, message):
+    if not value: raise SystemExit('prebuilt: ' + message)
+def git(path):
+    return subprocess.check_output(['git', '-C', str(path), 'rev-parse', 'HEAD'], text=True).strip()
+data = Path(artifact).read_bytes()
+record = json.loads(Path(receipt).read_text())
+identity = record['buildIdentity']
+require(re.fullmatch('[0-9a-f]{64}', expected), 'invalid expected SHA-256')
+require(hashlib.sha256(data).hexdigest() == expected == record['artifactSha256'], 'artifact hash mismatch')
+require(data[:6] == b'\x7fELF\x02\x01' and int.from_bytes(data[18:20], 'little') == 62, 'expected Linux x86-64 ELF')
+require(version not in ('', 'dev') and identity['target'] == target and identity['version'] == version and version.encode() in data, 'target/version mismatch')
+require(identity['titleSource'] == git(repo), 'title source mismatch')
+require(identity['sdkSource'] == git(Path(repo) / 'snesrecomp'), 'SDK source mismatch')
+require(identity['uiSource'] == git(Path(repo) / 'recomp-ui'), 'UI source mismatch')
+profile = identity['profile']
+require(profile['raster'] == 'NATIVE', 'native raster mismatch')
+require(profile['frame'] == 'HLE' and profile['apuTime'] == 'NATIVE' and profile['dspMix'] == 'NATIVE', 'native provider mismatch')
+require(profile['executionDefault'] in ('on', 'force') and profile['host'] == 'Linux-x86_64', 'execution profile mismatch')
+require(profile['trace'] is (config == 'debug') and profile['lua'] is (lua == 'ON') and profile['sdl'] == sdl, 'host configuration mismatch')
+require(re.fullmatch('[0-9a-f]{64}', identity['generatedCorpusSha256']) and
+        re.fullmatch('[0-9a-f]{64}', identity['reusedObjectsSha256']) and identity['compiledTUs'], 'missing build inputs')
+canonical = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode()
+require(hashlib.sha256(canonical).hexdigest() == record['buildIdentitySha256'], 'build identity mismatch')
+print('Qualified native ELF identity verified:', expected)
+PY
+else
+  echo "[1/4] configure ($CONFIG: ${FLAGS[*]})"
+  cmake -S "$REPO" -B "$BUILD" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release "${FLAGS[@]}"
+  echo "[2/4] build ($CMAKE_TARGET, -j$JOBS)"
+  cmake --build "$BUILD" --target "$CMAKE_TARGET" -j"$JOBS"
+fi
 
 # Locate the produced ELF by magic (the NTFS mount marks every file executable,
 # so the exec bit is meaningless here).
-BIN=""
+BIN="$PREBUILT"
+if [ -z "$BIN" ]; then
 while IFS= read -r f; do
   if [ "$(basename "$f")" = "$CMAKE_TARGET" ] && file -b "$f" 2>/dev/null | grep -q "ELF.*executable"; then BIN="$f"; break; fi
 done < <(find "$BUILD" -maxdepth 3 -type f)
+fi
 [ -n "$BIN" ] || { echo "ERROR: no ELF named '$CMAKE_TARGET' under $BUILD" >&2; exit 1; }
 echo "      ELF: $BIN ($(du -h "$BIN" | cut -f1))"
 
