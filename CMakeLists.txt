@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 2.4.11 LANGUAGES C CXX)
+project(MegaManXSNESRecomp VERSION 2.4.12 LANGUAGES C CXX)
 # Host-native rendering is the default on every platform. Keep the reference
 # renderer available only through an explicit accuracy selection.
 set(_MMX_RASTER_IMPL_DEFAULT "NATIVE")
