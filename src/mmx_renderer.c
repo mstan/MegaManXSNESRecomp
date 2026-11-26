@@ -2352,7 +2352,8 @@ static void rush_native_text(uint32_t *out,MmxRenderView view,int x,int y,const 
       static const uint16_t menu_colors[2][4]={{0,0x7fff,0x7fe0,0x4080},{0,0x7fff,0x7fff,0x7fe0}};
       unsigned color=palette>=7?menu_colors[palette==9][pixel]:r->palette[palette*4+pixel];uint32_t rgb=0;
       for(unsigned c=0;c<3;++c) {
-        unsigned v=(color>>(c*5))&31;v=(v<<3)|(v>>2);if(palette<8) v=v*(p.inidisp&15)/15;
+        unsigned v=(color>>(c*5))&31;
+        v=ppu_brightness_level(v,palette<8?(p.inidisp&15):15);
         rgb|=v<<(16-c*8);
       }
       out[(y+row)*view.width+dx]=rgb;
@@ -2574,7 +2575,7 @@ bool MmxRendererDraw(uint32_t *out, MmxRenderView view, bool hud) {
     ++stats.custom_lines;
     if (p.inidisp & 128) continue;
     uint8_t brightness[32];
-    for (int c = 0; c < 32; ++c) brightness[c] = (uint8_t)(((c << 3) | (c >> 2)) * (p.inidisp & 15) / 15);
+    for (int c = 0; c < 32; ++c) brightness[c] = ppu_brightness_level((unsigned)c, p.inidisp & 15);
 #if MMX_NATIVE_RASTER
     unsigned native_windows = 0, native_plain_layers[2];
     for (unsigned layer = 0; layer < 6; ++layer)

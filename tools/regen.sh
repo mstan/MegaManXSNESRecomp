@@ -144,6 +144,7 @@ regen_variant() {
   if [ "$name" = usa ]; then
     step "Applying $name widescreen overrides"
     "$PYTHON" tools/apply_overrides.py --gen-dir "$out_dir"
+    "$PYTHON" tools/apply_native_hooks.py --gen-dir "$out_dir"
   else
     step "Keeping $name generated output authentic 4:3"
   fi

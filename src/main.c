@@ -33,6 +33,7 @@
 #include "mmx_boss_rush_audio.h"
 #include "netplay/snes_netplay.h"
 #include "host_paths.h"
+#include "execution_mode.h"
 #include <ctype.h>
 
 #ifndef MMX_VARIANT_JP
@@ -450,6 +451,8 @@ static uint8_t *MmxArmorBody(uint8_t *ram) {
   return MmxCoopEnabled()?MmxCoopCharacterBody(ram,MMX_COOP_X):MmxZeroActive()?NULL:ram+0xba8;
 }
 int MMX_DESKTOP_ENTRY(int argc, char **argv) {
+  snesrecomp_execution_register_optimization("mmx.native-task-scheduler");
+  (void)snesrecomp_execution_policy();
   MmxArmorSetBusterQuery(MmxArmorBusterSelected);
   MmxArmorSetActorQuery(MmxCoopActorIsX);
   MmxArmorSetBodyQuery(MmxArmorBody);

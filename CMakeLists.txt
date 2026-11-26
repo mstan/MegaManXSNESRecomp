@@ -202,6 +202,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_zero_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_coop_hooks.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_native_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_weapon_hooks.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py)
             add_custom_target(${TARGET}_widescreen_overrides
@@ -220,6 +221,8 @@ function(add_mmx_variant TARGET GEN_DIR CFG_DIR)
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_boss_rush_hooks.py
                         --gen-dir ${GEN_DIR}
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_damage_hooks.py
+                        --gen-dir ${GEN_DIR}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/apply_native_hooks.py
                         --gen-dir ${GEN_DIR}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 COMMENT "Applying Mega Man X generated-code mod hooks" VERBATIM)
@@ -250,7 +253,9 @@ set(MMX_GEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/gen" CACHE PATH
 add_mmx_variant(MegaManXSNESRecomp "${MMX_GEN_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/recomp")
 if(NOT ANDROID)
-add_mmx_variant(RockmanXSNESRecomp "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen"
+set(MMX_JP_GEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/gen" CACHE PATH
+    "Generated Japan program directory (allows isolated coverage comparisons)")
+add_mmx_variant(RockmanXSNESRecomp "${MMX_JP_GEN_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/variants/jp/config"
     MMX_VARIANT_JP=1 SNESRECOMP_LLE_BOUNCE_DEFAULT=0)
 endif()
