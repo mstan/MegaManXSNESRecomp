@@ -1,12 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-project(MegaManXSNESRecomp VERSION 2.4.9 LANGUAGES C CXX)
-# Qualified Windows x64 default; retain explicit selections and other-target floors.
-set(_MMX_RASTER_IMPL_DEFAULT "LLE")
+project(MegaManXSNESRecomp VERSION 2.4.10 LANGUAGES C CXX)
+# Host-native rendering is the default on every platform. Keep the reference
+# renderer available only through an explicit accuracy selection.
+set(_MMX_RASTER_IMPL_DEFAULT "NATIVE")
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _MMX_RASTER_IMPL_PROCESSOR)
-if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND
-   _MMX_RASTER_IMPL_PROCESSOR MATCHES "^(amd64|x86_64|x64)$")
-    set(_MMX_RASTER_IMPL_DEFAULT "NATIVE")
-endif()
 set(MMX_RASTER_IMPL "${_MMX_RASTER_IMPL_DEFAULT}" CACHE STRING "Raster production (LLE or NATIVE)")
 set_property(CACHE MMX_RASTER_IMPL PROPERTY STRINGS LLE NATIVE)
 if(NOT MMX_RASTER_IMPL MATCHES "^(LLE|NATIVE)$")
@@ -60,7 +57,9 @@ set(RECOMP_UI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui" CACHE PATH "recomp-ui
 option(MMX_RASTER_FULL_COPY "Use full-copy raster storage as the correctness/performance reference" OFF)
 option(MMX_STAGE_TILE_REUSE "Reuse exact stage-map lookups within one captured draw" ON)
 set(_MMX_NATIVE_ROW_PLAN_DEFAULT OFF)
-if(_MMX_RASTER_IMPL_DEFAULT STREQUAL "NATIVE" AND MMX_RASTER_IMPL STREQUAL "NATIVE")
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND
+   _MMX_RASTER_IMPL_PROCESSOR MATCHES "^(amd64|x86_64|x64)$" AND
+   MMX_RASTER_IMPL STREQUAL "NATIVE")
     set(_MMX_NATIVE_ROW_PLAN_DEFAULT ON)
 endif()
 option(MMX_NATIVE_ROW_PLAN "Prepare whole-view native row composition plans" ${_MMX_NATIVE_ROW_PLAN_DEFAULT})
