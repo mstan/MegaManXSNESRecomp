@@ -1,0 +1,8 @@
+schema = 1
+project_root = "../../.."
+identity_file = "variants/jp/rom_identity.txt"
+out_dir = "variants/jp/gen"
+cfg_roots = true
+no_host_root_scan = true
+historical_profiles = ["../tier2_coverage.json"]
+bind_legacy_profiles = true

@@ -62,10 +62,10 @@ if (-not $stageFull.StartsWith($outFull, [StringComparison]::OrdinalIgnoreCase) 
 }
 
 if (Test-Path -LiteralPath $stage) {
-  Remove-Item -LiteralPath $stage -Recurse -Force
+  Remove-Item -LiteralPath $stage -Recurse
 }
 if (Test-Path -LiteralPath $zip) {
-  Remove-Item -LiteralPath $zip -Force
+  Remove-Item -LiteralPath $zip
 }
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 
@@ -109,7 +109,7 @@ Copy-Item -LiteralPath (Join-Path $root 'docs/zero-0.0.1.md') -Destination $stag
 # fails the release rather than shipping. Builds that link the MinGW runtime
 # statically (SNESRECOMP_STATIC_RUNTIME, the default) correctly ship no
 # libgcc/libstdc++/libwinpthread at all.
-. (Join-Path $FrameworkDir 'tools\release\RuntimeDllClosure.ps1')
+. (Join-Path $FrameworkDir 'tools\release\RuntimeRelease.ps1')
 
 $sdlDll = "$SdlBackend.dll"
 $sdlSource = Join-Path $build $sdlDll
@@ -211,55 +211,7 @@ while ($pending.Count -gt 0) {
   }
 }
 
-Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-# ZIP entry names always use '/', regardless of the host OS. Compress-Archive
-# preserves Windows backslashes, which POSIX extractors may treat as literal
-# filename characters instead of directory separators.
-$stagePrefix = $stageFull.TrimEnd('\') + '\'
-$files = @(Get-ChildItem -LiteralPath $stage -File -Recurse |
-  Sort-Object FullName)
-$archive = [IO.Compression.ZipFile]::Open(
-  $zipFull, [IO.Compression.ZipArchiveMode]::Create)
-try {
-  foreach ($file in $files) {
-    $fileFull = [IO.Path]::GetFullPath($file.FullName)
-    if (-not $fileFull.StartsWith(
-        $stagePrefix, [StringComparison]::OrdinalIgnoreCase)) {
-      throw "Refusing to archive a file outside the release stage: $fileFull"
-    }
-    $entryName = $fileFull.Substring($stagePrefix.Length).Replace('\', '/')
-    if ($entryName.StartsWith('/') -or
-        $entryName -match '(^|/)\.\.(/|$)') {
-      throw "Unsafe ZIP entry name: $entryName"
-    }
-    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-      $archive, $fileFull, $entryName,
-      [IO.Compression.CompressionLevel]::Optimal) | Out-Null
-  }
-} finally {
-  $archive.Dispose()
-}
-
-$archive = [IO.Compression.ZipFile]::OpenRead($zipFull)
-try {
-  $badEntries = @($archive.Entries | Where-Object {
-    $_.FullName.Contains('\') -or
-    $_.FullName.StartsWith('/') -or
-    $_.FullName -match '(^|/)\.\.(/|$)'
-  })
-  if ($badEntries.Count -ne 0) {
-    throw "ZIP contains non-portable entry names: $(
-      ($badEntries | ForEach-Object FullName) -join ', ')"
-  }
-  if ($archive.Entries.Count -ne $files.Count) {
-    throw "ZIP entry count mismatch: expected $($files.Count), got $(
-      $archive.Entries.Count)"
-  }
-} finally {
-  $archive.Dispose()
-}
+New-RuntimeReleaseArchive -StageDir $stage -ArchivePath $zip
 
 Write-Host "--- $stageName ---"
 Get-ChildItem -LiteralPath $stage | Select-Object Name, Length | Out-Host
