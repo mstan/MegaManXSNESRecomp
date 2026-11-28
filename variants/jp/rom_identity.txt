@@ -1,0 +1,2 @@
+rom_file = variants/jp/roms/rockmanx.sfc
+expected_sha256 = 76f80cdf704a0e1daf1af5bbf564e427b425a5ee42329417de6f29219fe63e5f
